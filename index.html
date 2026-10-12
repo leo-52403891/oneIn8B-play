@@ -11721,6 +11721,9 @@ const Cr = {};
     const spon = st.on ? ramp * st.fans * 0.25 * (st.rpm / 4) * (0.3 + 0.7 * ef) : 0;
     return (ads + spon) / Wd.priceLevel(E.iso(S));
   };
+  /** 이름이 알려진 사람의 채널에 저절로 모이는 구독자(명성·권력, 언어권 상한 안): 피드백 46번
+   *  예) 지방의원(명성 10·권력 20) 약 400명, 단체장 약 5천, 국회의원 약 7만, 명성 80 연예인 약 90만 */
+  Cr.fameFans = (S, st) => Math.min(st.pool * Cr.CAP_FRAC, Math.pow(10, 1.5 + ((S.fame || 0) + 0.5 * (S.power || 0)) / 18));
   Cr.streamMonth = (S) => {
     const st = S.stream;
     if (!st) return;
@@ -11732,14 +11735,22 @@ const Cr = {};
     const ef = active ? Math.min(1, st.eff / 3) : 0;
     let F = st.fans;
     // 꾸준할수록 빨리 자라고, 다다를 수 있는 구독자도 많다
-    const Keff = st.K * (0.25 + 0.75 * ef);
+    const Ff = Cr.fameFans(S, st);
+    const Keff = Math.max(st.K * (0.25 + 0.75 * ef), Ff * (0.6 + 0.4 * ef));
+    // 이름이 알려진 사람은 채널을 열면 그만큼 사람이 찾아온다
+    if (st.on && F < Ff) F += (Ff - F) * (0.02 + 0.1 * ef);
     if (ef > 0.05) {
       if (F < Keff) {
-        const r = (0.01 + 0.3 * Math.pow(ef, 1.3)) * (0.7 + H.talent(S, 'charm') / 170) * Math.exp(U.normal(0, 0.25));
+        const r = (0.01 + 0.3 * Math.pow(ef, 1.3)) * (0.7 + H.charm(S) / 170) * Math.exp(U.normal(0, 0.25));
         F += r * F * (1 - F / Keff) + (F < 100 ? U.rand() * 3 * ef : 0);
-      } else F -= (F - Keff) * 0.01;
-    } else F *= st.on ? 0.997 : 0.985; // 영상이 뜸하면 조금씩 줄어든다
+      } else F -= (F - Keff) * 0.0025; // 뜸해져도 구독을 끊는 사람은 많지 않다(조회수·수입이 먼저 준다)
+    } else F *= st.on ? 0.999 : 0.997; // 영상을 거의 올리지 않으면 한 해 1~3%씩 준다
     st.fans = Math.round(U.clamp(F, 0, Cr.hardCap(st)));
+    // 한 해에 한 번, 크게 줄었으면 이유를 남긴다
+    if (S.ageM % 12 === 0) {
+      if (st.yPrev && st.fans < st.yPrev * 0.97 && st.yPrev >= 300) E.log(S, C.t(S, `영상이 뜸해져 구독자가 한 해 사이 ${Math.round((1 - st.fans / st.yPrev) * 100)}% 줄었습니다(${U.fmtKo(st.yPrev)}명 → ${U.fmtKo(st.fans)}명). 조회수와 방송 수입은 더 크게 줄었습니다.`), 'bad');
+      st.yPrev = st.fans;
+    }
     st.eff *= 0.9;
     st.inc = Cr.streamIncome(S);
     if (full) { j.pay = st.inc; S.inc2.stream = 0; } else S.inc2.stream = st.inc;
@@ -16970,7 +16981,7 @@ const Pr = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.5';
+E.VERSION = '0.3.6';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
