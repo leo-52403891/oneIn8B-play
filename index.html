@@ -3969,6 +3969,7 @@ A.memoir = (S) => {
     const b = Cr.publish(S, q, 'memoir');
     b.t = U.pick(['나의 길', '살아온 날들', '돌아보며', '내가 걸어온 길', '어느 생애']) + ` — ${S.name.given} 자서전`;
     b.memoir = true;
+    b.g = '자서전';
     H.fameUp(S, 2);
     out.push(`이름이 알려진 덕에 출판사가 책으로 냈습니다. 『${b.t}』 계약금으로 ${U.j(Ec.fmt(S, b.adv), '을')} 받았고, 팔리는 만큼 인세가 들어옵니다.`);
   } else if (U.chance(0.15 + Math.min(0.25, fame / 120))) {
@@ -11645,6 +11646,8 @@ const Cr = {};
   /** 돈 + 조사("120만 원을", "300 달러를") */
   const fj = (S, x, p) => U.j(fmt(S, x), p);
   const bk = (t, p) => '『' + t + '』' + (p ? U.j(t, p).slice(t.length) : '');
+  /** 장르를 붙인 책 이름: "의학 소설 『응급실의 겨울』이" */
+  const bkg = (b, p) => (b.g && b.g !== '소설' ? `${b.g} ` : '') + bk(b.t, p);
   const hasLg = () => typeof Lg !== 'undefined' && !!Lg && typeof Lg.level === 'function';
   const hasMg = () => typeof Mg !== 'undefined' && !!Mg && typeof Mg.isCitizen === 'function';
   /** 보통 생활비(일하지 않아도 되는지 판단하는 기준, E.selfSupported 와 같은 값) */
@@ -11998,15 +12001,67 @@ const Cr = {};
   };
 
   /* ================================================================ 작가 경력(피드백 3·13·20번) */
-  const T1 = ['바람의', '마지막', '푸른', '긴', '조용한', '잃어버린', '어느', '붉은', '작은', '먼', '하얀', '눈부신', '오래된', '낯선', '따뜻한', '겨울의'];
-  const T2 = ['정원', '편지', '여름', '계절', '강', '도시', '항구', '기억', '밤', '집', '길', '노래', '섬', '골목', '숲', '약속', '식탁', '기차'];
-  Cr.bookTitle = (S) => {
-    for (let i = 0; i < 8; i++) {
-      const t = `${U.pick(T1)} ${U.pick(T2)}`;
-      if (!S.books.some((b) => b.t === t)) return t;
+  /* 책 제목과 장르(피드백 73번: 제목이 다양하지 않음)
+   * 직업·해 온 일, 살아온 경험(이주·투병·수감·전쟁·여행·육아·사별), 성격(모험심·신앙·전통·정직), 매력·지식, 나이에 맞는
+   * 장르를 가중치로 고르고, 그 장르의 제목 틀에 사는 곳·고향·계절·숫자 등을 넣는다. */
+  const T1 = ['바람의', '마지막', '푸른', '긴', '조용한', '잃어버린', '어느', '붉은', '작은', '먼', '하얀', '눈부신', '오래된', '낯선', '따뜻한', '겨울의', '새벽의', '흔들리는', '비 오는', '이름 없는', '빛나는', '사라진', '두 번째', '보이지 않는'];
+  const T2 = ['정원', '편지', '여름', '계절', '강', '도시', '항구', '기억', '밤', '집', '길', '노래', '섬', '골목', '숲', '약속', '식탁', '기차', '창문', '등대', '지도', '우산', '정거장', '오후'];
+  const SEASON = ['봄', '여름', '가을', '겨울'];
+  const jobYears = (S, ids) => ids.reduce((s, id) => s + Cr.expY(S, 'j', id) + (S.work.job && S.work.job.id === id ? 2 : 0), 0);
+  const vl = (S, k) => (S.vals && S.vals[k] !== undefined ? S.vals[k] : 50);
+  const travels = (S) => (S.stamps || []).filter((x) => x.k === 'travel').length;
+  /** [장르, 가중치(S), 제목 틀들] */
+  const THEMES = [
+    ['소설', () => 2.5, ['{T1} {T2}', '{T1} {T2}', '{city}의 {T2}', '{season}의 {T2}', '{T2}에서 생긴 일']],
+    ['의학 소설', (S) => jobYears(S, ['doctor', 'nurse', 'care']) >= 2 ? 6 : 0, ['응급실의 {season}', '{n}번 병상', '마지막 회진', '청진기 너머', '새벽 세 시의 병동', '수술실 불이 꺼지면']],
+    ['법정 소설', (S) => jobYears(S, ['lawyer']) >= 2 ? 6 : 0, ['세 번째 증인', '무죄의 조건', '판결 전날 밤', '{n}호 법정', '변론 요지서']],
+    ['범죄 소설', (S) => jobYears(S, ['police', 'guard', 'journalist']) >= 2 ? 5 : 0, ['{city} 살인 사건', '사라진 증거', '열세 번째 단서', '밤의 순찰', '미제 사건 {n}호']],
+    ['교단 에세이', (S) => jobYears(S, ['teacher', 'tutor']) >= 2 ? 5 : 0, ['교실 뒤편의 아이들', '{n}학년 {m}반', '분필 가루 날리던 날들', '모르는 것을 가르치는 법']],
+    ['과학 교양서', (S) => jobYears(S, ['researcher', 'engineer']) >= 2 || vl(S, 'faith') < 20 && S.st.smarts >= 75 ? 3 : 0, ['세상을 움직이는 {n}가지 원리', '실험실의 {season}', '숫자로 본 {country}', '질문하는 법']],
+    ['SF 소설', (S) => jobYears(S, ['programmer', 'freedev', 'engineer']) >= 2 ? 4 : 0, ['{year}년의 {city}', '마지막 서버', '기계가 꾸는 꿈', '코드 너머의 사람들']],
+    ['흙의 에세이', (S) => jobYears(S, ['subsist', 'farmhand', 'cashcrop', 'farmowner', 'herder', 'agritech', 'plantation']) >= 3 ? 5 : 0, ['흙에 쓴 일기', '{season}의 밭', '소 떼와 걸은 길', '비를 기다리는 마을', '씨앗을 고르는 손']],
+    ['바다 이야기', (S) => jobYears(S, ['fisher']) >= 2 ? 6 : 0, ['그물을 걷는 새벽', '{season} 바다의 기록', '등대지기의 딸', '만선']],
+    ['노동 수기', (S) => jobYears(S, ['construction', 'factory', 'garment', 'miner', 'artisanalminer', 'daylabor', 'brickkiln', 'porter', 'shipbreak', 'tannery', 'warehouse', 'subcontract', 'landfill', 'wastepicker', 'welder']) >= 3 ? 4 : 0, ['기계 소리가 멈추면', '{n}번 라인', '땀으로 지은 집', '야간 조의 노래', '안전모 아래의 얼굴']],
+    ['음식 에세이', (S) => jobYears(S, ['cook', 'chef']) >= 2 || S.hobbies.includes('cooking') ? 4 : 0, ['{city}의 부엌', '어머니의 레시피', '불 앞에서 보낸 {n}년', '{home}의 맛']],
+    ['길 위의 기록', (S) => jobYears(S, ['driver', 'rider', 'rickshaw', 'platform']) >= 2 ? 5 : 0, ['{city} 밤길 일지', '백만 킬로미터', '뒷좌석의 손님들', '신호가 바뀌기 전에']],
+    ['스포츠 소설', (S) => jobYears(S, ['athlete']) >= 1 || S.hobbies.includes('sport') ? 3 : 0, ['마지막 경기', '{n}번 유니폼', '결승선 너머', '벤치의 {season}']],
+    ['무대 에세이', (S) => jobYears(S, ['entertainer', 'artist']) >= 1 ? 4 : 0, ['무대 뒤의 시간', '캔버스의 여백', '앙코르', '조명이 꺼진 뒤']],
+    ['전쟁 소설', (S) => (S.flags.warZone || S.flags.refugee ? 5 : 0) + (jobYears(S, ['soldier']) >= 3 ? 4 : 0), ['국경의 겨울', '포성이 멎은 뒤', '참호에서 쓴 편지', '피란 열차', '고향을 떠나던 밤']],
+    ['이민 소설', (S) => (S.flags.migrantM !== undefined && E.iso(S) !== S.born.iso ? 6 : 0) + (jobYears(S, ['gulfmig']) >= 1 ? 3 : 0), ['{home}에서 온 편지', '두 개의 고향', '{city}에 내린 이방인', '경계에 선 사람', '{home} 사람, {country}에 살다']],
+    ['누아르·옥중 수기', (S) => (S.stats.jail ? 5 : 0) + (S.rap && S.rap.crime ? 3 : 0) + (jobYears(S, ['pickpocket', 'drugdealer', 'smuggler', 'phisher', 'loanshark', 'fence', 'gangster', 'hacker', 'poacher', 'forger', 'gamblingden', 'logger']) >= 1 ? 4 : 0), ['담장 안의 {n}년', '{city} 뒷골목', '밤의 거래', '다시 문을 나서며']],
+    ['투병기', (S) => ((S.stats.illnesses || 0) >= 3 ? 4 : 0), ['다시 살아가는 법', '병상에서 본 하늘', '{n}번째 항암', '아픈 몸으로 쓴 일기']],
+    ['애도 에세이', (S) => (S.fam.partner && S.fam.partner.alive === false ? 5 : 0), ['당신이 없는 계절', '{season}에 떠난 사람', '남겨진 식탁']],
+    ['육아 에세이', (S) => (H.kidsAged(S, 0, 12).length ? 3 : 0), ['아이가 자라는 동안', `${'{parent}'}가 처음이라서`, '잠든 아이 곁에서', '작은 손의 계절']],
+    ['여행기', (S) => (travels(S) >= 4 ? 4 : travels(S) >= 2 ? 1.5 : 0), ['{country} 밖으로 걷기', '여권에 찍힌 {n}개의 도장', '느린 기차를 타고', '지도 밖의 마을']],
+    ['모험 소설', (S) => (vl(S, 'risk') >= 65 ? 4 : 0), ['지도에 없는 섬', '폭풍 속으로', '끝없는 지평선', '마지막 탐험']],
+    ['영성 에세이', (S) => (vl(S, 'faith') >= 70 ? 4 : 0), ['{season}의 묵상', '기도하는 손', '침묵의 집', '작은 빛을 따라']],
+    ['가족 대하소설', (S) => (vl(S, 'trad') >= 68 ? 4 : 0), ['{fam}씨 가문 삼대', '오래된 집의 사람들', '{home}의 큰집', '족보에 없는 이름']],
+    ['사기극 스릴러', (S) => (vl(S, 'honest') <= 30 ? 4 : 0), ['완벽한 거짓말', '두 얼굴의 남자', '마지막 한탕', '속는 사람들']],
+    ['연애 소설', (S) => (H.charm(S) >= 65 ? 3 : 0) + (S.romance ? 1 : 0), ['{season}에 만난 사람', '두 번째 고백', '우리가 사랑한 {T2}', '헤어지는 중입니다']],
+    ['추리 소설', (S) => (S.st.smarts >= 72 ? 3 : 0), ['열세 번째 단서', '밀실의 {season}', '{city} 미스터리', '거꾸로 읽는 증언']],
+    ['청춘 소설', (S) => (E.age(S) < 26 ? 4 : 0), ['열일곱의 {T2}', '우리들의 {season}', '교실 창가의 오후', '졸업 전날']],
+    ['회고 에세이', (S) => (E.age(S) >= 60 ? 4 : 0), ['돌아보니 {season}', '{n}년을 살아 보니', '오래된 사진 한 장', '할 말이 남았다']],
+  ];
+  const fillTitle = (S, tpl) => tpl
+    .replace('{T1}', U.pick(T1)).replace('{T2}', U.pick(T2))
+    .replace('{city}', S.place.city || Wd.name(E.iso(S))).replace('{country}', Wd.name(E.iso(S))).replace('{home}', Wd.name(S.born.iso))
+    .replace('{season}', U.pick(SEASON)).replace('{n}', String(U.randInt(2, 12))).replace('{m}', String(U.randInt(1, 9)))
+    .replace('{year}', String(E.year(S) + U.randInt(30, 300))).replace('{fam}', S.name.family || S.name.given)
+    .replace('{parent}', S.sex === 'f' ? '엄마' : '아빠');
+  /** 이번 원고의 장르와 제목 */
+  Cr.bookIdea = (S) => {
+    const cand = THEMES.map(([g, w, T]) => [[g, T], Math.max(0, w(S) || 0)]).filter(([, w]) => w > 0);
+    // 같은 장르만 이어 쓰지 않도록 지난 책의 장르는 조금 덜
+    const lastG = S.books.length ? S.books[S.books.length - 1].g : null;
+    for (const c of cand) if (c[0][0] === lastG) c[1] *= 0.5;
+    for (let i = 0; i < 10; i++) {
+      const [g, T] = U.weighted(cand);
+      const t = fillTitle(S, U.pick(T));
+      if (!S.books.some((b) => b.t === t)) return { t, g };
     }
-    return `${U.pick(T1)} ${U.pick(T2)} ${S.books.length + 1}`;
+    return { t: `${U.pick(T1)} ${U.pick(T2)} ${S.books.length + 1}`, g: '소설' };
   };
+  Cr.bookTitle = (S) => Cr.bookIdea(S).t;
   /** 원고 완성도: 글솜씨 + 글 재능 + 그때의 운 */
   Cr.msQuality = (S) => U.clamp(0.55 * S.wskill + 0.45 * H.talent(S, 'art') + U.normal(0, 8), 1, 100);
   const msCtx = (S, ctx) => { if (ctx.q === undefined) ctx.q = Math.round(Cr.msQuality(S)); return ctx; };
@@ -12058,11 +12113,13 @@ const Cr = {};
     if (ot.t) total += [0, 1500, 6000, 20000, 120000][ot.t] * ot.f * Cr.officeScale(S) * Math.exp(U.normal(0, 0.35));
     total = Math.round(Math.max(50, Math.min(total, Cr.pool(lang, S).n * 0.02)));
     const per = Wd.workerMedian(E.iso(S)) * 0.000045; // 한 권당 인세(정가의 약 10%)
-    const b = { t: Cr.bookTitle(S), y: E.year(S), m: S.ageM, iso: E.iso(S), lang, total, sold: 0, per, q: Math.round(q), bestAt: Math.round(10000 * U.clamp(sm, 0.15, 3)), best: false };
+    const idea = Cr.bookIdea(S);
+    const b = { t: idea.t, g: idea.g, y: E.year(S), m: S.ageM, iso: E.iso(S), lang, total, sold: 0, per, q: Math.round(q), bestAt: Math.round(10000 * U.clamp(sm, 0.15, 3)), best: false };
     if (how === 'ghost') b.ghost = true;
     if (ot.t && how !== 'memoir') {
       b.t = U.pick(['다시, 우리 동네', '현장에 답이 있다', '사람이 먼저입니다', '내일을 여는 약속', '골목에서 배운 정치', '함께 걷는 길']) + ` — ${S.name.given}의 이야기`;
       b.pol = true;
+      b.g = '정치 에세이';
       // 출판기념회: 지지자가 모여 책을 사고 후원금을 낸다(현직일 때)
       if (ot.f === 1) {
         const fund = H.pay(S, [0, 2, 5, 10, 20][ot.t] * Math.exp(U.normal(0, 0.3)));
@@ -12094,9 +12151,9 @@ const Cr = {};
       const exp = U.fmtKo(Math.round(b.total * 0.3 / 100) * 100 || 100);
       const launch = b.launch ? ` 출판기념회에 지지자들이 몰려 책에 사인을 해 주었고, 후원금 ${fj(S, b.launch, '이')} 모였습니다.` : '';
       if (b.pol) return C.t(S, `${Cr.curTier(S) ? '현직 정치인' : '정치인 출신'}의 책이라 출판사가 선뜻 계약했습니다. ${bk(b.t, '이')} 나왔고, 계약금 ${fj(S, b.adv, '을')} 받았습니다. 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.${launch}`);
-      if (ctx.off || (first && inf >= 45)) return C.t(S, `출판사 여러 곳이 서로 내겠다고 나섰습니다. ${bk(b.t, '이')} 나왔고, 계약금 ${fj(S, b.adv, '을')} 받았습니다. 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.`);
-      if (first) return C.t(S, `출판사에서 책을 내자는 연락이 왔습니다! 첫 책 ${bk(b.t, '이')} 서점에 나왔습니다. {N은} 작가가 되었습니다. (계약금 ${fmt(S, b.adv)})`);
-      return C.t(S, `${S.books.length}번째 책 ${bk(b.t, '이')} 나왔습니다. 계약금 ${fj(S, b.adv, '을')} 받았고, 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.`);
+      if (ctx.off || (first && inf >= 45)) return C.t(S, `출판사 여러 곳이 서로 내겠다고 나섰습니다. ${bkg(b, '이')} 나왔고, 계약금 ${fj(S, b.adv, '을')} 받았습니다. 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.`);
+      if (first) return C.t(S, `출판사에서 책을 내자는 연락이 왔습니다! 첫 책 ${bkg(b, '이')} 서점에 나왔습니다. {N은} 작가가 되었습니다. (계약금 ${fmt(S, b.adv)})`);
+      return C.t(S, `${S.books.length}번째 책 ${bkg(b, '이')} 나왔습니다. 계약금 ${fj(S, b.adv, '을')} 받았고, 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.`);
     }
     S.cr.rej = (S.cr.rej || 0) + 1;
     if (best) { E.stat(S, 'happy', -2); return '편집자와 방향이 맞지 않아 이번 원고는 계약하지 않기로 했습니다.'; }
@@ -13677,7 +13734,7 @@ const Cr = {};
         trend: !st.on ? '쉬는 중' : g > 0.1 ? '늘어나는 중' : g < -0.05 ? '줄어드는 중' : '제자리', main: H.jobIs(S, 'streamer') };
     }
     const books = { n: S.books.length, sales: Math.round(S.cr.sold || 0), readers: Math.round(S.cr.readers || 0), royaltyYear: Math.round(S.cr.royaltyRate || 0),
-      list: S.books.map((b) => ({ t: b.t, y: b.y, sales: Math.round(b.sold), best: !!b.best })) };
+      list: S.books.map((b) => ({ t: b.g && b.g !== '소설' ? `${b.t} (${b.g})` : b.t, y: b.y, sales: Math.round(b.sold), best: !!b.best })) };
     const exp = Object.entries((S.work.exp && S.work.exp.j) || {}).filter(([, m]) => m >= 12).sort((a, b) => b[1] - a[1]).slice(0, 4)
       .map(([id, m]) => ({ ko: C.JOB[id] ? C.JOB[id].ko : id, years: Math.floor(m / 12) }));
     const honors = (S.honors || []).slice(-8).reverse().map((h) => ({ ko: `${h.ko} (${h.y})`, y: h.y, k: h.k }));
@@ -22897,7 +22954,7 @@ const Cm = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.21';
+E.VERSION = '0.3.22';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
