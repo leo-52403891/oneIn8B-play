@@ -2136,7 +2136,7 @@ C.DEC.buy = {
 
 C.DEC.startup = {
   title: () => '내 사업',
-  text: (S) => C.t(S, '모아 둔 돈으로 작은 사업을 시작해 볼 수 있을 것 같습니다. 새로 시작한 가게나 회사의 상당수는 몇 년 안에 문을 닫습니다.'),
+  text: (S) => C.t(S, `직원을 두고 가게나 회사를 차립니다. 모은 돈의 70%(약 ${Wd.money(E.iso(S), Math.max(0, S.money) * 0.7)})를 밑천으로 겁니다. 자리를 잡으면 사장이 되어 수입이 크게 늘지만, 새로 차린 가게·회사의 상당수는 몇 년 안에 문을 닫고 밑천을 잃습니다. 혼자 하는 작은 일은 '내 일 시작하기'로 시작할 수 있습니다.`),
   choices: (S) => {
     const p = U.clamp(0.3 + S.st.skill / 250 + (S.st.smarts - 50) / 300, 0.15, 0.7);
     return [
@@ -3798,6 +3798,7 @@ C.ACTIONS = [
   { id: 'raise', ko: '연봉 협상', cat: 'work', age: [18, 75], cd: 12, need: (S) => reason(H.ladder(S), S.work.job && (C.JOB[S.work.job.id] || {}).self || (S.work.job && S.work.job.id === 'entrepreneur') ? '내 일이라 연봉을 협상할 상대가 없습니다' : '회사에 정식으로 고용된 일자리에서만 할 수 있습니다'),
     run: (S) => { if (U.chance(U.clamp(0.3 + S.st.skill / 250, 0.1, 0.7))) { S.work.job.pay *= 1.08; return '연봉을 8% 올렸습니다.'; } E.stat(S, 'happy', -3); return '회사 사정이 어렵다는 대답만 들었습니다.'; } },
   { id: 'startup', ko: '창업하기', cat: 'work', age: [20, 70], cd: 24, need: (S) => reason(S.indep && H.money(S) >= 4, '모아 둔 돈이 더 필요합니다'),
+    hint: () => '직원을 두는 사업, 성공하면 사장', moneyNote: () => '모은 돈의 70%를 밑천으로 걺',
     run: (S) => { E.ask(S, 'startup', {}); return null; } },
   { id: 'invest', ko: '투자·재산 관리', cat: 'work', age: [18, 120], cd: 0, free: true, need: (S) => reason(S.indep, '독립한 뒤에 할 수 있습니다'),
     run: (S) => { E.ask(S, 'invest', {}); return null; } },
@@ -11942,12 +11943,12 @@ const Cr = {};
       if (F < Keff) {
         const r = (0.01 + 0.3 * Math.pow(ef, 1.3)) * (0.7 + H.charm(S) / 170) * Math.exp(U.normal(0, 0.25));
         F += r * F * (1 - F / Keff) + (F < 100 ? U.rand() * 3 * ef : 0);
-      } else F -= (F - Keff) * 0.0025; // 뜸해져도 구독을 끊는 사람은 많지 않다(조회수·수입이 먼저 준다)
-    } else F *= st.on ? 0.999 : 0.997; // 영상을 거의 올리지 않으면 한 해 1~3%씩 준다
+      } else F -= (F - Keff) * 0.001; // 뜸해져도 구독을 끊는 사람은 많지 않다(조회수·수입이 먼저 준다). 피드백 70번: 0.25% → 0.1%
+    } else F *= st.on ? 0.9995 : 0.998; // 영상을 거의 올리지 않으면 한 해 0.6~2.4%씩 준다(피드백 70번)
     st.fans = Math.round(U.clamp(F, 0, Cr.hardCap(st)));
     // 한 해에 한 번, 크게 줄었으면 이유를 남긴다
     if (S.ageM % 12 === 0) {
-      if (st.yPrev && st.fans < st.yPrev * 0.97 && st.yPrev >= 300) E.log(S, C.t(S, `영상이 뜸해져 구독자가 한 해 사이 ${Math.round((1 - st.fans / st.yPrev) * 100)}% 줄었습니다(${U.fmtKo(st.yPrev)}명 → ${U.fmtKo(st.fans)}명). 조회수와 방송 수입은 더 크게 줄었습니다.`), 'bad');
+      if (st.yPrev && st.fans < st.yPrev * 0.95 && st.yPrev >= 300) E.log(S, C.t(S, `영상이 뜸해져 구독자가 한 해 사이 ${Math.round((1 - st.fans / st.yPrev) * 100)}% 줄었습니다(${U.fmtKo(st.yPrev)}명 → ${U.fmtKo(st.fans)}명). 조회수와 방송 수입은 더 크게 줄었습니다.`), 'bad');
       st.yPrev = st.fans;
     }
     st.eff *= 0.9;
@@ -12337,7 +12338,7 @@ const Cr = {};
   };
   C.DEC.cr_selfStart = {
     title: () => '내 일 시작하기',
-    text: (S) => C.t(S, `회사에 들어가지 않고 스스로 시작할 수 있는 일입니다. 처음에는 수입이 적고 들쭉날쭉하며, 실력과 단골이 쌓이면 늘어납니다. 새로 시작한 일의 상당수는 몇 년 안에 접습니다.${S.work.job ? ` 지금 하는 ${S.work.job.title} 일은 그만두게 됩니다.` : ''}`),
+    text: (S) => C.t(S, `회사에 들어가지 않고 혼자 시작하는 일입니다(직원을 두고 가게·회사를 차리는 것은 '창업하기'). 처음에는 수입이 적고 들쭉날쭉하며, 실력과 단골이 쌓이면 늘어납니다. 새로 시작한 일의 상당수는 몇 년 안에 접습니다.${S.work.job ? ` 지금 하는 ${S.work.job.title} 일은 그만두게 됩니다.` : ''}`),
     choices: (S) => {
       const T = totInc(S), cj = S.work.job;
       const out = [];
@@ -12353,7 +12354,7 @@ const Cr = {};
         if (o.cost) sub += ` · 밑천 약 ${H.amt(S, o.cost)}`;
         out.push({ label: o.ko, sub, run: (S2) => Cr.startSelf(S2, o) });
       }
-      out.push({ label: '그만둔다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + 1; delete S2.actCd.selfstart; return null; } });
+      out.push({ label: '그만둔다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.selfstart); delete S2.actCd.selfstart; return null; } });
       return out;
     },
   };
@@ -12373,6 +12374,7 @@ const Cr = {};
   {
     const i = C.ACTIONS.findIndex((a) => a.id === 'jobhunt');
     const act = { id: 'selfstart', ko: '내 일 시작하기', cat: 'work', age: [15, 90], cd: 6,
+      hint: () => '혼자 하는 일(프리랜서·노점·작은 가게·농사 등)', moneyNote: () => '밑천은 고르는 일에 따라(적음)',
       need: (S) => (S.edu.stage !== null ? '학교를 마친 뒤에 할 수 있습니다' : true),
       run: (S) => { E.ask(S, 'cr_selfStart', {}); return null; } };
     if (!C.ACTION.selfstart) { C.ACTIONS.splice(i >= 0 ? i + 1 : C.ACTIONS.length, 0, act); C.ACTION.selfstart = act; }
@@ -12827,7 +12829,7 @@ const Cr = {};
         out.push({ label: `${title} 선거에 나간다`, sub: short ? `선거 비용 약 ${fj(S, e.cost, '이')} 필요합니다` : `당선 가능성 약 ${P(e.p)}%${w ? ` (${w})` : ''} · 선거 비용 약 ${fmt(S, e.cost)}${Cr.influence(S) >= 20 ? '(후원금으로 일부 충당)' : ''}`,
           disabled: short, run: (S2) => Cr.runElection(S2, t, e.p, e.cost, false) });
       }
-      out.push({ label: '이번에는 나가지 않는다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + 1; delete S2.actCd.election; return null; } });
+      out.push({ label: '이번에는 나가지 않는다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.election); delete S2.actCd.election; return null; } });
       return out;
     },
   };
@@ -13446,7 +13448,7 @@ const Cr = {};
         const job = Cr.makeSelf(S, so);
         out.push({ label: `${U.j(so.ko, '을')} 시작한다`, sub: `처음 한 해 약 ${fmt(S, job.pay)}${so.cost ? ` · 밑천 약 ${H.amt(S, so.cost)}` : ''}`, run: (S2) => Cr.startSelf(S2, so) });
       }
-      out.push({ label: '그만둔다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + 1; delete S2.actCd.rework; return null; } });
+      out.push({ label: '그만둔다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.rework); delete S2.actCd.rework; return null; } });
       return out;
     },
   };
@@ -22692,7 +22694,7 @@ const Cm = {};
       { l: '거절한다', typ: true, t: '거절했습니다. 구독자들을 속일 수는 없었습니다.', fx: { happy: 1 }, val: { honest: 2, rep: 1 } },
       { l: '광고한다', p: 0.6,
         ok: { t: '광고비가 들어왔습니다. 구독자 몇 명의 항의 글이 마음에 걸립니다.', val: { honest: -3 }, run: (S) => { earn(S, 2, 'side'); } },
-        no: { t: '제품 부작용 기사가 나며 구독자 항의가 빗발쳤습니다.', fx: { happy: -6 }, val: { honest: -3, rep: -5 }, run: (S) => { earn(S, 2, 'side'); fans(S, 0.85); } } },
+        no: { t: '제품 부작용 기사가 나며 구독자 항의가 빗발쳤습니다.', fx: { happy: -6 }, val: { honest: -3, rep: -5 }, run: (S) => { earn(S, 2, 'side'); fans(S, 0.93); } } },
       { l: '직접 써 보고 솔직하게 리뷰한다', p: 0.5,
         ok: { t: '솔직한 리뷰에 구독자들이 박수를 쳤습니다.', fx: { happy: 4 }, run: (S) => { earn(S, 0.8, 'side'); fans(S, 1.05); } },
         no: { t: '솔직한 리뷰에 회사가 광고비를 깎았습니다.', fx: { happy: -1 }, run: (S) => { earn(S, 0.3, 'side'); } } },
@@ -22862,7 +22864,7 @@ const Cm = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.19';
+E.VERSION = '0.3.20';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
@@ -24826,7 +24828,7 @@ UI.actHTML = (S) => {
       const ok = st === true;
       const hint = st === true && a.hint ? a.hint(S) + ' · ' : '';
       // 기회 수와 돈을 함께 적는다(피드백 63번: '비용 없음'이 기회도 안 쓰는 것처럼 읽힘)
-      const sub = st !== true ? st : a.free ? '기회를 쓰지 않습니다' : `기회 ${w}번 · ` + hint + (cost > 0 ? `돈 ${H.amt(S, cost)}` : '돈은 들지 않음');
+      const sub = st !== true ? st : a.free ? '기회를 쓰지 않습니다' : `기회 ${w}번 · ` + hint + (a.moneyNote ? a.moneyNote(S) : cost > 0 ? `돈 ${H.amt(S, cost)}` : '돈은 들지 않음');
       const wTag = w > 1 ? `<span class="apw" aria-label="기회 ${w}번">${'●'.repeat(w)}</span>` : '';
       html += `<button class="act" data-act="${a.id}" aria-disabled="${!ok}"><b>${esc(a.koS ? a.koS(S) : a.ko)}${wTag}</b><small>${esc(sub)}</small></button>`;
     }
