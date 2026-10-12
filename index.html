@@ -273,6 +273,10 @@ h1, h2, h3 { text-wrap: balance; }
 .recent-h { font: 500 12px var(--f-mono); color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
 .recent .log li { font-size: 13px; padding: 5px 0 5px 18px; }
 .recent .log li:last-child { border-bottom: 0; }
+/* 인생 탭이 아닐 때 화면 위에 붙어 있는 최근 기록(피드백 2·40번) */
+.recent.sticky { position: sticky; top: var(--tb-h, 64px); z-index: 4; margin: 6px 0 4px; box-shadow: var(--shadow); max-height: 38vh; overflow: hidden; }
+.recent.sticky .log li { padding: 3px 0 3px 18px; font-size: 12.5px; }
+.recent.sticky .log li::before { top: 10px; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .tbl td { padding: 4px 0; border-bottom: 1px dotted var(--line); vertical-align: top; }
 .tbl td:last-child { text-align: right; font-family: var(--f-mono); white-space: nowrap; padding-left: 10px; }
@@ -378,6 +382,7 @@ h1, h2, h3 { text-wrap: balance; }
       <div class="ctl-row" id="row-life"><span class="ctl-label">씀씀이</span><div class="chips" id="p-life"></div></div>
       <div class="ctl-row"><span class="ctl-label">취미</span><div class="chips" id="p-hobby"></div></div>
     </div>
+    <div class="recent sticky" id="p-recent" hidden aria-live="polite"></div>
     <div class="panel" id="panel-log"><ol class="log" id="p-log" reversed></ol></div>
     <div class="panel" id="panel-act" hidden></div>
     <div class="panel" id="panel-fam" hidden></div>
@@ -16956,7 +16961,7 @@ const Pr = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.1';
+E.VERSION = '0.3.2';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
@@ -18406,7 +18411,7 @@ UI.render = (full) => {
   badge.textContent = S.ap;
   // 능력치
   const st = S.st;
-  const bars = [['건강', 'health'], ['지식', 'smarts'], ['행복', 'happy'], ['관계', 'social'], ['경력', 'skill'], ['매력', 'charm'], ['운', 'luck']];
+  const bars = [['건강', 'health'], ['지식', 'smarts'], ['행복', 'happy'], ['관계', 'social'], ['매력', 'charm'], ['운', 'luck'], ['경력', 'skill']];
   if (full || !$('#p-stats').children.length) {
     $('#p-stats').innerHTML = bars.map(([ko, k]) => `<div class="stat"><span>${ko}</span><div class="bar"><i id="sb-${k}" style="background:var(--c-${k})"></i></div><span class="v" id="sv-${k}"></span></div>`).join('');
   }
@@ -18426,6 +18431,7 @@ UI.render = (full) => {
   }
   UI.renderControls(full);
   UI.renderLog(full);
+  UI.renderRecent();
   const now = performance.now();
   if (UI.tab !== 'log' && (full || now - UI.lastPanel > 1500)) { UI.lastPanel = now; UI.renderPanel(); }
 };
@@ -18476,6 +18482,8 @@ UI.setTab = (t) => {
   UI.tab = t;
   for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === t));
   for (const p of ['log', 'act', 'fam', 'money', 'country']) $('#panel-' + p).hidden = p !== t;
+  UI._recentLast = undefined;
+  UI.renderRecent();
   if (t !== 'log') UI.renderPanel();
 };
 
@@ -18890,7 +18898,7 @@ UI.actHTML = (S) => {
   const ap = S.ap || 0, max = C.apCap(S);
   if (max === 0) return '<div class="card"><h3>할 일</h3><p class="src">여섯 살부터 스스로 할 일을 고를 수 있어요. 지금은 부모님 품에서 자라는 중입니다.</p></div>';
   const pips = Array.from({ length: max }, (_, i) => `<i class="${i < ap ? 'on' : ''}"></i>`).join('');
-  let html = UI.recentHTML(S) + `<div class="ap"><div><b>지금 쓸 수 있는 기회 ${ap}번</b><div class="src" style="margin:2px 0 0">${C.apEvery(S) === 3 ? '석 달' : C.apEvery(S) === 6 ? '여섯 달' : '1년'}마다 1번씩 생기고 ${max}번까지 모아 둘 수 있습니다.${ap < max ? ` 다음 기회까지 ${C.apNext(S)}달.` : ' 더 모이지 않으니 써 보세요.'} 시간은 계속 흐릅니다.</div></div><div class="pips">${pips}</div></div>`;
+  let html = `<div class="ap"><div><b>지금 쓸 수 있는 기회 ${ap}번</b><div class="src" style="margin:2px 0 0">${C.apEvery(S) === 3 ? '석 달' : C.apEvery(S) === 6 ? '여섯 달' : '1년'}마다 1번씩 생기고 ${max}번까지 모아 둘 수 있습니다.${ap < max ? ` 다음 기회까지 ${C.apNext(S)}달.` : ' 더 모이지 않으니 써 보세요.'} 시간은 계속 흐릅니다.</div></div><div class="pips">${pips}</div></div>`;
   for (const [cat, ko] of C.ACT_CATS) {
     const list = C.ACTIONS.filter((a) => a.cat === cat && E.age(S) >= a.age[0] - 0.01 && E.age(S) <= a.age[1] && (!a.where || a.where(S)));
     if (!list.length) continue;
@@ -18907,17 +18915,31 @@ UI.actHTML = (S) => {
   }
   return html;
 };
-/** '할 일' 위에 늘 보이는 최근 인생 기록(새 줄은 반짝인다) */
-UI.recentHTML = (S) => {
+/** 인생 탭이 아닐 때 화면 위에 붙어 있는 최근 기록 */
+UI.renderRecent = () => {
+  const el = $('#p-recent'), S = UI.S;
+  if (!el || !S) return;
+  const on = UI.tab !== 'log' && UI.screen === 'play';
+  el.hidden = !on;
+  if (!on) return;
+  const tb = $('.topbar');
+  if (tb) { const h = tb.offsetHeight; if (h && h !== UI._tbh) { UI._tbh = h; document.documentElement.style.setProperty('--tb-h', h + 'px'); } }
+  const last = S.log[S.log.length - 1];
+  if (last === UI._recentLast && el.innerHTML) return;
+  el.innerHTML = UI.recentHTML(S, 3, true);
+};
+/** 최근 인생 기록(새 줄은 반짝인다) */
+UI.recentHTML = (S, n = 4, inner) => {
   const list = [];
-  for (let i = S.log.length - 1; i >= 0 && list.length < 4; i--) if (S.log[i].k !== 'year') list.push(S.log[i]);
-  let fresh = UI._actLast !== undefined;
+  for (let i = S.log.length - 1; i >= 0 && list.length < n; i--) if (S.log[i].k !== 'year') list.push(S.log[i]);
+  let fresh = UI._recentLast !== undefined;
   const li = list.map((e) => {
-    if (e === UI._actLast) fresh = false;
+    if (e === UI._recentLast) fresh = false;
     return `<li class="${e.k}${fresh ? ' fresh' : ''}">${esc(e.t)}</li>`;
   }).join('');
-  UI._actLast = S.log[S.log.length - 1];
-  return `<div class="recent"><div class="recent-h"><span>${E.year(S)}년 · ${UI.ageText(S)}</span><span>최근 기록</span></div><ol class="log small">${li || '<li>아직 기록이 없습니다.</li>'}</ol></div>`;
+  UI._recentLast = S.log[S.log.length - 1];
+  const body = `<div class="recent-h"><span>${E.year(S)}년 · ${UI.ageText(S)}</span><span>최근 기록</span></div><ol class="log small">${li || '<li>아직 기록이 없습니다.</li>'}</ol>`;
+  return inner ? body : `<div class="recent">${body}</div>`;
 };
 UI.doAct = (id) => {
   const S = UI.S;
@@ -19005,7 +19027,7 @@ UI.moreHTML = (S) => {
 };
 
 /* ================================================================ 인생 그래프(피드백 6번) */
-UI.GSTAT = [['건강', 'h', '--c-health'], ['지식', 'sm', '--c-smarts'], ['행복', 'hp', '--c-happy'], ['관계', 'so', '--c-social'], ['경력', 'sk', '--c-skill'], ['매력', 'ch', '--c-charm'], ['운', 'lk', '--c-luck']];
+UI.GSTAT = [['건강', 'h', '--c-health'], ['지식', 'sm', '--c-smarts'], ['행복', 'hp', '--c-happy'], ['관계', 'so', '--c-social'], ['매력', 'ch', '--c-charm'], ['운', 'lk', '--c-luck'], ['경력', 'sk', '--c-skill']];
 /** 기록 중 그래프에 점으로 찍을 큰 사건 */
 UI.marksOf = (S) => S.log.filter((e) => e.k === 'milestone' || e.k === 'death'
   || (e.k === 'good' && /결혼|태어났|승진|합격|당첨|물려받|데뷔|당선|작가|출간|창업|사장|장만|갚았|귀화|업적/.test(e.t))
