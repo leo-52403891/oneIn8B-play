@@ -1638,7 +1638,7 @@ C.DEC.noSchool = {
     const lit = Math.max(S.fam.father.edu, S.fam.mother.edu) >= 1;
     const rs = S.rel === 'mus' ? '꾸란 학교(마드라사)' : S.rel === 'chr' ? '교회 주일학교' : S.rel === 'bud' ? '사원 학교' : null;
     const out = [];
-    if (lit) out.push({ label: '부모님께 글을 배운다', sub: '지식 +', run: (S) => { E.stat(S, 'smarts', 7); S.flags.literate = true; return C.t(S, '저녁마다 부모님께 글자를 배웠습니다.'); } });
+    if (lit && (S.fam.father.alive || S.fam.mother.alive)) out.push({ label: `${C.elders(S)}께 글을 배운다`, sub: '지식 +', run: (S) => { E.stat(S, 'smarts', 7); S.flags.literate = true; return C.t(S, `저녁마다 ${C.elders(S)}께 글자를 배웠습니다.`); } });
     if (rs) out.push({ label: `${rs}에 다닌다`, sub: '지식 +, 관계 +', run: (S) => { E.stat(S, 'smarts', 4); E.stat(S, 'social', 4); S.flags.literate = true; return C.t(S, `${rs}에서 글과 경전을 배웠습니다.`); } });
     out.push({ label: S.place.urban ? '집안일과 가족의 일을 돕는다' : '집안일과 농사를 돕는다', sub: '가족 형편 조금 나아짐', run: (S) => { S.work.helping = true; S.fam.cons *= 1.03; E.stat(S, 'happy', -3); return C.t(S, '{N은} 어린 나이에 가족의 일손이 되었습니다.'); } });
     return out;
