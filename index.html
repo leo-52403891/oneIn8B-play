@@ -8449,7 +8449,7 @@ C.metaAch = (lives) => {
       fx: { happy: 8, social: 2 },
     },
     {
-      id: 'o_gkraising', age: [52, 110], rate: (S) => (S.flags.o_raiseGk ? 0.3 : 0), cd: 3,
+      id: 'o_gkraising', age: [52, 110], rate: (S) => (S.flags.o_raiseGk && (S.fam.grandkids || 0) > 0 ? 0.3 : 0), cd: 3,
       text: (S) => [`손주 학교 학부모 모임에 간 ${gm(S)}는 {N}뿐이었습니다.`, '손주 숙제를 봐 주다 둘이 함께 머리를 싸맸습니다.', '손주가 아플 때마다 밤을 새웠습니다. 다시 엄마 아빠가 된 것 같습니다.'],
       fx: { happy: 2, health: -1 },
     },
