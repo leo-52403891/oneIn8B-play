@@ -17050,6 +17050,11 @@ const Pr = {};
     cook: { ko: '요리 솜씨', talent: 'art', hobbies: ['cooking'] },
     mind: { ko: '두뇌 겨루기', talent: 'study', hobbies: ['chess', 'games', 'reading'] },
   };
+  /** 실력이 쓰이는 곳(연습 고르기 창에 보여 줌, 피드백 67번) */
+  Pr.USE = {
+    music: '오디션', perform: '오디션', sport: '프로 입단 테스트·대회', art: '그림·공예 대회', cook: '요리 대회, 요리하는 일(식당 열기·셰프)',
+    mind: '체스·바둑·퀴즈 대회, 학생 경시대회, 퀴즈 프로그램(공부와 달리 지식은 조금만 오름)',
+  };
   const HOBBY_KIND = {};
   for (const [k, d] of Object.entries(Pr.KINDS)) for (const h of d.hobbies) HOBBY_KIND[h] = k;
   Pr.kindOfHobby = (h) => HOBBY_KIND[h] || null;
@@ -17097,13 +17102,14 @@ const Pr = {};
     title: (S, ctx) => (ctx.lesson ? '무엇을 배울까요?' : '무엇을 연습할까요?'),
     text: (S, ctx) => C.t(S, `꾸준히 하면 실력이 쌓입니다. 타고난 재능이 높을수록 빨리 늘지만, 재능만으로는 오디션·입단 테스트·대회를 통과하기 어렵습니다.${ctx.lesson ? ' 레슨은 혼자 하는 연습보다 많이 늡니다.' : ''}`),
     choices: (S, ctx) => pickKinds(S).map(([k, d]) => ({
-      label: d.ko, sub: `지금 실력 ${Math.round(Pr.lvl(S, k))}${S.talentSeen && S.talentSeen[d.talent] ? ` · ${C.TALENT_KO[d.talent]} 재능 ${Math.round(H.talent(S, d.talent))}` : ''}`,
+      label: d.ko, sub: `지금 실력 ${Math.round(Pr.lvl(S, k))}${S.talentSeen && S.talentSeen[d.talent] ? ` · ${C.TALENT_KO[d.talent]} 재능 ${Math.round(H.talent(S, d.talent))}` : ''} · 쓰이는 곳: ${Pr.USE[k]}`,
       run: (S) => {
         const before = Pr.lvl(S, k);
         Pr.gain(S, k, ctx.lesson ? 10 : 6);
         E.stat(S, 'happy', 1);
         if (k === 'sport') E.stat(S, 'health', 1);
         if (k === 'perform' || k === 'music') { S.boost.charm = Math.min(10, (S.boost.charm || 0) + 1); }
+        if (k === 'mind') E.stat(S, 'smarts', ctx.lesson ? 1 : 0.5); // 수를 읽고 따지는 연습: 공부(+2)보다 조금
         const t = ctx.lesson ? `${d.ko} 레슨을 꾸준히 받았습니다.` : U.pick([`${U.j(d.ko, '을')} 매일 조금씩 연습했습니다.`, `${d.ko} 연습에 주말을 다 썼습니다.`, `잘 안 되던 부분을 될 때까지 되풀이했습니다.`]);
         return C.t(S, `${t} (${d.ko} ${Math.round(before)} → ${Math.round(Pr.lvl(S, k))})`);
       },
@@ -17175,7 +17181,9 @@ const Pr = {};
   if (C.ACTION.contest) {
     const run0 = C.ACTION.contest.run;
     C.ACTION.contest.run = (S) => {
-      const h = U.pick(S.hobbies);
+      // 실력을 쌓아 온 취미로 나간다(피드백 67번: 예전에는 취미 중 아무거나)
+      const ranked = S.hobbies.filter((x) => HOBBY_KIND[x]).sort((a, b) => Pr.eff(S, HOBBY_KIND[b]) - Pr.eff(S, HOBBY_KIND[a]));
+      const h = ranked.length ? ranked[0] : U.pick(S.hobbies);
       const k = HOBBY_KIND[h];
       if (!k) return run0(S);
       const prev = (S.honors || []).filter((x) => x.k === 'contest' && x.h === h).length;
@@ -17193,6 +17201,35 @@ const Pr = {};
       return `${name} ${lk} 대회에 나갔습니다. 상은 못 받았지만 즐거웠습니다. (${why(S, k)})`;
     };
   }
+
+  /* 두뇌 겨루기 실력이 쓰이는 사건(피드백 67번) */
+  C.addEvents([
+    {
+      id: 'pr_olympiad', age: [10, 18.9], cd: 2, when: (S) => H.student(S),
+      rate: (S) => (Pr.eff(S, 'mind') >= 50 ? 0.12 + (Pr.eff(S, 'mind') - 50) / 150 : 0),
+      title: '경시대회', text: '담임 선생님이 수학·과학 경시대회에 학교 대표로 나가 보라고 권했습니다. 수를 읽고 따지는 데 소질이 있다는 것입니다.',
+      choices: [
+        { l: '나가 본다', typ: true, p: (S) => U.clamp(sig((Pr.eff(S, 'mind') - 62) / 6) + luck(S), 0.03, 0.9),
+          ok: { t: (S) => `경시대회에서 상을 받았습니다! 상장이 집 벽에 걸렸습니다. (${why(S, 'mind')})`, fx: { smarts: 3, happy: 6 },
+            run: (S) => { H.fameUp(S, 1); Pr.gain(S, 'mind', 2); if (typeof Cr !== 'undefined' && Cr.honor) Cr.honor(S, 'contest', '경시대회 수상'); } },
+          no: { t: (S) => `본선까지 갔지만 상은 받지 못했습니다. 문제를 푸는 동안 시간 가는 줄 몰랐습니다. (${why(S, 'mind')})`, fx: { smarts: 1, happy: -1 }, run: (S) => { Pr.gain(S, 'mind', 1.5); } } },
+        { l: '시험 공부에 집중하겠다며 사양한다', t: '대회 대신 다가오는 시험을 준비했습니다.', fx: { smarts: 1 } },
+      ],
+    },
+    {
+      id: 'pr_quiz', age: [18, 75], cd: 5,
+      rate: (S) => (H.dev(S) >= 1 && Pr.eff(S, 'mind') >= 58 ? 0.04 + (Pr.eff(S, 'mind') - 58) / 300 : 0),
+      title: '퀴즈 프로그램', text: '아는 것이 많다는 소문을 들은 방송국에서 퀴즈 프로그램에 나와 달라고 합니다. 끝까지 이기면 상금이 큽니다.',
+      choices: [
+        { l: '출연한다', p: (S) => U.clamp(sig((Pr.eff(S, 'mind') - 68) / 6) * 0.85 + luck(S), 0.03, 0.85),
+          ok: { t: (S) => `마지막 문제까지 맞히고 우승했습니다! 상금을 받았고, 길에서 알아보는 사람이 생겼습니다. (${why(S, 'mind')})`, fx: { happy: 8 },
+            run: (S) => { const m = U.randInt(3, 18); if (typeof Ec !== 'undefined' && Ec.earn) Ec.earn(S, 'gig', H.pay(S, m)); else E.addMoney(S, H.pay(S, m)); H.fameUp(S, 4); if (typeof Cr !== 'undefined' && Cr.honor) Cr.honor(S, 'contest', '퀴즈 프로그램 우승'); } },
+          no: { t: (S) => `중간에 한 문제를 놓쳐 떨어졌습니다. 그래도 출연료를 받았고 꽤 화제가 되었습니다. (${why(S, 'mind')})`, fx: { happy: -1 },
+            run: (S) => { if (typeof Ec !== 'undefined' && Ec.earn) Ec.earn(S, 'gig', H.pay(S, 0.3)); H.fameUp(S, 1); } } },
+        { l: '카메라 앞은 부담스러워 사양한다', typ: true, t: '정중히 사양했습니다.' },
+      ],
+    },
+  ]);
 
   /** 화면용: 실력 */
   Pr.view = (S) => Object.entries(Pr.KINDS).map(([k, d]) => ({ k, ko: d.ko, v: Pr.lvl(S, k), talent: S.talentSeen && S.talentSeen[d.talent] ? Math.round(H.talent(S, d.talent)) : null })).filter((x) => x.v >= 1);
@@ -22713,7 +22750,7 @@ const Cm = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.16';
+E.VERSION = '0.3.17';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
