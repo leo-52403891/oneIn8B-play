@@ -16784,6 +16784,171 @@ const St = {};
   St.layoffF = (S) => U.clamp(1 - (S.power || 0) / 150, 0.4, 1) * (St.rep(S) < 30 ? 1.3 : 1);
 })();
 
+/* 80억분의 1 — 노력으로 쌓는 실력 (피드백 39번)
+ * 예전: 오디션·프로 입단 테스트·취미 대회가 '타고난 재능'만 보고 정해져, 노력할 방법이 없었다.
+ * 지금: 연습·레슨·취미로 실력(S.prac)이 쌓이고, 재능은 느는 속도를 정한다.
+ *       합격·수상은 재능 + 실력 + 매력(무대)·건강(운동) + 운으로 정하고, 이유를 보여 준다.
+ */
+'use strict';
+
+const Pr = {};
+(() => {
+  Pr.KINDS = {
+    music: { ko: '노래·악기', talent: 'music', hobbies: ['music'] },
+    perform: { ko: '춤·연기', talent: 'charm', hobbies: ['dance', 'drama'] },
+    sport: { ko: '운동 실력', talent: 'sport', hobbies: ['sport', 'running', 'gym'] },
+    art: { ko: '그림·만들기', talent: 'art', hobbies: ['drawing', 'crafts'] },
+    cook: { ko: '요리 솜씨', talent: 'art', hobbies: ['cooking'] },
+    mind: { ko: '두뇌 겨루기', talent: 'study', hobbies: ['chess', 'games', 'reading'] },
+  };
+  const HOBBY_KIND = {};
+  for (const [k, d] of Object.entries(Pr.KINDS)) for (const h of d.hobbies) HOBBY_KIND[h] = k;
+  Pr.kindOfHobby = (h) => HOBBY_KIND[h] || null;
+  Pr.lvl = (S, k) => (S.prac && S.prac[k]) || 0;
+  /** 재능이 높을수록 같은 노력에 더 빨리 는다(0.5~1.5배) */
+  Pr.tf = (S, k) => 0.5 + H.talent(S, Pr.KINDS[k].talent) / 100;
+  /** 노력한 만큼 오른다(높을수록 더디게) */
+  Pr.gain = (S, k, amt) => {
+    S.prac = S.prac || {};
+    const v = Pr.lvl(S, k);
+    const d = amt * Pr.tf(S, k) * Math.max(0.04, 1 - v / 105);
+    S.prac[k] = U.clamp(v + d, 0, 100);
+    return d;
+  };
+  /** 실제로 발휘되는 실력: 재능 45% + 실력 40% + 무대에서는 매력, 운동은 건강 15% */
+  Pr.eff = (S, k) => {
+    const t = H.talent(S, Pr.KINDS[k].talent), p = Pr.lvl(S, k);
+    const extra = k === 'sport' ? S.st.health : k === 'music' || k === 'perform' ? H.charm(S) : k === 'mind' ? S.st.smarts : S.st.skill + 20;
+    return 0.45 * t + 0.4 * p + 0.15 * extra;
+  };
+  const sig = (x) => 1 / (1 + Math.exp(-x));
+  const luck = (S) => (E.luckP ? E.luckP(S) : 0);
+
+  E.hook('ensure', (S) => {
+    if (!S.prac) {
+      S.prac = {};
+      // 예전 저장: 오래 해 온 취미만큼 조금 쌓아 둔다
+      for (const h of S.hobbies || []) { const k = HOBBY_KIND[h]; if (k) S.prac[k] = Math.min(30, (S.prac[k] || 0) + Math.max(0, E.age(S) - 8) * 1.2); }
+    }
+  });
+  // 매달: 취미로 조금씩 늘고, 손을 놓으면 조금씩 녹슨다(운동은 나이 들면 더)
+  E.hook('month', (S) => {
+    const a = E.age(S);
+    if (a < 4) return;
+    const on = new Set((S.hobbies || []).map((h) => HOBBY_KIND[h]).filter(Boolean));
+    for (const k of Object.keys(Pr.KINDS)) {
+      if (on.has(k)) Pr.gain(S, k, a < 10 ? 0.18 : 0.25);
+      else if (Pr.lvl(S, k) > 0) S.prac[k] = Math.max(0, S.prac[k] - (k === 'sport' && a > 30 ? 0.12 : 0.04));
+    }
+  });
+
+  // 할 일: 연습하기(기회 1번), 레슨 받기(돈이 들지만 더 많이)
+  const pickKinds = (S) => Object.entries(Pr.KINDS).map(([k, d]) => [k, d]);
+  C.DEC.practicePick = {
+    title: (S, ctx) => (ctx.lesson ? '무엇을 배울까요?' : '무엇을 연습할까요?'),
+    text: (S, ctx) => C.t(S, `꾸준히 하면 실력이 쌓입니다. 타고난 재능이 높을수록 빨리 늘지만, 재능만으로는 오디션·입단 테스트·대회를 통과하기 어렵습니다.${ctx.lesson ? ' 레슨은 혼자 하는 연습보다 많이 늡니다.' : ''}`),
+    choices: (S, ctx) => pickKinds(S).map(([k, d]) => ({
+      label: d.ko, sub: `지금 실력 ${Math.round(Pr.lvl(S, k))}${S.talentSeen && S.talentSeen[d.talent] ? ` · ${C.TALENT_KO[d.talent]} 재능 ${Math.round(H.talent(S, d.talent))}` : ''}`,
+      run: (S) => {
+        const before = Pr.lvl(S, k);
+        Pr.gain(S, k, ctx.lesson ? 10 : 6);
+        E.stat(S, 'happy', 1);
+        if (k === 'sport') E.stat(S, 'health', 1);
+        if (k === 'perform' || k === 'music') { S.boost.charm = Math.min(10, (S.boost.charm || 0) + 1); }
+        const t = ctx.lesson ? `${d.ko} 레슨을 꾸준히 받았습니다.` : U.pick([`${U.j(d.ko, '을')} 매일 조금씩 연습했습니다.`, `${d.ko} 연습에 주말을 다 썼습니다.`, `잘 안 되던 부분을 될 때까지 되풀이했습니다.`]);
+        return C.t(S, `${t} (${d.ko} ${Math.round(before)} → ${Math.round(Pr.lvl(S, k))})`);
+      },
+    })),
+  };
+  const addAct = (a, after) => {
+    if (C.ACTION[a.id]) return;
+    const i = C.ACTIONS.findIndex((x) => x.id === after);
+    C.ACTIONS.splice(i >= 0 ? i + 1 : C.ACTIONS.length, 0, a);
+    C.ACTION[a.id] = a;
+  };
+  addAct({ id: 'practice', ko: '연습하기', cat: 'dream', age: [6, 120], cd: 2, run: (S) => { E.ask(S, 'practicePick', {}); return null; } }, 'tryout');
+  addAct({ id: 'lesson', ko: '레슨 받기', cat: 'dream', age: [6, 120], cd: 4, cost: 0.4, run: (S) => { E.ask(S, 'practicePick', { lesson: true }); return null; } }, 'practice');
+
+  /** 합격 가능성과 이유 */
+  Pr.audition = (S) => {
+    const k = Pr.eff(S, 'music') >= Pr.eff(S, 'perform') ? 'music' : 'perform';
+    const eff = Pr.eff(S, k);
+    const inf = typeof Cr !== 'undefined' && Cr.influence ? Cr.influence(S) : 0;
+    const p = U.clamp(sig((eff - 72) / 6) * 0.75 + U.clamp((inf - 25) / 150, 0, 0.35) + luck(S), 0.002, 0.9);
+    return { k, eff, inf, p };
+  };
+  Pr.tryout = (S) => {
+    const eff = Pr.eff(S, 'sport');
+    return { eff, p: U.clamp(sig((eff - 73) / 5) * 0.8 + luck(S), 0.002, 0.9) };
+  };
+  const why = (S, k) => {
+    const d = Pr.KINDS[k], t = H.talent(S, d.talent), p = Pr.lvl(S, k);
+    const parts = [`실력 ${Math.round(p)}`];
+    if (S.talentSeen && S.talentSeen[d.talent]) parts.push(`${C.TALENT_KO[d.talent]} 재능 ${Math.round(t)}`);
+    if (k === 'sport') parts.push(`건강 ${Math.round(S.st.health)}`);
+    if (k === 'music' || k === 'perform') parts.push(`매력 ${Math.round(H.charm(S))}`);
+    return parts.join(' · ');
+  };
+
+  // 오디션: 재능 + 실력 + 매력 + 운 + 이름값
+  C.ACTION.audition.hint = (S) => { const r = Pr.audition(S); return `합격 가능성 약 ${Math.max(1, Math.round(r.p * 100))}%`; };
+  C.ACTION.audition.run = (S) => {
+    const r = Pr.audition(S), d = Pr.KINDS[r.k];
+    H.reveal(S, d.talent);
+    Pr.gain(S, r.k, 2); // 무대에 서 본 경험
+    if (U.chance(r.p)) {
+      H.setJob(S, 'entertainer', 12 * Math.exp(U.normal(0.6, 1.2)) * (1 + r.inf / 100));
+      S.work.job.title = r.k === 'music' ? U.pick(['가수', '연주자', '가수']) : U.pick(['배우', '방송인', '댄서']);
+      H.fameUp(S, 15); E.stat(S, 'happy', 15); H.ach(S, 'star_debut');
+      if (typeof Cr !== 'undefined' && Cr.honor) Cr.honor(S, 'audition', '오디션 합격');
+      return `${r.inf >= 40 ? '이미 이름이 알려진 덕도 있었지만, ' : ''}그동안 갈고닦은 ${U.j(d.ko, '이')} 빛을 봤습니다. 오디션에 합격해 ${U.j(S.work.job.title, '으로')} 데뷔했습니다! (${why(S, r.k)})`;
+    }
+    E.stat(S, 'happy', -5);
+    const near = r.p >= 0.2;
+    return `${near ? '최종 심사까지 올라갔지만 아깝게 떨어졌습니다.' : U.pick(['오디션에서 떨어졌습니다. 심사위원이 "아직은"이라고 했습니다.', '수천 명 가운데 1차에서 떨어졌습니다.'])} 심사평: ${Pr.lvl(S, r.k) < 40 ? '연습이 더 필요해 보입니다' : '조금만 더 다듬으면 됩니다'}. (${why(S, r.k)})`;
+  };
+  // 프로 입단 테스트: 운동 재능 + 운동 실력 + 건강 + 운
+  C.ACTION.tryout.hint = (S) => `합격 가능성 약 ${Math.max(1, Math.round(Pr.tryout(S).p * 100))}%`;
+  C.ACTION.tryout.run = (S) => {
+    const r = Pr.tryout(S);
+    H.reveal(S, 'sport');
+    Pr.gain(S, 'sport', 2);
+    if (U.chance(r.p)) {
+      H.setJob(S, 'athlete', 12 * Math.exp(U.normal(1.1, 1.0)));
+      S.work.job.title = `프로 ${C.ctx(S).sport} 선수`;
+      H.fameUp(S, 12); E.stat(S, 'happy', 15); H.ach(S, 'pro_athlete');
+      return C.t(S, `{N은} 프로 입단 테스트에 합격했습니다! 땀 흘린 시간이 결과로 돌아왔습니다. (${why(S, 'sport')})`);
+    }
+    E.stat(S, 'happy', -6);
+    return `입단 테스트에서 떨어졌습니다. ${Pr.lvl(S, 'sport') < 50 ? '감독이 기본기를 더 다지고 오라고 했습니다.' : '감독이 아깝다며 다음을 기약하자고 했습니다.'} (${why(S, 'sport')})`;
+  };
+  // 취미 대회: 그 취미의 실력이 핵심
+  if (C.ACTION.contest) {
+    const run0 = C.ACTION.contest.run;
+    C.ACTION.contest.run = (S) => {
+      const h = U.pick(S.hobbies);
+      const k = HOBBY_KIND[h];
+      if (!k) return run0(S);
+      const prev = (S.honors || []).filter((x) => x.k === 'contest' && x.h === h).length;
+      const lvl = prev >= 4 ? 2 : prev >= 2 ? 1 : 0, lk = ['지역', '전국', '국제'][lvl];
+      const eff = Pr.eff(S, k);
+      const p = U.clamp(sig((eff - 50 - lvl * 9) / 6) + luck(S), 0.01, 0.95);
+      const name = C.hobbyName(S, h);
+      Pr.gain(S, k, 1.5);
+      if (U.chance(p)) {
+        H.fameUp(S, 2 + lvl * 2); H.reveal(S, Pr.KINDS[k].talent); E.stat(S, 'happy', 8 + lvl * 2);
+        if (typeof Cr !== 'undefined' && Cr.honor) Cr.honor(S, 'contest', `${name} ${lk} 대회 수상`, { h });
+        return `${name} ${lk} 대회에서 상을 받았습니다!${prev ? ` (${prev + 1}번째 수상)` : ''} (${why(S, k)})`;
+      }
+      E.stat(S, 'happy', 1);
+      return `${name} ${lk} 대회에 나갔습니다. 상은 못 받았지만 즐거웠습니다. (${why(S, k)})`;
+    };
+  }
+
+  /** 화면용: 실력 */
+  Pr.view = (S) => Object.entries(Pr.KINDS).map(([k, d]) => ({ k, ko: d.ko, v: Pr.lvl(S, k), talent: S.talentSeen && S.talentSeen[d.talent] ? Math.round(H.talent(S, d.talent)) : null })).filter((x) => x.v >= 1);
+})();
+
 /* 80억분의 1 — 인생 시뮬레이션 엔진
  * 상태(S)는 JSON 으로 저장 가능한 순수 객체다. 화면 코드는 E.month() 를 부르고 S 를 그린다.
  * 문장·선택지는 content.js(C) 에 있다.
@@ -18734,7 +18899,8 @@ UI.actHTML = (S) => {
       const st = C.actionState(S, a);
       const cost = C.actionCost(S, a);
       const ok = st === true && (ap > 0 || a.free);
-      const sub = st !== true ? st : a.free ? '기회를 쓰지 않습니다' : ap <= 0 ? `${C.apNext(S)}달 뒤에 기회가 생깁니다` : cost > 0 ? `비용 ${H.amt(S, cost)}` : '비용 없음';
+      const hint = st === true && a.hint ? a.hint(S) + ' · ' : '';
+      const sub = st !== true ? st : a.free ? '기회를 쓰지 않습니다' : ap <= 0 ? `${C.apNext(S)}달 뒤에 기회가 생깁니다` : hint + cost > 0 ? `비용 ${H.amt(S, cost)}` : '비용 없음';
       html += `<button class="act" data-act="${a.id}" aria-disabled="${!ok}"><b>${esc(a.koS ? a.koS(S) : a.ko)}</b><small>${esc(sub)}</small></button>`;
     }
     html += '</div>';
@@ -18803,6 +18969,10 @@ UI.moreHTML = (S) => {
     if (typeof Mg !== 'undefined' && Mg.view) {
       const v = Mg.view(S);
       if (v) html += `<div class="card"><h3>국적과 체류</h3><dl class="kv"><dt>국적</dt><dd>${esc((v.cit || []).map((x) => x.ko).join(', '))}</dd>${v.res ? `<dt>지금 사는 곳</dt><dd>${esc(v.res.ko || '')} · ${esc(v.res.statusKo || '')}${v.res.years ? ` · ${v.res.years}년째` : ''}</dd>` : ''}</dl>${v.passportNote ? `<p class="src">${esc(v.passportNote)}</p>` : ''}</div>`;
+    }
+    if (typeof Pr !== 'undefined' && Pr.view) {
+      const P = Pr.view(S);
+      if (P.length) html += `<div class="card"><h3>실력</h3><ul class="people">${P.map((x) => `<li><span class="cwrap"><span>${esc(x.ko)}${x.talent !== null ? ` · 재능 ${x.talent}` : ''}</span><span class="cbar">${bar(x.v)}<small>${Math.round(x.v)}</small></span></span></li>`).join('')}</ul><p class="src">연습·레슨·취미로 쌓이고, 오래 손을 놓으면 조금씩 녹습니다. 재능이 높을수록 빨리 늡니다.</p></div>`;
     }
     if (typeof Vl !== 'undefined' && Vl.view) {
       const v = Vl.view(S) || {};
