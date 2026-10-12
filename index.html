@@ -1197,6 +1197,7 @@ const LINES = {
   milDone: ['{N은} 군 복무를 마치고 돌아왔습니다.'],
   layoff: ['{job} 일자리를 잃었습니다. 다시 일을 찾아야 합니다.', '회사 사정이 나빠져 {job} 일을 그만두게 되었습니다.'],
   quit: ['{job} 일을 그만두었습니다.'],
+  closed: ['손님이 줄고 일감이 끊겨 {job} 일을 접었습니다. 다시 일을 찾아야 합니다.', '장사가 어려워져 끝내 문을 닫았습니다. {job} 일을 접었습니다.'],
   pregnantSelf: ['{N은} 아이를 가졌습니다.'],
   pregnantPartner: ['{partner가} 아이를 가졌습니다.'],
   childBorn: ['{sexKo} {child가} 태어났습니다. {n}번째 아이입니다.'],
@@ -2298,7 +2299,7 @@ C.EVENTS = [
   ev({ id: 'm_buyhouse', major: true, minAge: 26, cd: 4, rate: (S) => (S.indep && !Ec.home(S) && !S.flags.bankruptM && Ec.liquid(S) > Ec.housePrice(S, 0.6) * (Ec.downPay(E.iso(S)) + 0.03) ? 0.5 : 0), run: (S) => E.ask(S, 'house', {}) }),
   ev({ id: 'm_startup', major: true, minAge: 24, maxAge: 58, cd: 8, rate: (S) => (S.indep && S.money > Wd.workerMedian(E.iso(S)) * 0.8 && !(S.work.job && S.work.job.id === 'entrepreneur') ? 0.12 : 0), run: (S) => E.ask(S, 'startup', {}) }),
   ev({ id: 'm_promo', major: true, minAge: 25, maxAge: 60, cd: 4, rate: (S) => (H.ladder(S) && (S.work.job.lv || 0) < 4 && S.st.skill > 25 && (S.ageM - S.work.job.since) > 36 ? 0.25 : 0), run: (S) => E.ask(S, 'promotion', {}) }),
-  ev({ id: 'm_jobchange', major: true, minAge: 20, maxAge: 58, cd: 5, rate: (S) => (working(S) && (S.ageM - S.work.job.since) > 48 ? 0.2 : 0), run: (S) => { const o = C.makeOffers(S, 2); if (o.length) E.ask(S, 'jobOffers', { offers: o }); } }),
+  ev({ id: 'm_jobchange', major: true, minAge: 20, maxAge: 58, cd: 5, rate: (S) => (working(S) && !(C.JOB[S.work.job.id] || {}).special && S.work.job.id !== 'politician' && (S.ageM - S.work.job.since) > 48 ? 0.2 : 0), run: (S) => { const o = C.makeOffers(S, 2); if (o.length) E.ask(S, 'jobOffers', { offers: o }); } }),
   ev({ id: 'm_parent', major: true, minAge: 30, cd: 10, rate: (S) => (S.indep && !S.flags.careParent && ((S.fam.father.alive && S.fam.father.age >= 75) || (S.fam.mother.alive && S.fam.mother.age >= 75)) ? 0.3 : 0), run: (S) => E.ask(S, 'parentCare', { who: S.fam.mother.alive && S.fam.mother.age >= 75 ? 'mother' : 'father' }) }),
   ev({ id: 'm_lend', major: true, minAge: 25, cd: 8, rate: (S) => (S.indep && S.money > Wd.workerMedian(E.iso(S)) * 0.3 ? 0.12 : 0), run: (S) => E.ask(S, 'lend', { who: C.friendName(S), amt: Math.round(S.money * 0.15) }) }),
   ev({ id: 'm_invest', major: true, minAge: 25, cd: 6, rate: (S) => (S.indep && S.assets.length < 2 && S.money > Math.max(S.income, Wd.workerMedian(E.iso(S))) * 0.8 ? 0.2 : 0), run: (S) => E.ask(S, 'invest', { nudge: true }) }),
@@ -16969,7 +16970,7 @@ const Pr = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.3';
+E.VERSION = '0.3.4';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
@@ -17491,8 +17492,11 @@ E.sysWorkMonthly = (S) => {
     if (typeof St !== 'undefined') p *= St.layoffF(S); // 사회적 지위(피드백 37번)
     if (d && d.formal === 0) p *= 1.3;
     if (d && d.self) p *= 0.4;
+    // 선출직·특별한 일은 '회사 사정'으로 잘리지 않는다(임기·계약·스캔들은 다른 사건이 다룬다, 피드백 43번)
+    if (d && (d.special || S.work.job.id === 'politician')) p = 0;
     if (U.chance(p) && !S.queue.length) {
-      E.loseJob(S, 'layoff');
+      // 스스로 하는 일(장사·자영업·사업)은 '해고'가 아니라 일감이 끊기거나 문을 닫는다
+      E.loseJob(S, d && (d.self || S.work.job.id === 'entrepreneur') ? 'closed' : 'layoff');
     }
     return;
   }
@@ -17532,7 +17536,7 @@ E.loseJob = (S, why) => {
   S.work.seeking = !S.work.retired;
   S.work.unemployedM = 0;
   E.stat(S, 'happy', -10);
-  E.log(S, C.line(why === 'layoff' ? 'layoff' : 'quit', S, { job: j.title }), 'bad');
+  E.log(S, C.line(why === 'layoff' ? 'layoff' : why === 'closed' ? 'closed' : 'quit', S, { job: j.title }), 'bad');
   E.fire('loseJob', S, why, j);
 };
 
