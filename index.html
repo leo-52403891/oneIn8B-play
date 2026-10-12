@@ -16970,7 +16970,7 @@ const Pr = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.4';
+E.VERSION = '0.3.5';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
@@ -17438,12 +17438,15 @@ E.sysFinance = (S) => {
   const retiredLike = S.work.retired || (a >= 65 && !S.work.job);
   const rk = S.wpNow !== undefined ? S.wpNow : S.wp !== undefined ? S.wp : 0.5;
   let save = retiredLike ? 0.02 : rk < 0.5 ? 0.06 * (rk / 0.5) : rk < 0.9 ? 0.06 + (rk - 0.5) * 0.25 : 0.16 + (rk - 0.9) * 1.1;
-  save += { frugal: 0.15, normal: 0, comfort: -0.13 }[S.lifestyle];
+  // 절약은 더 모으고, 넉넉히는 버는 만큼 거의 다 쓴다(형편이 어려우면 조금 더 쓰게 됨, 피드백 45번)
+  if (S.lifestyle === 'frugal') save += 0.12;
+  else if (S.lifestyle === 'comfort') save = Math.max(0.01, save - 0.06); // 넉넉히: 모으지 않고 거의 다 쓰지만 빚을 내서까지 쓰지는 않는다
   let spend = Math.max(disp * (1 - save), Math.min(floor, disp + Math.max(0, S.money) * 0.08));
   // 모은 재산(집 빼고)에서 쓰는 돈: 일하는 동안은 조금, 은퇴하면 남은 여생에 걸쳐 나눠 쓴다
   const fin = Ec.financial(S);
   if (fin > 0) spend += fin * (retiredLike ? 0.02 + 1 / (Ec.remLife(iso, S.sex, a) + 15) : 0.01) * (SPEND[S.lifestyle] / SPEND.normal);
-  if (S.money < 0 && S.lifestyle !== 'comfort') spend = Math.min(spend, Math.max(disp * 0.85, floor * 0.6));
+  // 빚이 생기면 씀씀이를 줄여 갚는다('넉넉히'도 빚이 쌓이면 줄인다)
+  if (S.money < 0) spend = Math.min(spend, Math.max(disp * (S.lifestyle === 'comfort' ? 0.92 : 0.85), floor * 0.6));
   // 내 집이 있으면 월세가 들지 않는다(관리비·세금은 남는다)
   if (Ec.home(S)) spend *= 0.86;
   S.spend = spend;
