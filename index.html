@@ -194,6 +194,20 @@ h1, h2, h3 { text-wrap: balance; }
 .rank .track i { position: absolute; top: -4px; width: 4px; height: 18px; border-radius: 2px; background: var(--ink); transform: translateX(-2px); }
 .rank .lbl { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
 
+/* 타이틀 버전 표시(피드백 54번) — 다섯 번 빠르게 누르면 운영자 모드 암호 창(피드백 55번) */
+.ver-tag { position: fixed; right: max(12px, calc((100vw - 520px) / 2 + 12px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 5; margin: 0; padding: 5px 7px; font: 500 11px/1 var(--f-mono); color: var(--muted); background: color-mix(in srgb, var(--bg) 85%, transparent); border: 0; border-radius: 6px; cursor: default; -webkit-tap-highlight-color: transparent; user-select: none; }
+/* 운영자 모드 */
+.adm-form { display: grid; gap: 12px; }
+.adm-form label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.adm-form input, .adm-form select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; width: 100%; min-width: 0; }
+.adm-form input[type=range] { padding: 0; accent-color: var(--teal); }
+.adm-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.adm-row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.adm-sec { font: 700 15px/1.3 var(--f-display); margin: 8px 0 0; color: var(--ink); }
+.adm-note { font-size: 12px; color: var(--muted); margin: 0; }
+.adm-badge { display: inline-block; font: 600 10px/1 var(--f-mono); letter-spacing: .06em; color: var(--paper); background: var(--accent); border-radius: 6px; padding: 3px 6px; vertical-align: 3px; margin-left: 6px; }
+.adm-err { color: var(--bad); font-size: 13px; min-height: 1.2em; margin: 0; }
+
 /* 결정 시트 */
 .sheet-back { position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--ink) 45%, transparent); display: flex; align-items: flex-end; justify-content: center; }
 .sheet { width: 100%; max-width: 520px; max-height: 88vh; overflow: auto; background: var(--paper); border-radius: 18px 18px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px)); box-shadow: var(--shadow); animation: up .22s ease; }
@@ -236,7 +250,8 @@ h1, h2, h3 { text-wrap: balance; }
 /* 할 일 */
 .ap { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 4px 0 10px; }
 .ap b { font: 700 18px/1.2 var(--f-display); }
-.ap .pips { display: flex; gap: 5px; }
+.ap .pips { display: grid; grid-template-columns: repeat(4, 12px); gap: 5px; flex: none; }
+.act .apw { margin-left: 6px; font-size: 8px; letter-spacing: 1px; color: var(--accent); vertical-align: 2px; white-space: nowrap; }
 .ap .pips i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--accent); }
 .ap .pips i.on { background: var(--accent); }
 .act-cat { margin: 14px 0 6px; font: 600 13px var(--f-body); color: var(--muted); }
@@ -325,6 +340,7 @@ h1, h2, h3 { text-wrap: balance; }
       </div>
       <p class="fine" id="t-fine">한 인생은 약 1시간 안팎입니다. 언제든 멈추고 이어서 할 수 있어요.</p>
     </div>
+    <button class="ver-tag" id="t-ver" type="button" aria-label="버전"></button>
   </section>
 
   <!-- 출생 -->
@@ -462,6 +478,14 @@ h1, h2, h3 { text-wrap: balance; }
     <p class="body" id="d-text"></p>
     <div class="choices" id="d-choices"></div>
     <button class="btn ghost close" id="d-close" hidden>닫기</button>
+  </div>
+</div>
+<!-- 운영자 모드 -->
+<div class="sheet-back" id="adm" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="adm-title">
+    <p class="eyebrow">OPERATOR</p>
+    <h3 id="adm-title">운영자 모드</h3>
+    <div id="adm-body"></div>
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -2701,14 +2725,14 @@ C.yearAP = (S) => {
 };
 /** 기회 하나가 생기는 간격(달): 13세 이상 분기마다, 6~12세 반기마다, 수감 중 1년마다 (피드백 32번) */
 C.apEvery = (S) => { const n = C.yearAP(S); return n ? 12 / n : 0; };
-/** 안 쓰고 모아 둘 수 있는 기회 */
-C.apCap = (S) => (C.yearAP(S) ? 2 : 0);
+/** 안 쓰고 모아 둘 수 있는 기회: 2년 치(13세 이상 8번, 6~12세 4번, 수감 중 2번) (피드백 56번) */
+C.apCap = (S) => C.yearAP(S) * 2;
 /** 다음 기회까지 남은 달 */
 C.apNext = (S) => { const ev = C.apEvery(S); return ev ? Math.max(1, Math.ceil(ev - (S.apM || 0))) : 0; };
 
 /** 매달 v0.2 처리 */
 C.hooksMonth = (S) => {
-  // 할 일 기회: 정해진 간격마다 하나씩 생기고, 2개까지 모아 둘 수 있다
+  // 할 일 기회: 정해진 간격마다 하나씩 생기고, 2년 치까지 모아 둘 수 있다
   const every = C.apEvery(S);
   if (every) {
     S.apM = (S.apM || 0) + 1;
@@ -3555,7 +3579,8 @@ C.DEC.retire = {
 if (typeof module !== 'undefined') module.exports = Ec;
 
 /* 80억분의 1 — 언제든 할 수 있는 일(행동)
- * 행동 기회(S.ap)는 13세 이상 분기마다, 6~12세 반기마다 하나씩 생기고 2개까지 모아 둘 수 있다. 행동마다 다시 하기까지 기다리는 달 수(cd)가 있다.
+ * 행동 기회(S.ap)는 13세 이상 분기마다, 6~12세 반기마다 하나씩 생기고 2년 치까지 모아 둘 수 있다(피드백 56번).
+ * 행동마다 쓰는 기회 수(C.actAP: 일상 1, 노력이 드는 일 2, 삶의 큰일 3)와 다시 하기까지 기다리는 달 수(cd)가 있다.
  * need(S) 가 문자열을 돌려주면 그 이유로 잠긴다. run(S) 는 결과 문장을 돌려준다(없으면 결정 창이 뜬다).
  */
 'use strict';
@@ -3752,14 +3777,15 @@ C.ACTIONS = [
     } },
 
   /* ---------------- 꿈에 도전 */
-  { id: 'tryout', ko: '프로 입단 테스트', cat: 'dream', age: [15, 24], cd: 12, need: (S) => reason(S.hobbies.includes('sport') || S.hobbies.includes('running') || S.dream === 'athlete', '운동을 꾸준히 해 온 사람만 볼 수 있습니다'),
+  { id: 'tryout', ko: '프로 입단 테스트', cat: 'dream', age: [15, 24], cd: 12, where: (S) => !H.jobIs(S, 'athlete'), // 이미 프로 선수면 보이지 않음(피드백 57번)
+    need: (S) => (H.jobIs(S, 'athlete') ? '이미 프로 선수입니다' : reason(S.hobbies.includes('sport') || S.hobbies.includes('running') || S.dream === 'athlete', '운동을 꾸준히 해 온 사람만 볼 수 있습니다')),
     run: (S) => {
       const p = sig((S.talent.sport - 78) / 5) * U.clamp(S.st.health / 80, 0.3, 1.1);
       H.reveal(S, 'sport');
       if (U.chance(p)) { H.setJob(S, 'athlete', 12 * Math.exp(U.normal(1.1, 1.0))); S.work.job.title = `프로 ${C.ctx(S).sport} 선수`; H.fameUp(S, 12); E.stat(S, 'happy', 15); H.ach(S, 'pro_athlete'); return `{N은} 프로 ${C.ctx(S).sport} 팀과 계약했습니다!`; }
       E.stat(S, 'happy', -6); return `입단 테스트에서 떨어졌습니다. ${S.talent.sport >= 70 ? '감독이 아깝다며 다음을 기약하자고 했습니다.' : '프로의 벽은 높았습니다.'}`;
     } },
-  { id: 'audition', ko: '오디션 보기', cat: 'dream', age: [13, 32], cd: 12, cost: 0.2,
+  { id: 'audition', ko: '오디션 보기', cat: 'dream', age: [13, 32], cd: 12, cost: 0.2, where: (S) => !H.jobIs(S, 'entertainer'), need: (S) => (H.jobIs(S, 'entertainer') ? '이미 데뷔해 활동하고 있습니다' : true),
     run: (S) => {
       const best = Math.max(S.talent.music, S.talent.charm);
       const p = sig((best - 80) / 5) * 0.7;
@@ -3817,6 +3843,17 @@ C.ACTIONS = [
 C.ACTION = {};
 for (const a of C.ACTIONS) C.ACTION[a.id] = a;
 
+/** 할 일마다 쓰는 기회 수(피드백 56번). 적혀 있지 않으면 1, free 는 0 */
+C.AP_W = {
+  // 삶의 큰일
+  nightschool: 3, startup: 3, election: 3, emigrate: 3, pilgrim: 3,
+  // 시간과 노력이 드는 일
+  license: 2, language: 2, ged: 2, nightclass: 2, findlove: 2, jobhunt: 2, sidejob: 2, cafejob: 2, selfstart: 2, rework: 2,
+  abroad: 2, famtrip: 2, pet: 2, contest: 2, tryout: 2, audition: 2, novel: 2, memoir: 2, move: 2,
+  quitsmoke: 2, lessdrink: 2, seek: 2,
+};
+C.actAP = (S, a) => (a.free ? 0 : a.ap !== undefined ? (typeof a.ap === 'function' ? a.ap(S) : a.ap) : C.AP_W[a.id] || 1);
+
 /** 행동 상태: true 면 가능, 문자열이면 잠긴 이유 */
 A.state = (S, a) => {
   const age = E.age(S);
@@ -3832,6 +3869,8 @@ A.state = (S, a) => {
   if (cost > 0 && S.indep && S.money < H.pay(S, cost)) return '돈이 모자랍니다';
   // 독립 전: 내 돈으로 내거나, 부모님 1년 살림의 4% 안쪽이면 부모님이 내 준다(피드백 26번)
   if (cost > 0 && !S.indep && S.money < H.pay(S, cost) && H.pay(S, cost) > S.fam.cons * S.fam.size * 0.04) return E.age(S) >= 15 ? '용돈이 모자라고, 집안 형편으로도 어렵습니다' : '집안 형편으로는 어렵습니다';
+  const w = C.actAP(S, a), ap = S.ap || 0;
+  if (w > ap) return ap <= 0 ? `${C.apNext(S)}달 뒤에 기회가 생깁니다` : `기회가 ${w}번 필요합니다(지금 ${ap}번)`;
   return true;
 };
 A.cost = (S, a) => (a.cost ? (typeof a.cost === 'function' ? a.cost(S) : a.cost) : 0);
@@ -3840,7 +3879,8 @@ A.cost = (S, a) => (a.cost ? (typeof a.cost === 'function' ? a.cost(S) : a.cost)
 E.doAction = (S, id) => {
   const a = C.ACTION[id];
   if (!a || !S.alive || S.queue.length) return { ok: false, msg: '지금은 할 수 없습니다' };
-  if ((S.ap || 0) <= 0 && !a.free) return { ok: false, msg: `지금은 쓸 수 있는 기회가 없습니다. ${C.apNext(S)}달 뒤에 다시 생깁니다.` };
+  const w = C.actAP(S, a);
+  if ((S.ap || 0) < w) return { ok: false, msg: (S.ap || 0) <= 0 ? `지금은 쓸 수 있는 기회가 없습니다. ${C.apNext(S)}달 뒤에 다시 생깁니다.` : `기회가 ${w}번 필요합니다. 지금은 ${S.ap}번 있습니다.` };
   const st = A.state(S, a);
   if (st !== true) return { ok: false, msg: st };
   const cost = A.cost(S, a);
@@ -3849,7 +3889,7 @@ E.doAction = (S, id) => {
     else if (S.money >= H.pay(S, cost)) S.money -= H.pay(S, cost);
     else E.addMoney(S, -H.pay(S, cost));
   }
-  if (!a.free) S.ap--;
+  S.ap = (S.ap || 0) - w;
   S.actCd[id] = S.ageM;
   S.stats.actions = (S.stats.actions || 0) + 1;
   const t = a.run(S);
@@ -6718,7 +6758,7 @@ C.metaAch = (lives) => {
     /* ---------------------------------------------------------------- 재능의 발견 */
     {
       id: 't_sportschol', age: [15, 19], rate: 0.6, once: true,
-      when: (S) => H.student(S) && (H.talent(S, 'sport') >= 68 || (H.hobby(S, 'sport') && H.talent(S, 'sport') >= 60)),
+      when: (S) => H.student(S) && !H.jobIs(S, 'athlete') && (H.talent(S, 'sport') >= 68 || (H.hobby(S, 'sport') && H.talent(S, 'sport') >= 60)),
       title: '체육 특기생 제안', text: '{sport} 대회를 지켜본 대학 운동부 감독이 체육 특기생으로 오라고 합니다. 학비가 면제됩니다.',
       choices: [
         { l: '특기생으로 간다', typ: true, t: '운동부 특기생이 되기로 했습니다. 새벽 훈련과 수업을 오가며 지냅니다.', fx: { happy: 8, health: 4, money: 1, hobby: 'sport' },
@@ -6739,7 +6779,7 @@ C.metaAch = (lives) => {
     },
     {
       id: 't_scout', age: [13, 22], rate: (S) => (Math.max(H.talent(S, 'charm'), H.talent(S, 'music')) >= 68 ? 0.12 : 0.01), once: true,
-      when: (S) => H.urban(S) && dev(S) >= 1,
+      when: (S) => H.urban(S) && dev(S) >= 1 && !H.jobIs(S, 'entertainer') && !S.flags.trainee,
       title: '길거리 캐스팅', text: '길을 걷는데 연예 기획사 사람이 명함을 내밀었습니다. 연습생 오디션을 보러 오라고 합니다.',
       choices: [
         { l: '오디션을 본다', p: (S) => U.clamp(sig((Math.max(S.talent.music, S.talent.charm) - 72) / 6), 0.05, 0.85),
@@ -11231,7 +11271,7 @@ const Mg = {};
       return null;
     };
   }
-  const refund = (S, ctx) => { if (ctx && ctx.act) { S.ap = (S.ap || 0) + 1; delete S.actCd.emigrate; } };
+  const refund = (S, ctx) => { if (ctx && ctx.act) { S.ap = (S.ap || 0) + (C.actAP && C.ACTION.emigrate ? C.actAP(S, C.ACTION.emigrate) : 1); delete S.actCd.emigrate; } };
 
   C.DEC.mg_where = {
     title: () => '어디로 갈까요?',
@@ -16978,6 +17018,2889 @@ const Pr = {};
   Pr.view = (S) => Object.entries(Pr.KINDS).map(([k, d]) => ({ k, ko: d.ko, v: Pr.lvl(S, k), talent: S.talentSeen && S.talentSeen[d.talent] ? Math.round(H.talent(S, d.talent)) : null })).filter((x) => x.v >= 1);
 })();
 
+/* 80억분의 1 — 직업별 사건 (피드백 44번: "공무원이나 정치인 혹은 그 외의 특별한 직업에 따른 이벤트도 추가해줘")
+ *
+ * 일하는 동안 그 직업에서만 생기는 일. 공무원·경찰·군인·교사·의료인·법조인·기자·연구자·성직자, 농어민·광부,
+ * 공장·건설·기술직, 운전·배달, 가사·청소·경비·상담, 장사·사업, 예술·프리랜서, 특별 직업(운동선수·연예인·작가·
+ * 크리에이터·셰프), 그리고 정치인(자리 단계별: 1 지방의원 · 2 단체장 · 3 국회의원 · 4 국가 지도자).
+ *
+ * - 사건 id 는 'j_' 로 시작한다. C.JOBEV.of[id] = 그 사건이 걸리는 직업 id 목록(검사: node tools/job_events_stats.js).
+ * - 빈도: 일하는 동안 대략 1~2년에 한 번 그 직업만의 사건이 나오도록 맞췄다(직업별 배수 MUL).
+ * - 결과는 기존 체계만 쓴다: H.fx(능력치·돈), val(가치관·평판), 연봉(S.work.job.pay), H.promote(직급이 있는 일만),
+ *   E.loseJob, Ec.earn, Pp.bump(가족과의 가까움), Cr.honor(이력), Pr.gain(연습 실력), S.power·명성. 새 죽음 원인은 없다.
+ * - 새 상태: S.jx = { rec } — 정치인의 의정 성과(-5~6). 다음 선거 당선 가능성에 조금 반영된다(Cr.electP 감싸기).
+ */
+'use strict';
+
+(() => {
+  /* ================================================================ 도구 */
+  const hasCr = typeof Cr !== 'undefined' && !!Cr && typeof Cr.curTier === 'function';
+  const hasPp = typeof Pp !== 'undefined' && !!Pp && typeof Pp.bump === 'function';
+  const hasPr = typeof Pr !== 'undefined' && !!Pr && typeof Pr.gain === 'function';
+  const hasEc = typeof Ec !== 'undefined' && !!Ec && typeof Ec.earn === 'function';
+  C.JOBEV = { of: {} };
+
+  const jt = (S) => (S.work.job ? S.work.job.title : '');
+  const yrsIn = (S) => (S.work.job && S.work.job.since !== undefined ? (S.ageM - S.work.job.since) / 12 : 0);
+  const el = (S) => (DATA.soc && DATA.soc.electoral && DATA.soc.electoral[H.iso(S)]) || 'free';
+  const tier = (S) => (hasCr ? Cr.curTier(S) : 0);
+  const honest = (S) => H.vl(S, 'honest');
+  const partnerOn = (S) => !!(H.married(S) && S.fam.partner && S.fam.partner.alive && !S.fam.partner.left);
+  const kidsHome = (S) => S.fam.kids.filter((k) => k.alive && (S.ageM - k.bornM) / 12 < 18 && !k.left);
+  const hasFam = (S) => partnerOn(S) || kidsHome(S).length > 0;
+  const hzList = (S) => Wd.social('hazards', H.iso(S), []) || [];
+  const hz = (S, k) => hzList(S).includes(k);
+  const cold = (S) => ['eca', 'na'].includes(H.region(S)) || hz(S, '한파');
+  const talentHi = (S) => (H.talent(S, 'music') >= H.talent(S, 'art') ? 'music' : 'art');
+  /** 그 나라 통계 하나(없으면 null). i 는 [남, 여] 같은 배열의 칸 */
+  const st = (S, k, i = 0) => { const v = H.c(S)[k]; const x = Array.isArray(v) ? v[i] : v; return typeof x === 'number' && isFinite(x) ? Math.round(x * 10) / 10 : null; };
+  const stat = (S, k, f) => { const v = st(S, k); return v === null ? '' : ` (${f(v)})`; };
+  /** 결정 문장의 변형을 한 번만 고른다(본문을 다시 그려도 같은 문장, 선택지도 같은 변형을 본다) */
+  const vp = (ctx, n) => { if (ctx.v === undefined) ctx.v = U.randInt(0, n - 1); return ctx.v; };
+
+  /* ---------------- 결과 도구 */
+  /** 배우자·집에 있는 아이와의 가까움(사람 모듈). 배우자 쪽 꼬리말을 돌려준다 */
+  const fam = (S, d) => {
+    if (!hasPp || !d) return '';
+    let tail = '';
+    if (partnerOn(S) && S.fam.partner.close !== undefined) tail = Pp.bump(S, S.fam.partner, 'partner', d);
+    for (const k of kidsHome(S)) if (k.close !== undefined) Pp.bump(S, k, 'kid', d);
+    return tail;
+  };
+  const raise = (S, f) => { const j = S.work.job; if (j) j.pay *= f; };
+  const canPromo = (S) => H.ladder(S) && (S.work.job.lv || 0) < 4;
+  /** 승진: 직급이 있는 일만 직급이 오르고(H.promote), 아니면 수입만 조금 오른다 */
+  const promo = (S, f = 1.2) => { const j = S.work.job; if (!j) return; if (canPromo(S)) H.promote(S, f); else j.pay *= 1 + (f - 1) / 2; };
+  const honor = (S, ko) => { if (hasCr) Cr.honor(S, 'award', ko); };
+  const prac = (S, k, amt) => { if (hasPr && Pr.KINDS[k]) Pr.gain(S, k, amt); };
+  const earn = (S, months, src = 'job') => { const a = H.pay(S, months); if (hasEc) Ec.earn(S, src, a); else E.addMoney(S, a); return a; };
+  const rec = (S, d) => { S.jx = S.jx || { rec: 0 }; S.jx.rec = U.clamp((S.jx.rec || 0) + d, -5, 6); };
+  const pow = (S, d) => { S.power = U.clamp((S.power || 0) + d, 0, 100); };
+  const corrupt = (S, n = 1) => { S.flags.corrupt = (S.flags.corrupt || 0) + n; };
+  const notor = (S) => { if (S.cr) S.cr.notor = (S.cr.notor || 0) + 1; };
+  const union = (S) => { if (S.cr) S.cr.unionM = S.ageM; };
+  const lose = (S, why = 'quit') => { if (S.work.job) E.loseJob(S, why); };
+  const addNamed = (S, kind, name) => H.addFriend(S, kind, { name, sex: U.chance(0.5) ? 'm' : 'f', age: Math.round(H.age(S) + U.randInt(-6, 6)) });
+  const offers = (S) => { const o = C.makeOffers(S, 2); if (o.length) E.ask(S, 'jobOffers', { offers: o }); };
+  const fans = (S, f) => { if (S.stream) S.stream.fans = Math.max(0, Math.round(S.stream.fans * f)); };
+  const pickNot = (S, list) => { const own = H.iso(S); const ok = list.filter((d) => DATA.c[d] && d !== own); return ok.length ? ok[(S.ageM + list.length) % ok.length] : null; };
+
+  /* ---------------- 등록: 직업 조건과 직업별 빈도 배수를 붙인다 */
+  /** 직업별 빈도 배수: 일하는 동안 1~2년에 한 번쯤 그 직업만의 사건이 나오도록(검사 도구로 맞춘 값) */
+  const MUL = {
+    politician: 1.35, civil: 1, care: 1.5, nurse: 1.7, soldier: 1.9, researcher: 1.75, clergy: 2.1, artisanalminer: 1.7, cashcrop: 1.6, cleaner: 1.7,
+    subsist: 1.5, designer: 1.7, journalist: 2.4, sales: 2.4, rider: 1.8, miner: 2.4, teacher: 2, doctor: 2, translator: 2.6, lawyer: 2.3, herder: 2.2,
+    electrician: 2.3, construction: 2.2, artist: 2.3, factory: 2.1, welder: 2.1, police: 2.5, farmowner: 2, mechanic: 2.4, domestic: 3.2, engineer: 2.6,
+    athlete: 3, craft: 2.6, guide: 2.5, guard: 2.6, trader: 2.2, programmer: 2.7, agritech: 2.3, entrepreneur: 3.1, shop: 3, hair: 2.7, cook: 2.6,
+    vendor: 2, callcenter: 2, driver: 2.6, writer: 3.9, freedev: 3, garment: 2.8, farmhand: 2.8, manager: 3, entertainer: 4, accountant: 3.2,
+    clerk: 2.7, fisher: 2.3, tutor: 2.8, plantmgr: 3.4, streamer: 3.5, chef: 3.4,
+  };
+  const L = [];
+  /** jobs: 이 사건이 걸리는 직업 id. d.gate: 추가 조건. d.rework: 은퇴 뒤 다시 하는 일(자문역 등)에도 */
+  const add = (jobs, d) => {
+    if (jobs) {
+      C.JOBEV.of[d.id] = jobs;
+      const r0 = d.rate, g = d.gate, rew = d.rework;
+      d.rate = (S) => {
+        const j = S.work.job;
+        if (!j || !jobs.includes(j.id) || (j.rework && !rew) || S.mil) return 0;
+        if (g && !g(S)) return 0;
+        const r = typeof r0 === 'function' ? r0(S) : r0;
+        return r > 0 ? r * (MUL[j.id] || 1) : 0;
+      };
+    }
+    delete d.gate; delete d.rework;
+    if (!d.age) d.age = [15, 95];
+    L.push(d);
+  };
+
+  /* ================================================================ 정치인: 공통 */
+  const POL = ['politician'];
+  const T = (n) => (S) => tier(S) === n;
+  add(POL, {
+    id: 'j_pol_threat', rate: (S) => 0.12 + Math.min(0.25, (st(S, 'homic') || 0) / 60), cd: 5, gate: (S) => tier(S) >= 1, k: 'bad',
+    text: (S) => [`사무실로 협박 편지가 날아왔습니다. 한동안 집 앞에 경찰차가 서 있었습니다.${stat(S, 'homic', (v) => `${Wd.name(H.iso(S))} 살인율 인구 10만 명당 ${v}명`)}`,
+      '유세장에서 누군가 달걀을 던졌습니다. 웃어넘겼지만 그날 밤 쉽게 잠들지 못했습니다.'],
+    fx: { happy: -4 },
+  });
+  add(POL, {
+    id: 'j_pol_family', rate: 0.25, cd: 4, gate: (S) => tier(S) >= 1 && hasFam(S),
+    text: (S) => (kidsHome(S).length ? ['아이의 학예회 날도 지역 행사장에 있었습니다. 영상으로만 아이 얼굴을 봤습니다.', '주말마다 행사에 불려 다니느라 가족과 저녁을 먹은 날을 손에 꼽습니다.'] : ['주말마다 행사에 불려 다니느라 가족과 저녁을 먹은 날을 손에 꼽습니다.']),
+    fx: { happy: -2 }, run: (S) => { fam(S, -4); },
+  });
+
+  /* ================================================================ 정치인 1: 지방의원 */
+  add(POL, {
+    id: 'j_pl1_req', rate: 0.5, cd: 2, gate: T(1),
+    text: (S) => (H.rural(S)
+      ? ['마을 진입로가 비만 오면 진창이 된다는 민원을 받고 군청을 오가며 포장 예산을 따냈습니다.', '버스가 하루 두 번뿐이라는 어르신들의 하소연을 듣고 노선 연장을 요청했습니다.', '장터 화장실을 고쳐 달라는 상인들의 부탁을 받고 현장을 둘러봤습니다.']
+      : ['골목 가로등이 몇 달째 꺼져 있다는 민원을 받고 구청에 따져 고치게 했습니다.', '시장 상인들과 주차장 문제를 두고 밤늦게까지 이야기를 나눴습니다.', '어린이 통학로에 신호등을 놓아 달라는 주민 서명을 받아 들고 의회에서 발언했습니다.']),
+    fx: { social: 2, happy: 1 }, run: (S) => { rec(S, 0.3); },
+  });
+  add(POL, {
+    id: 'j_pl1_budget', rate: 0.4, cd: 3, gate: T(1),
+    title: '예산 심사',
+    text: '내년 예산 심사가 시작되었습니다. 지역구 주민들은 새 놀이터와 도로 포장을 원하고, 반대편 동네 복지관은 예산이 깎이면 문을 닫아야 한다고 호소합니다.',
+    choices: [
+      { l: '지역구 숙원 사업에 예산을 끌어온다', typ: true, t: '놀이터 착공식에서 주민들이 박수를 쳤습니다. 다음 선거가 조금 든든해졌습니다.', fx: { social: 3, happy: 3 }, val: { rep: 1 }, run: (S) => { rec(S, 1); pow(S, 2); } },
+      { l: '복지관 예산부터 지킨다', t: '복지관은 문을 닫지 않았습니다. 지역구에서는 "우리 동네는 뭐 했냐"는 말이 나왔습니다.', fx: { happy: 4, social: -1 }, val: { rep: 3, honest: 1 }, run: (S) => { rec(S, 0.5); } },
+      { l: '다른 의원들과 지역구 예산을 나눠 먹는다', need: (S) => honest(S) < 65, val: { honest: -2 }, p: 0.75,
+        ok: { t: '서로의 사업을 밀어주기로 했습니다. 모두의 지역구에 공사판이 벌어졌습니다.', fx: { social: 2 }, run: (S) => { rec(S, 1); pow(S, 3); } },
+        no: { t: '짬짜미가 지역 신문에 실렸습니다. "예산 나눠 먹기"라는 제목이 붙었습니다.', fx: { happy: -6 }, val: { rep: -6 }, run: (S) => { rec(S, -1); } } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl1_rezone', rate: (S) => 0.2 + (3 - H.dev(S)) * 0.05, cd: 4, gate: T(1),
+    title: '용도 변경 청탁',
+    text: '개발 업자가 의원실을 찾아와, 공원 예정지를 상가 부지로 바꾸는 안건에 찬성해 달라며 두툼한 봉투를 책상에 올려놓았습니다.',
+    choices: [
+      { l: '봉투를 돌려보내고 반대표를 던진다', typ: (S) => honest(S) >= 40, t: '봉투를 돌려보냈습니다. 공원 예정지는 그대로 남았습니다.', fx: { happy: 2 }, val: { honest: 2, rep: 2 }, run: (S) => { rec(S, 0.5); } },
+      { l: '받고 찬성한다', need: (S) => honest(S) < 75, typ: (S) => honest(S) < 40, p: (S) => [0.6, 0.68, 0.76, 0.84][H.dev(S)],
+        ok: { t: '안건은 조용히 통과되었습니다. 통장이 두둑해졌지만 그 업자의 전화를 피할 수 없게 되었습니다.', fx: { money: 6, happy: -2 }, val: { honest: -6 }, run: (S) => { corrupt(S); } },
+        no: { val: { honest: -4, rep: -12 }, run: (S) => {
+          S.flags.scandal = true; corrupt(S); rec(S, -2);
+          if (U.chance(0.35)) { lose(S); return '돈이 오간 사실이 드러났습니다. 의원직을 내려놓고 재판을 받았습니다.'; }
+          H.fine(S, 6); return '돈이 오간 사실이 드러나 벌금을 물었습니다. 의회에서 징계를 받았습니다.';
+        }, fx: { happy: -10 } } },
+      { l: '공개 회의에 청탁 사실을 밝힌다', p: 0.6,
+        ok: { t: '청탁 사실을 밝히자 안건이 부결되었습니다. 지역 신문이 {N}의 이름을 실었습니다.', fx: { fame: 2, happy: 4 }, val: { honest: 2, rep: 4 }, run: (S) => { rec(S, 1.5); } },
+        no: { t: '업자는 모든 걸 부인했고, 같은 당 의원들은 {N을} "분란을 일으킨 사람"으로 여겼습니다.', fx: { social: -4, happy: -3 }, val: { honest: 2, rep: 1 } } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl1_party', rate: 0.3, cd: 4, gate: (S) => tier(S) === 1 && el(S) !== 'none',
+    title: '공천',
+    text: '다음 선거 공천을 앞두고 지역 당협 위원장이 "행사마다 사람을 모아 오고 후원금도 내라"고 합니다. 줄을 서지 않으면 공천을 장담할 수 없다고 합니다.',
+    choices: [
+      { l: '위원장 뜻을 따른다', typ: true, cost: 1, t: '행사장마다 버스를 대절해 사람들을 모았습니다. 위원장이 흡족해했습니다.', fx: { social: 1, happy: -1 }, run: (S) => { rec(S, 0.5); pow(S, 2); } },
+      { l: '주민만 보고 의정 활동에 집중한다', t: '행사 대신 민원 현장을 돌았습니다. 위원장과는 서먹해졌습니다.', fx: { happy: 2 }, val: { rep: 2, honest: 1 }, run: (S) => { rec(S, 0.8); } },
+      { l: '다른 계파 쪽으로 줄을 바꾼다', p: 0.5,
+        ok: { t: '떠오르는 쪽에 줄을 섰습니다. 공천은 따 놓은 당상이라는 말을 들었습니다.', fx: { happy: 2 }, run: (S) => { rec(S, 1); pow(S, 3); } },
+        no: { t: '줄을 바꾼 계파가 당내 경선에서 졌습니다. 양쪽 모두에게 믿지 못할 사람이 되었습니다.', fx: { social: -4, happy: -4 }, run: (S) => { rec(S, -1); } } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl1_clip', rate: (S) => (H.internet(S) > 0.4 ? 0.25 : 0.1), cd: 4, gate: T(1),
+    run: (S) => {
+      if (U.chance(0.55)) { H.fameUp(S, 2); E.stat(S, 'happy', 4); rec(S, 0.5); return '의회에서 공무원들의 늑장 행정을 따지는 {N}의 발언 영상이 화제가 되었습니다. 응원 전화가 쏟아졌습니다.'; }
+      H.fameUp(S, 1); E.stat(S, 'happy', -4); if (S.rap) S.rap.rep = U.clamp(S.rap.rep - 2, 0, 100);
+      return '회의 중 졸고 있는 {N}의 모습이 찍혀 퍼졌습니다. "밤새 민원 서류를 봤다"는 해명은 아무도 듣지 않았습니다.';
+    },
+  });
+
+  /* ================================================================ 정치인 2: 단체장(시장·군수) */
+  const hzWord = (S) => { const h = hzList(S); return h.length ? h[(S.ageM >> 2) % h.length] : '폭우'; };
+  add(POL, {
+    id: 'j_pl2_disaster', rate: 0.4, cd: 3, gate: T(2),
+    title: (S) => `${hzWord(S)} 비상`,
+    text: (S) => `${hzWord(S)} 경보가 내렸습니다. ${S.place.urban ? '시내' : '군내'} 곳곳에서 피해 신고가 들어오고, 이재민 대피소가 문을 열었습니다. 같은 날 수도에서는 예산을 따낼 중요한 회의가 잡혀 있습니다.`,
+    choices: [
+      { l: '현장에서 직접 지휘한다', t: '장화를 신고 사흘 동안 현장을 지켰습니다. 대피소에서 밤을 새운 {N}의 사진이 신문에 실렸습니다.', fx: { health: -3, happy: 3, fame: 2 }, val: { rep: 4 }, run: (S) => { rec(S, 1.5); } },
+      { l: '수도로 가서 복구 예산을 받아 온다', p: 0.6,
+        ok: { t: '특별 재난 지역으로 지정받아 복구 예산을 넉넉히 받아 왔습니다.', fx: { happy: 4 }, run: (S) => { rec(S, 1.5); pow(S, 2); } },
+        no: { t: '예산은 반의반도 받지 못했고, "재난 때 자리를 비운 단체장"이라는 비판만 남았습니다.', fx: { happy: -6 }, val: { rep: -5 }, run: (S) => { rec(S, -1.5); } } },
+      { l: '담당 부서에 맡기고 보고를 받는다', typ: true, p: 0.55,
+        ok: { t: '공무원들이 침착하게 대응했습니다. 큰 피해 없이 지나갔습니다.', fx: { happy: 1 } },
+        no: { t: '늑장 대응이라는 기사가 쏟아졌습니다. 대피소에 담요가 모자랐다고 합니다.', fx: { happy: -6 }, val: { rep: -4 }, run: (S) => { rec(S, -1); } } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl2_facility', rate: 0.3, cd: 4, gate: T(2),
+    title: '기피 시설',
+    text: (S, ctx) => `${['쓰레기 소각장', '화장장', '하수 처리장'][vp(ctx, 3)]}을 지을 땅을 정해야 합니다. 어디를 고르든 그 동네 주민들은 거세게 반대합니다. 시설이 없으면 ${S.place.urban ? '도시' : '군'} 전체가 곤란해집니다.`,
+    choices: [
+      { l: '주민 공론화와 보상안을 마련한다', typ: true, p: (S) => U.clamp(0.4 + (S.st.social - 50) / 150, 0.2, 0.8),
+        ok: { t: '두 해 동안 설명회를 수십 번 열었습니다. 지원금과 공원을 함께 짓는 조건으로 합의를 끌어냈습니다.', fx: { social: 4, happy: 5 }, val: { rep: 3 }, run: (S) => { rec(S, 2); } },
+        no: { t: '설명회는 번번이 고성으로 끝났습니다. 결정을 다음 임기로 미뤘습니다.', fx: { happy: -3 }, run: (S) => { rec(S, -0.5); } } },
+      { l: '밀어붙인다', t: '반대 현수막이 걸린 채 공사가 시작되었습니다. 그 동네에서는 {N}의 이름이 욕처럼 쓰입니다.', fx: { social: -4, happy: -1 }, val: { rep: -3 }, run: (S) => { rec(S, 1); pow(S, 3); } },
+      { l: '계획을 접는다', t: '계획을 접었습니다. 문제는 그대로 남았습니다.', fx: { happy: -1 }, run: (S) => { rec(S, -1); } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl2_invest', rate: 0.25, cd: 4, gate: T(2),
+    title: '공장 유치',
+    text: '한 대기업이 새 공장 부지를 찾고 있습니다. 일자리 수천 개가 걸려 있지만, 회사는 10년 동안 지방세 면제와 강 근처 부지를 요구합니다.',
+    choices: [
+      { l: '조건을 다 들어주고 유치한다', t: '공장 유치에 성공했습니다. 일자리는 늘었지만 강 하류 어민들의 걱정이 커졌습니다.', fx: { happy: 4, fame: 2 }, run: (S) => { rec(S, 2); pow(S, 4); } },
+      { l: '환경 조건을 걸고 협상한다', typ: true, p: 0.5,
+        ok: { t: '폐수 기준을 지키는 조건으로 공장이 들어왔습니다. 양쪽 모두에게 박수를 받았습니다.', fx: { happy: 6, fame: 2 }, val: { rep: 3 }, run: (S) => { rec(S, 2.5); } },
+        no: { t: '회사는 조건이 더 좋은 옆 도시로 갔습니다. "굴러온 복을 찼다"는 말이 돌았습니다.', fx: { happy: -5 }, run: (S) => { rec(S, -1); } } },
+      { l: '유치하지 않는다', t: '지금의 강과 들판을 지키기로 했습니다. 젊은 사람들은 실망했습니다.', fx: { happy: -1 }, val: { rep: 1 }, run: (S) => { rec(S, -0.5); } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl2_strike', rate: 0.2, cd: 4, gate: (S) => tier(S) === 2 && S.place.urban,
+    title: '버스 파업',
+    text: '시내버스 노동조합이 임금 인상을 요구하며 내일 첫차부터 파업에 들어간다고 합니다. 버스 회사는 요금을 올려 주거나 시가 보조금을 더 내라고 합니다.',
+    choices: [
+      { l: '보조금을 늘려 파업을 막는다', typ: true, t: '밤샘 협상 끝에 첫차는 제시간에 나갔습니다. 시 재정 부담은 커졌습니다.', fx: { happy: 2 }, val: { rep: 1 }, run: (S) => { rec(S, 1); } },
+      { l: '요금을 올린다', t: '요금이 올랐습니다. 출퇴근하는 시민들의 원성이 높습니다.', fx: { happy: -2 }, val: { rep: -3 }, run: (S) => { rec(S, -0.5); } },
+      { l: '원칙대로 버틴다', p: 0.4,
+        ok: { t: '임시 버스를 풀어 버티는 사이 노사가 스스로 합의했습니다. 원칙을 지켰다는 평을 들었습니다.', fx: { happy: 4 }, run: (S) => { rec(S, 1.5); } },
+        no: { t: '파업이 열흘을 넘기며 도시가 멈췄습니다. 비난이 {N}에게 쏟아졌습니다.', fx: { happy: -7 }, val: { rep: -5 }, run: (S) => { rec(S, -2); } } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl2_event', rate: 0.55, cd: 2, gate: T(2),
+    text: (S) => ['지역 축제 개막식에서 축사를 했습니다. 주민들과 함께 춤판에 끌려 나갔습니다.', `새벽 시장 상인들과 ${S.place.urban ? '국밥' : '국수'}을 먹으며 장사 이야기를 들었습니다.`, '경로당 열 곳을 하루에 돌며 어르신들의 손을 잡았습니다.', '새로 지은 도서관 개관식에서 리본을 잘랐습니다.'],
+    fx: { social: 3, fame: 1 }, run: (S) => { rec(S, 0.3); },
+  });
+  add(POL, {
+    id: 'j_pl2_aide', rate: (S) => 0.14 + (S.flags.corrupt ? 0.08 : 0), cd: 6, gate: T(2),
+    title: '측근 비리 의혹',
+    text: '비서실장이 공사 업체 선정 대가로 돈을 받았다는 의혹이 보도되었습니다. 수년 동안 {N}의 오른팔이었던 사람입니다.',
+    choices: [
+      { l: '즉시 직위 해제하고 수사를 의뢰한다', typ: true, t: '오른팔을 잘라 냈습니다. 마음은 쓰렸지만 "단호했다"는 평을 들었습니다.', fx: { happy: -3, social: -2 }, val: { rep: 2, honest: 1 }, run: (S) => { rec(S, 0.5); } },
+      { l: '의혹을 부인하며 감싼다', p: (S) => (S.flags.corrupt ? 0.35 : 0.6),
+        ok: { t: '의혹은 증거 부족으로 흐지부지되었습니다. 비서실장은 자리를 지켰습니다.', fx: { happy: 1 }, val: { honest: -2 } },
+        no: { val: { honest: -2, rep: -10 }, fx: { happy: -10, fame: 3 }, run: (S) => {
+          S.flags.scandal = true; rec(S, -2.5);
+          if (S.flags.corrupt && U.chance(0.4)) { lose(S); return '수사가 {N}에게까지 번졌습니다. 결국 책임을 지고 자리에서 물러났습니다.'; }
+          return '감싼 것이 화근이 되었습니다. "제 식구 감싸기"라는 비판 속에 지지율이 곤두박질쳤습니다.';
+        } } },
+      { l: '자체 감사를 지시하고 결과를 기다린다', p: 0.6,
+        ok: { t: '감사에서 문제가 없다는 결론이 났습니다. 오해였습니다.', fx: { happy: 3 } },
+        no: { t: '감사 결과 의혹이 사실로 드러났습니다. 늦장 대처라는 비판을 들었습니다.', fx: { happy: -5 }, val: { rep: -4 }, run: (S) => { rec(S, -1); } } },
+    ],
+  });
+
+  /* ================================================================ 정치인 3: 국회의원 */
+  add(POL, {
+    id: 'j_pl3_vote', rate: 0.4, cd: 3, gate: T(3),
+    title: '당론과 소신',
+    text: (S, ctx) => `${['연금 개혁', '부자 증세', '국방 예산 증액', '노동 시간 단축'][vp(ctx, 4)]} 법안 표결이 다가옵니다. 당은 반대 당론을 정했지만, {N}의 지역구 여론과 {N}의 생각은 찬성 쪽입니다.`,
+    choices: [
+      { l: '당론을 따른다', typ: true, t: '당론대로 반대표를 던졌습니다. 지역구 사무실에 항의 전화가 이어졌습니다.', fx: { happy: -2 }, run: (S) => { pow(S, 2); } },
+      { l: '소신대로 찬성표를 던진다', t: '당에서 "배신자"라는 말을 들었지만, 지역구에서는 소신 있는 의원이라는 평을 들었습니다.', fx: { fame: 2, happy: 3, social: -2 }, val: { rep: 3, honest: 1 }, run: (S) => { rec(S, 1); pow(S, -3); } },
+      { l: '표결에 불참한다', t: '표결 시간에 자리를 비웠습니다. 양쪽 모두에게 "비겁하다"는 말을 들었습니다.', fx: { happy: -3 }, val: { rep: -2 }, run: (S) => { rec(S, -0.5); } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl3_lobby', rate: (S) => 0.25 + (3 - H.dev(S)) * 0.04, cd: 4, gate: T(3),
+    title: '로비',
+    text: (S, ctx) => `${['제약', '건설', '통신', '석유'][vp(ctx, 4)]} 업계 단체 사람들이 저녁 자리를 마련했습니다. 법안 문구 한 줄만 바꿔 주면, 다음 선거 후원금을 넉넉히 모아 주겠다고 합니다.`,
+    choices: [
+      { l: '자리를 털고 일어선다', typ: (S) => honest(S) >= 40, t: '정중히 인사하고 먼저 일어섰습니다.', fx: { happy: 1 }, val: { honest: 2, rep: 1 } },
+      { l: '문구를 바꿔 주고 후원금을 받는다', need: (S) => honest(S) < 75, typ: (S) => honest(S) < 40, p: (S) => [0.6, 0.68, 0.75, 0.8][H.dev(S)],
+        ok: { t: '법안 문구가 바뀌었습니다. 후원회 통장에 돈이 쌓였습니다. 그 업계 사람들의 부탁은 끝이 없었습니다.', fx: { money: 6 }, val: { honest: -5 }, run: (S) => { corrupt(S); pow(S, 3); } },
+        no: { val: { honest: -4, rep: -12 }, fx: { happy: -10, fame: 4 }, run: (S) => {
+          S.flags.scandal = true; corrupt(S); rec(S, -2); notor(S);
+          if (U.chance(0.3)) { lose(S); return '"입법 로비" 의혹이 터졌습니다. 당은 {N을} 제명했고, {N은} 의원직에서 물러났습니다.'; }
+          H.fine(S, 8); return '"입법 로비" 의혹이 터졌습니다. 재판 끝에 벌금형을 받았습니다. 의원직은 지켰지만 이름에 흠이 남았습니다.';
+        } } },
+      { l: '업계 의견을 공개 공청회에서 듣겠다고 한다', p: 0.55,
+        ok: { t: '공청회에서 업계와 시민 단체가 함께 의견을 냈습니다. 법안이 더 단단해졌습니다.', fx: { happy: 3 }, val: { rep: 2 }, run: (S) => { rec(S, 1); } },
+        no: { t: '업계 단체가 등을 돌렸습니다. 후원금 모임이 썰렁해졌습니다.', fx: { happy: -2 }, run: (S) => { pow(S, -2); } } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl3_hearing', rate: 0.3, cd: 3, gate: T(3),
+    title: '국정 감사',
+    text: '국정 감사에서 장관을 상대로 질의할 차례가 다가옵니다. 보좌진이 밤새 자료를 모았지만 아직 결정적인 한 방이 없습니다.',
+    choices: [
+      { l: '밤새 자료를 직접 파고든다', p: (S) => U.clamp(0.35 + (S.st.smarts - 50) / 120 + S.st.skill / 400, 0.15, 0.8),
+        ok: { t: '숨겨진 예산 전용을 찾아내 장관의 말문을 막았습니다. 그날 저녁 뉴스 첫머리가 {N}의 질의였습니다.', fx: { fame: 5, happy: 6, health: -2 }, val: { rep: 3 }, run: (S) => { rec(S, 1.5); } },
+        no: { t: '준비한 자료가 틀린 것으로 드러났습니다. 장관이 웃으며 정정했습니다.', fx: { fame: 1, happy: -6, health: -2 }, val: { rep: -2 } } },
+      { l: '호통으로 존재감을 보인다', p: 0.5,
+        ok: { t: '호통 장면이 짧은 영상으로 퍼졌습니다. 이름은 알렸습니다.', fx: { fame: 3, happy: 2 } },
+        no: { t: '내용 없는 호통이라는 비판이 쏟아졌습니다.', fx: { fame: 1, happy: -4 }, val: { rep: -3 } } },
+      { l: '보좌진이 쓴 질의서를 읽는다', typ: true, t: '무난하게 질의를 마쳤습니다. 아무도 기억하지 못할 하루였습니다.', fx: { happy: -1 } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl3_bill', rate: 0.3, cd: 4, gate: T(3),
+    title: '대표 발의',
+    text: (S, ctx) => `{N이} 몇 해 동안 준비한 ${['아동 수당 확대', '산업 재해 예방', '전세 사기 피해자 지원', '농어촌 의료 지원'][vp(ctx, 4)]} 법안이 상임위원회에 올라갔습니다. 반대 당은 "포퓰리즘"이라며 막아섭니다.`,
+    choices: [
+      { l: '반대 당 의원들을 한 명씩 찾아가 설득한다', p: (S) => U.clamp(0.3 + (S.st.social - 50) / 100 + H.talent(S, 'charm') / 400, 0.15, 0.8),
+        ok: { t: '반대 당 의원 몇이 손을 들어 법안이 본회의를 통과했습니다. 법 이름에 {N}의 이름이 붙어 불리기 시작했습니다.', fx: { fame: 4, happy: 10 }, val: { rep: 4 }, run: (S) => { rec(S, 2.5); honor(S, '대표 발의 법안 통과'); } },
+        no: { t: '법안은 상임위원회 서랍 속에 잠들었습니다. 임기 안에 다시 꺼낼 수 있을지 모르겠습니다.', fx: { happy: -5 } } },
+      { l: '반대 당의 요구를 일부 받아들여 고친다', typ: true, p: 0.65,
+        ok: { t: '반쪽짜리라는 말도 들었지만 법은 통과되었습니다. 첫걸음이었습니다.', fx: { happy: 5, fame: 2 }, run: (S) => { rec(S, 1.5); } },
+        no: { t: '고친 법안도 결국 막혔습니다.', fx: { happy: -3 } } },
+      { l: '거리 서명 운동으로 여론을 모은다', p: 0.45,
+        ok: { t: '서명이 수십만 명을 넘자 반대 당도 버티지 못했습니다. 법이 통과되었습니다.', fx: { fame: 4, happy: 8, health: -2 }, run: (S) => { rec(S, 2); honor(S, '대표 발의 법안 통과'); } },
+        no: { t: '서명은 모였지만 표결은 다음 회기로 미뤄졌습니다.', fx: { happy: -3, health: -2 } } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl3_district', rate: 0.45, cd: 2, gate: T(3),
+    text: ['주말마다 지역구에 내려가 경로당과 시장을 돌았습니다. 월요일 새벽 첫차로 다시 수도로 올라왔습니다.', '지역구 체육 대회에서 시축을 했습니다. 공이 엉뚱한 데로 굴러가 다들 웃었습니다.', '지역구 사무실 앞에 민원인 줄이 길게 늘어섰습니다. 점심을 걸렀습니다.', '지역구 전통 시장 화재 현장을 찾아 상인들의 하소연을 들었습니다.'],
+    fx: { social: 2, health: -1 }, run: (S) => { rec(S, 0.3); fam(S, -2); },
+  });
+  add(POL, {
+    id: 'j_pl3_tv', rate: (S) => (H.dev(S) >= 1 ? 0.25 : 0.1), cd: 3, gate: T(3),
+    run: (S) => {
+      if (U.chance(0.6)) { H.fameUp(S, 3); E.stat(S, 'happy', 3); return '시사 토론 프로그램에 나가 차분한 말솜씨로 호평을 받았습니다. 다음 주 출연 요청이 또 왔습니다.'; }
+      H.fameUp(S, 1); E.stat(S, 'happy', -5); if (S.rap) S.rap.rep = U.clamp(S.rap.rep - 3, 0, 100);
+      return '생방송 토론에서 물가를 묻는 질문에 엉뚱한 숫자를 말했습니다. 그 장면이 하루 종일 돌아다녔습니다.';
+    },
+  });
+  add(POL, {
+    id: 'j_pl3_scandal', rate: (S) => 0.06 + (S.flags.corrupt ? 0.1 : 0), cd: 8, gate: T(3),
+    title: '의혹 보도',
+    text: (S, ctx) => `{N}에 대한 ${['논문 표절', '부동산 투기', '가족 채용 특혜'][vp(ctx, 3)]} 의혹 기사가 났습니다. 반대 당은 사퇴를 요구하고, 당 지도부는 "알아서 판단하라"고만 합니다.`,
+    choices: [
+      { l: '자료를 공개하며 정면으로 해명한다', typ: true, p: (S) => U.clamp(0.25 + honest(S) / 120 - (S.flags.corrupt || 0) * 0.15, 0.1, 0.85),
+        ok: { t: '자료를 본 기자들이 의혹이 부풀려졌다고 정정 보도를 냈습니다.', fx: { happy: 4 }, val: { rep: 2 } },
+        no: { t: '해명할수록 새로운 의혹이 꼬리를 물었습니다. 지지율이 곤두박질쳤습니다.', fx: { happy: -8, fame: 2 }, val: { rep: -8 }, run: (S) => { S.flags.scandal = true; rec(S, -2); } } },
+      { l: '사과하고 당직에서 물러난다', t: '고개 숙여 사과하고 당직을 내려놓았습니다. 의원직은 지켰습니다.', fx: { happy: -5 }, val: { rep: -2, honest: 1 }, run: (S) => { rec(S, -1); pow(S, -5); } },
+      { l: '의원직에서 물러난다', t: '"정치인은 의혹만으로도 책임을 져야 한다"며 의원직을 내려놓았습니다.', fx: { happy: -8, fame: 2 }, val: { rep: 3, honest: 2 }, run: (S) => { lose(S); } },
+    ],
+  });
+
+  /* ================================================================ 정치인 4: 국가 지도자 */
+  const SUMMIT = ['USA', 'CHN', 'JPN', 'DEU', 'FRA', 'GBR', 'IND', 'BRA', 'ZAF', 'IDN', 'SAU', 'RUS', 'TUR', 'KOR', 'MEX', 'NGA', 'EGY', 'AUS', 'CAN', 'ITA'];
+  const summitDest = (S, ctx) => ctx.dest || (ctx.dest = (() => { const own = H.iso(S); const near = Object.keys(DATA.c).filter((i) => i !== own && Wd.regionKey(i) === Wd.regionKey(own) && DATA.c[i].pop > 2e7); const pool = SUMMIT.filter((d) => DATA.c[d] && d !== own).concat(near); return pool[U.randInt(0, pool.length - 1)]; })());
+  add(POL, {
+    id: 'j_pl4_trip', rate: 0.5, cd: 1, gate: T(4),
+    run: (S) => {
+      const d = summitDest(S, {});
+      H.travel(S, d); H.fameUp(S, 1); E.stat(S, 'social', 2);
+      return U.pick([`${U.j(Wd.name(d), '을')} 국빈 방문했습니다. 정상 회담에서 무역과 기후 협력을 논의했습니다.`, `${Wd.name(d)}에서 열린 국제 정상 회의에 참석했습니다. 각국 정상들과 나란히 기념사진을 찍었습니다.`, `${Wd.name(d)} 정상과 회담하고 공동 기자 회견을 열었습니다. 밤 비행기로 돌아와 바로 국무 회의에 들어갔습니다.`]);
+    },
+  });
+  add(POL, {
+    id: 'j_pl4_economy', rate: 0.35, cd: 3, gate: T(4),
+    title: '경제 위기',
+    text: (S) => `물가가 치솟고 일자리가 줄고 있습니다${st(S, 'infl') !== null ? ` (${Wd.name(H.iso(S))} 물가 상승률 ${st(S, 'infl')}% · 실업률 ${st(S, 'unemp')}%)` : ''}. 경제 참모들은 허리띠를 졸라매자는 쪽과 돈을 풀어 경기를 살리자는 쪽으로 갈렸습니다.`,
+    choices: [
+      { l: '긴축으로 물가부터 잡는다', p: 0.55,
+        ok: { t: '두 해 만에 물가가 잡혔습니다. 그동안의 고통을 기억하는 국민도 많습니다.', fx: { happy: 2 }, val: { rep: 1 }, run: (S) => { rec(S, 2); } },
+        no: { t: '물가는 잡히지 않고 실업만 늘었습니다. 거리에 시위대가 나섰습니다.', fx: { happy: -6 }, val: { rep: -6 }, run: (S) => { rec(S, -2); } } },
+      { l: '재정을 풀어 일자리를 만든다', p: 0.5,
+        ok: { t: '공공 사업으로 일자리가 늘고 경기가 살아났습니다. 나랏빚은 늘었습니다.', fx: { happy: 4 }, val: { rep: 3 }, run: (S) => { rec(S, 2); } },
+        no: { t: '풀린 돈이 물가를 더 밀어 올렸습니다. 통화 가치가 떨어졌습니다.', fx: { happy: -6 }, val: { rep: -6 }, run: (S) => { rec(S, -2.5); } } },
+      { l: '중앙은행과 전문가에게 맡긴다', typ: true, t: '중앙은행의 결정을 존중하겠다고 밝혔습니다. "지도자가 보이지 않는다"는 말도 들었습니다.', fx: { happy: -1 }, run: (S) => { rec(S, 0.5); } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl4_disaster', rate: 0.25, cd: 4, gate: T(4),
+    title: '국가 재난',
+    text: (S) => `${U.j(hzWord(S), '으로')} 큰 피해가 났습니다. 수많은 사람이 집을 잃었고, 온 나라의 눈이 {N}에게 쏠렸습니다.`,
+    choices: [
+      { l: '현장으로 날아가 구조를 지휘한다', typ: true, t: '무너진 마을에서 이재민들의 손을 잡았습니다. 국가 애도 기간을 선포하고 특별 예산을 편성했습니다.', fx: { health: -2, happy: 1, fame: 2 }, val: { rep: 4 }, run: (S) => { rec(S, 2); } },
+      { l: '국제 사회에 지원을 요청한다', p: 0.65,
+        ok: { t: '이웃 나라들이 구조대와 구호품을 보내왔습니다. 복구가 빨라졌습니다.', fx: { happy: 3 }, val: { rep: 2 }, run: (S) => { rec(S, 1.5); } },
+        no: { t: '지원은 더뎠고, "나라 망신"이라는 비판이 나왔습니다.', fx: { happy: -4 }, val: { rep: -3 }, run: (S) => { rec(S, -1); } } },
+      { l: '집무실에서 보고를 받으며 지휘한다', p: 0.5,
+        ok: { t: '체계적인 대응으로 피해가 더 커지지 않았습니다.', fx: { happy: 2 }, run: (S) => { rec(S, 1); } },
+        no: { t: '"현장에 없는 지도자"라는 사진 한 장이 모든 것을 덮었습니다.', fx: { happy: -6 }, val: { rep: -6 }, run: (S) => { rec(S, -2); } } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl4_approval', rate: 0.4, cd: 2, gate: T(4),
+    run: (S) => {
+      const r = (S.jx && S.jx.rec) || 0, rp = H.vl(S, 'rep');
+      const pct = Math.round(U.clamp(38 + r * 4 + (rp - 50) * 0.5 + U.normal(0, 6), 8, 82));
+      E.stat(S, 'happy', pct >= 50 ? 3 : pct < 30 ? -4 : 0);
+      return pct >= 55 ? `여론 조사에서 국정 지지율이 ${pct}%를 기록했습니다. 참모들이 모처럼 웃었습니다.`
+        : pct >= 35 ? `국정 지지율이 ${pct}%로 나왔습니다. 반은 지지하고 반은 등을 돌린 셈입니다.`
+          : `국정 지지율이 ${pct}%까지 떨어졌습니다. 신문마다 "레임덕"이라는 말이 등장했습니다.`;
+    },
+  });
+  add(POL, {
+    id: 'j_pl4_reform', rate: 0.3, cd: 4, gate: T(4),
+    title: '개혁 법안',
+    text: (S, ctx) => `${['연금 개혁', '노동 개혁', '세제 개편', '교육 개혁'][vp(ctx, 4)]}을 하지 않으면 다음 세대가 짐을 진다는 보고서가 올라왔습니다. 하지만 표를 잃을 일입니다.`,
+    choices: [
+      { l: '임기를 걸고 밀어붙인다', p: 0.5,
+        ok: { t: '격렬한 반대 끝에 개혁안이 통과되었습니다. 역사책에 남을 일이라는 말을 들었습니다.', fx: { happy: 6, fame: 3 }, val: { rep: -2 }, run: (S) => { rec(S, 3); honor(S, '국가 개혁 법안 통과'); } },
+        no: { t: '총파업과 시위가 이어졌고 개혁안은 의회에서 부결되었습니다. 힘이 크게 빠졌습니다.', fx: { happy: -8 }, val: { rep: -5 }, run: (S) => { rec(S, -2); pow(S, -6); } } },
+      { l: '반대편과 타협해 절반만 바꾼다', typ: true, t: '절반의 개혁이 통과되었습니다. 양쪽 모두 불만이지만, 한 걸음은 나아갔습니다.', fx: { happy: 2 }, run: (S) => { rec(S, 1.5); } },
+      { l: '다음 정부로 미룬다', t: '개혁을 미뤘습니다. 당장의 지지율은 지켰습니다.', fx: { happy: 1 }, run: (S) => { rec(S, -1); } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl4_war', rate: 0.35, cd: 3, gate: (S) => tier(S) === 4 && H.war(S) >= 1,
+    title: '분쟁',
+    text: '국경 지역의 무장 충돌이 수도까지 위협합니다. 군은 대대적인 작전을 건의하고, 국제 중재단은 휴전 협상 테이블을 제안합니다.',
+    choices: [
+      { l: '휴전 협상에 나선다', p: 0.4,
+        ok: { t: '몇 달의 협상 끝에 휴전 협정에 서명했습니다. 피란민들이 하나둘 집으로 돌아갑니다.', fx: { happy: 8, fame: 5 }, val: { rep: 5 }, run: (S) => { rec(S, 3); honor(S, '휴전 협정 서명'); } },
+        no: { t: '협상은 결렬되었고 충돌은 이어졌습니다. "나약하다"는 비판까지 들었습니다.', fx: { happy: -6 }, val: { rep: -3 }, run: (S) => { rec(S, -1); } } },
+      { l: '군사 작전을 승인한다', typ: true, p: 0.45,
+        ok: { t: '작전으로 주요 도시를 되찾았습니다. 그 대가를 치른 마을들의 이름을 오래 기억해야 합니다.', fx: { happy: 2, fame: 3 }, run: (S) => { rec(S, 1.5); pow(S, 4); } },
+        no: { t: '작전은 길어졌고 피해만 늘었습니다. 국제 사회의 비판이 쏟아졌습니다.', fx: { happy: -8 }, val: { rep: -6 }, run: (S) => { rec(S, -2); } } },
+      { l: '이웃 나라 정상들에게 중재를 맡긴다', p: 0.5,
+        ok: { t: '지역 정상들의 중재로 일시 휴전이 이뤄졌습니다.', fx: { happy: 4 }, run: (S) => { rec(S, 1.5); } },
+        no: { t: '중재는 성과 없이 끝났습니다.', fx: { happy: -3 } } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl4_term', rate: 0.25, once: true, gate: (S) => tier(S) === 4 && el(S) !== 'free',
+    title: '임기 연장',
+    text: '측근들이 헌법을 고쳐 임기를 늘리자고 합니다. "나라가 안정되려면 지도자가 바뀌면 안 된다"고 합니다. 의회는 이미 {N}의 편입니다.',
+    choices: [
+      { l: '임기를 늘리는 개헌을 받아들인다', typ: (S) => honest(S) < 55, t: '개헌안이 통과되었습니다. 임기가 5년 늘었습니다. 거리에서는 조용한 분노가 쌓여 갑니다.', fx: { happy: 3 }, val: { honest: -6, rep: -8 }, run: (S) => { const j = S.work.job; if (j && j.termEnd) j.termEnd += 60; pow(S, 8); } },
+      { l: '헌법이 정한 임기만 채우겠다고 선언한다', typ: (S) => honest(S) >= 55, t: '"권력은 잠시 맡은 것"이라며 개헌 요구를 물리쳤습니다. 국제 사회가 놀라워했습니다.', fx: { happy: 4, fame: 4 }, val: { honest: 4, rep: 8 }, run: (S) => { rec(S, 2); } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl4_aide', rate: (S) => 0.1 + (S.flags.corrupt ? 0.1 : 0), cd: 6, gate: T(4),
+    title: '측근 비리',
+    text: (S) => `${/총리/.test(jt(S)) ? '총리실' : /대통령/.test(jt(S)) ? '대통령실' : '집무실'} 핵심 측근이 기업들에게서 돈을 받았다는 의혹이 터졌습니다. ${el(S) === 'free' ? '야당은 특별 검사를 요구합니다.' : '해외 언론이 이를 크게 보도했습니다.'}`,
+    choices: [
+      { l: (S) => (el(S) === 'free' ? '특별 검사를 받아들인다' : '독립적인 조사를 지시한다'), typ: true, t: (S) => `${el(S) === 'free' ? '특검을 받아들였습니다' : '조사를 지시했습니다'}. 측근은 구속되었고, {N은} 국민 앞에 사과했습니다.`, fx: { happy: -5 }, val: { rep: 2, honest: 1 }, run: (S) => { rec(S, -0.5); } },
+      { l: '정치 공세라며 거부한다', p: (S) => (el(S) === 'free' ? 0.45 : 0.75),
+        ok: { t: '의혹은 흐지부지되었습니다. 의심의 눈초리는 남았습니다.', fx: { happy: -1 }, val: { honest: -3, rep: -4 } },
+        no: { val: { honest: -3, rep: -10 }, fx: { happy: -10 }, run: (S) => {
+          S.flags.scandal = true; rec(S, -3);
+          if (S.flags.corrupt && el(S) === 'free' && U.chance(0.35)) { lose(S); return '거부가 오히려 의혹을 키웠습니다. 수사가 {N}에게까지 닿자, {N은} 임기를 다 채우지 못하고 물러났습니다.'; }
+          return '거부가 오히려 의혹을 키웠습니다. 광장에 촛불이 모였습니다.';
+        } } },
+    ],
+  });
+  add(POL, {
+    id: 'j_pl4_guard', rate: 0.25, cd: 4, gate: (S) => tier(S) === 4 && hasFam(S),
+    text: (S) => (kidsHome(S).length ? ['아이가 경호원 없이 친구 집에 가 보고 싶다며 울었습니다.', '가족과의 저녁 식사가 국가 안보 회의로 또 미뤄졌습니다.'] : ['가족과의 저녁 식사가 국가 안보 회의로 또 미뤄졌습니다.', '관저 정원을 산책하는 것이 가족과 보내는 유일한 시간입니다.']),
+    fx: { happy: -2 }, run: (S) => { fam(S, -3); },
+  });
+
+  /* ================================================================ 공무원 */
+  const CIV = ['civil'];
+  add(CIV, {
+    id: 'j_civ_exam', rate: 0.35, cd: 4, gate: (S) => canPromo(S) && yrsIn(S) >= 3,
+    title: '승진 시험',
+    text: '승진 시험 공고가 붙었습니다. 붙으면 한 직급 오르지만, 몇 달 동안 퇴근 뒤 저녁을 책상 앞에서 보내야 합니다.',
+    choices: [
+      { l: '밤마다 공부한다', p: (S) => U.clamp(0.35 + (S.st.smarts - 50) / 120 + S.st.skill / 400, 0.15, 0.85),
+        ok: { t: '시험에 붙어 한 직급 올랐습니다. 책상이 창가 자리로 옮겨졌습니다.', fx: { happy: 6, smarts: 2 }, run: (S) => { promo(S, 1.15); fam(S, -2); } },
+        no: { t: '두 점 차이로 떨어졌습니다. 내년을 기약합니다.', fx: { happy: -4, smarts: 2 }, run: (S) => { fam(S, -2); } } },
+      { l: '시험은 건너뛰고 지금 일에 충실한다', typ: true, t: '맡은 일을 꼼꼼히 하며 저녁 시간을 지켰습니다.', fx: { happy: 2 } },
+      { l: '윗선에 줄을 대 본다', need: (S) => honest(S) < 60, p: 0.5,
+        ok: { t: '국장 눈에 들어 특별 승진했습니다. 뒷말이 따랐습니다.', fx: { social: -2, happy: 3 }, val: { honest: -2 }, run: (S) => { promo(S, 1.15); } },
+        no: { t: '줄을 댄 국장이 다른 부처로 밀려났습니다. 괜히 눈 밖에만 났습니다.', fx: { happy: -4 }, val: { honest: -1 } } },
+    ],
+  });
+  add(CIV, {
+    id: 'j_civ_audit', rate: 0.25, cd: 5,
+    title: '감사',
+    text: '상급 기관의 감사가 나왔습니다. 전임자가 처리한 서류에 빈칸과 날짜 오류가 수두룩합니다. 팀장이 "날짜만 맞춰 채워 넣자"고 합니다.',
+    choices: [
+      { l: '사실대로 보고한다', typ: (S) => honest(S) >= 50, p: 0.65,
+        ok: { t: '전임자의 실수로 정리되었습니다. 원칙대로 일한다는 평을 들었습니다.', fx: { happy: 3 }, val: { honest: 2, rep: 2 } },
+        no: { t: '팀 전체가 경고를 받았습니다. 팀장이 한동안 {N과} 말을 섞지 않았습니다.', fx: { happy: -4, social: -3 }, val: { honest: 2 } } },
+      { l: '팀장 말대로 서류를 맞춘다', typ: (S) => honest(S) < 50, p: 0.75,
+        ok: { t: '감사는 무사히 지나갔습니다. 마음 한구석이 찜찜합니다.', fx: { happy: -1 }, val: { honest: -3 } },
+        no: { t: '날짜를 고친 흔적이 드러나 징계를 받았습니다. 석 달 동안 감봉되었습니다.', fx: { happy: -8, money: -1 }, val: { honest: -2, rep: -5 } } },
+      { l: '감사관에게 먼저 사정을 설명한다', p: (S) => U.clamp(0.35 + (S.st.social - 50) / 120, 0.15, 0.75),
+        ok: { t: '사정을 들은 감사관이 보완 기간을 주었습니다.', fx: { happy: 3 } },
+        no: { t: '말을 꺼낸 것이 오히려 의심을 샀습니다.', fx: { happy: -3 } } },
+    ],
+  });
+  add(CIV, {
+    id: 'j_civ_complaint', rate: 0.35, cd: 2,
+    text: ['민원인이 창구 앞에서 한 시간 넘게 언성을 높였습니다. 같은 규정을 몇 번이고 설명했습니다.', '서류 한 장이 모자라 돌려보낸 민원인이 "공무원이 다 그렇지"라며 문을 쾅 닫고 나갔습니다.', '인터넷 민원 게시판에 {N}의 이름을 콕 집은 항의 글이 올라왔습니다.', '같은 민원을 열두 번째 넣은 주민의 집을 직접 찾아가 사정을 들었습니다. 해결은 못 했지만 서로 얼굴은 익혔습니다.', '같은 서류를 세 번 떼어 가는 민원인에게 이유를 묻자, 글을 읽지 못한다고 털어놓았습니다. 함께 서류를 채웠습니다.'],
+    fx: { happy: -2 },
+  });
+  add(CIV, {
+    id: 'j_civ_thanks', rate: 0.15, cd: 4,
+    text: ['몇 달을 끌던 민원을 해결해 준 주민이 손편지를 보내왔습니다.', '혼자 사는 어르신의 복지 서류를 대신 챙겨 드렸더니, 어르신이 직접 기른 채소를 들고 찾아왔습니다.', '{N이} 만든 안내문이 쉽다며 다른 부서에서도 따라 쓰기 시작했습니다.'],
+    fx: { happy: 4, social: 1 }, val: { rep: 1 },
+  });
+  add(CIV, {
+    id: 'j_civ_rotate', rate: 0.22, cd: 6, gate: (S) => yrsIn(S) >= 2,
+    title: '순환 근무',
+    text: (S) => `인사 발령이 났습니다. ${S.place.urban ? '본청을 떠나 먼 지방 사무소로' : '군청을 떠나 외딴 면 사무소로'} 2년 동안 순환 근무를 가라고 합니다.`,
+    choices: [
+      { l: (S) => (hasFam(S) ? '혼자 내려가 주말마다 집에 온다' : '짐을 싸서 내려간다'), typ: true,
+        run: (S) => { raise(S, 1.03); E.stat(S, 'skill', 3); if (hasFam(S)) { E.stat(S, 'happy', -3); return '주말마다 버스를 타고 집에 다녀왔습니다. 2년이 길었습니다.' + fam(S, -6); } E.stat(S, 'social', 2); return '낯선 곳에서 혼자 2년을 보냈습니다. 그곳 사람들과 정이 들었습니다.'; } },
+      { l: '가족과 함께 내려간다', need: hasFam, t: '온 가족이 짐을 쌌습니다. 아는 사람 없는 곳에서 서로에게 더 기댔습니다.', fx: { social: -4, happy: -1, skill: 2 }, run: (S) => { raise(S, 1.03); fam(S, 3); } },
+      { l: '발령을 미뤄 달라고 사정한다', p: 0.35,
+        ok: { t: '인사 담당자가 사정을 봐주어 발령이 한 해 미뤄졌습니다.', fx: { happy: 3 } },
+        no: { t: '예외는 없다는 답이 돌아왔습니다. 결국 짐을 쌌습니다.', fx: { happy: -4 }, run: (S) => { fam(S, -4); } } },
+    ],
+  });
+  add(CIV, {
+    id: 'j_civ_favor', rate: (S) => 0.12 + (3 - H.dev(S)) * 0.06, cd: 4, who: 'newfriend',
+    title: '청탁',
+    text: (S) => `고향 선배 {friend가} 찾아와 영업 허가 서류를 먼저 처리해 달라며 ${H.dev(S) <= 1 ? '봉투를 슬며시 내밀었습니다' : '"나중에 섭섭지 않게 하겠다"고 합니다'}. 줄을 서서 기다리는 서류가 마흔 건이 넘습니다.`,
+    choices: [
+      { l: '순서대로 처리한다', typ: (S) => honest(S) >= 40, t: '서류는 순서대로 처리했습니다. {friend는} 서운한 얼굴로 돌아갔습니다.', fx: { happy: 1 }, val: { honest: 2 } },
+      { l: '받고 먼저 처리해 준다', need: (S) => honest(S) < 70, typ: (S) => honest(S) < 40, p: (S) => [0.62, 0.72, 0.8, 0.88][H.dev(S)],
+        ok: { t: '서류가 하루 만에 나갔습니다. 주머니는 두둑해졌지만 그 뒤로 비슷한 부탁이 줄을 이었습니다.', fx: { money: 2 }, val: { honest: -5 }, run: (S) => { corrupt(S); } },
+        no: { val: { honest: -3, rep: -10 }, fx: { happy: -10 }, run: (S) => {
+          if (U.chance(0.4)) { lose(S); return '함께 일하던 직원이 신고했습니다. 징계 위원회는 파면을 결정했습니다.'; }
+          raise(S, 0.9); H.fine(S, 2); return '함께 일하던 직원이 신고했습니다. 감봉 처분과 함께 한직으로 밀려났습니다.';
+        } } },
+      { l: '상급자에게 청탁 사실을 보고한다', t: '청탁 사실을 보고했습니다. 원칙을 지킨다는 말을 들었지만, {friend와} 다시는 연락하지 않게 되었습니다.', fx: { happy: 1, social: -1 }, val: { honest: 3, rep: 2 } },
+    ],
+  });
+  add(CIV, {
+    id: 'j_civ_regime', rate: 0.12, cd: 8, gate: (S) => el(S) !== 'none',
+    title: '정권 교체',
+    text: (S) => (el(S) === 'free' ? '선거로 정권이 바뀌었습니다. 새 정부가 {N이} 몇 해 동안 맡아 온 사업을 "전 정권 사업"이라며 멈추고, 담당자들을 불러 경위를 묻겠다고 합니다.' : '정부 요직이 한꺼번에 바뀌었습니다. 새 장관이 {N이} 맡아 온 사업을 멈추고, 담당자들의 "충성심"을 따지겠다고 합니다.'),
+    choices: [
+      { l: '새 방침에 맞춰 보고서를 다시 쓴다', typ: true, t: '밤새 보고서를 고쳐 썼습니다. 몇 해 쌓은 일이 서류 몇 장으로 정리되었습니다.', fx: { happy: -4, skill: 2 } },
+      { l: '사업 성과를 자료로 설득한다', p: (S) => U.clamp(0.3 + (S.st.smarts - 50) / 150 + (S.st.social - 50) / 200, 0.12, 0.7),
+        ok: { t: '자료를 본 새 장관이 사업을 이어 가기로 했습니다. {N}의 이름이 위에 알려졌습니다.', fx: { happy: 6 }, run: (S) => { raise(S, 1.04); pow(S, 2); } },
+        no: { t: '"전 정권 사람"으로 찍혀 한직으로 밀려났습니다.', fx: { happy: -6, social: -2 } } },
+      { l: '다른 부서로 옮겨 달라고 한다', t: '조용히 다른 부서로 옮겼습니다. 새 일을 처음부터 배웁니다.', fx: { happy: -1, smarts: 1 } },
+    ],
+  });
+  add(CIV, {
+    id: 'j_civ_busy', rate: 0.3, cd: 2,
+    text: (S) => ['예산 철이라 한 달 내내 밤늦게까지 사무실 불을 켰습니다.', `${el(S) === 'free' ? '의회 감사' : '상급 기관 점검'} 자료를 준비하느라 주말에도 나왔습니다.`, '새 제도 시행을 앞두고 안내문 수천 장을 봉투에 넣었습니다.'],
+    fx: { happy: -2, health: -1 }, run: (S) => { fam(S, -2); },
+  });
+  add(CIV, {
+    id: 'j_civ_emergency', rate: 0.2, cd: 4, gate: (S) => hzList(S).length > 0,
+    text: (S) => `${hzWord(S)} 경보가 내려 사흘 동안 비상 근무를 섰습니다. 대피소에 담요를 나르고 이재민 명단을 정리했습니다.`,
+    fx: { health: -2, social: 2 }, val: { rep: 1 },
+  });
+  add(CIV, {
+    id: 'j_civ_arrears', rate: 0.25, cd: 3, gate: (S) => H.dev(S) <= 1, k: 'bad',
+    text: '나라 곳간이 비어 공무원 월급이 석 달째 밀렸습니다. 동료 몇은 오후에 장사를 나갑니다.',
+    fx: { money: -0.8, happy: -4 },
+  });
+  add(CIV, {
+    id: 'j_civ_award', rate: 0.06, cd: 10, gate: (S) => yrsIn(S) >= 8,
+    text: '오랫동안 묵묵히 일한 공로로 모범 공무원 표창을 받았습니다.',
+    fx: { happy: 6 }, val: { rep: 2 }, run: (S) => { honor(S, '모범 공무원 표창'); },
+  });
+
+  /* ================================================================ 경찰 */
+  const COP = ['police'];
+  add(COP, {
+    id: 'j_cop_call', rate: 0.4, cd: 3,
+    title: '출동',
+    text: (S, ctx) => ['한밤중에 가정 폭력 신고가 들어왔습니다. 문 너머에서 고함과 울음소리가 들립니다.', '시장 골목에서 술 취한 남자가 흉기를 휘두른다는 신고입니다. 사람들이 몰려 있습니다.', '고속도로에서 큰 사고가 났다는 무전입니다. 뒤집힌 차 안에 사람이 갇혀 있다고 합니다.'][vp(ctx, 3)],
+    choices: [
+      { l: '앞장서 들어간다', p: (S) => U.clamp(0.5 + S.st.health / 300 + S.st.skill / 400, 0.4, 0.9),
+        ok: { t: '{N이} 먼저 들어가 상황을 정리했습니다. 다친 사람 없이 끝났습니다.', fx: { happy: 5 }, val: { rep: 2 } },
+        no: { t: '상황은 정리했지만 {N}도 팔을 크게 다쳤습니다. 몇 주 동안 깁스를 했습니다.', fx: { health: -8, happy: -3 } } },
+      { l: '지원을 기다리며 침착하게 상황을 살핀다', typ: true, p: 0.7,
+        ok: { t: '차분하게 말을 건네는 사이 지원 인력이 도착했습니다. 모두 무사했습니다.', fx: { happy: 3, social: 1 } },
+        no: { t: '기다리는 사이 상황이 나빠졌습니다. 다친 사람이 생겨 마음이 무거웠습니다.', fx: { happy: -6 } } },
+      { l: '규정대로 거리를 두고 지켜본다', t: '규정은 지켰지만, 늦었다는 주민들의 원성을 들었습니다.', fx: { happy: -2 }, val: { rep: -1 } },
+    ],
+  });
+  add(COP, {
+    id: 'j_cop_bribe', rate: (S) => 0.1 + (3 - H.dev(S)) * 0.08, cd: 4,
+    title: '검은돈',
+    text: (S) => (H.dev(S) <= 1 ? '검문소에서 화물 트럭을 세웠습니다. 서류가 엉망인 기사가 지폐 몇 장을 서류 사이에 끼워 내밉니다. 옆의 선배는 "다들 이렇게 산다"며 눈을 찡긋합니다.' : '단속 대상인 업소 사장이 "앞으로 잘 봐 달라"며 매달 일정액을 주겠다고 합니다. 같은 팀 몇은 이미 받고 있다는 소문입니다.'),
+    choices: [
+      { l: '규정대로 처리한다', typ: (S) => honest(S) >= 40, t: '규정대로 처리했습니다. 선배가 혀를 찼지만 {N은} 흔들리지 않았습니다.', fx: { happy: 1, social: -2 }, val: { honest: 2 } },
+      { l: '받는다', need: (S) => honest(S) < 75, typ: (S) => honest(S) < 40, p: (S) => [0.72, 0.76, 0.8, 0.85][H.dev(S)],
+        ok: { t: '돈은 동료들과 나눠 가졌습니다. 이제 다들 한배를 탔습니다.', fx: { money: 1.5 }, val: { honest: -5 }, run: (S) => { corrupt(S); } },
+        no: { val: { honest: -3, rep: -10 }, fx: { happy: -10 }, run: (S) => {
+          if (U.chance(0.4)) { lose(S); return '감찰에 걸렸습니다. 징계 위원회는 파면을 결정했습니다.'; }
+          raise(S, 0.92); H.fine(S, 2); return '감찰에 걸려 정직 석 달과 벌금을 받았습니다.';
+        } } },
+      { l: '감찰에 알린다', p: (S) => [0.35, 0.45, 0.6, 0.75][H.dev(S)],
+        ok: { t: '감찰이 나서 비리 고리가 끊겼습니다. 용기 있는 경찰관이라는 말을 들었습니다.', fx: { happy: 4 }, val: { honest: 3, rep: 4 }, run: (S) => { if (U.chance(0.3)) promo(S, 1.1); } },
+        no: { t: '알린 사실이 새어 나가 따돌림을 당했습니다. 먼 파출소로 발령이 났습니다.', fx: { social: -6, happy: -6 }, val: { honest: 3 } } },
+    ],
+  });
+  add(COP, {
+    id: 'j_cop_hurt', rate: (S) => 0.15 + Math.min(0.2, (st(S, 'homic') || 0) / 100), cd: 3, k: 'bad',
+    text: (S) => ['도주하던 오토바이를 쫓다 넘어져 무릎을 다쳤습니다.', '난동을 부리던 사람을 붙잡다 얼굴을 맞았습니다. 멍이 일주일 갔습니다.', `총성이 울린 골목에 가장 먼저 도착했습니다. 다행히 다친 사람은 없었지만 손이 한참 떨렸습니다.${stat(S, 'homic', (v) => `${Wd.name(H.iso(S))} 살인율 인구 10만 명당 ${v}명`)}`],
+    fx: { health: -3, happy: -2 },
+  });
+  add(COP, {
+    id: 'j_cop_community', rate: 0.3, cd: 3,
+    text: ['길 잃은 아이를 두 시간 만에 찾아 가족 품에 안겨 주었습니다. 그 가족이 떡을 들고 파출소에 찾아왔습니다.', '혼자 사는 어르신 댁에 순찰 길에 들러 안부를 물었습니다. 어르신이 기다렸다며 차를 내주었습니다.', '동네 아이들에게 교통안전 교육을 했습니다. 아이들이 경례를 따라 했습니다.', '시장 상인들과 함께 밤길 순찰을 돌았습니다. 상인들이 따뜻한 차를 건넸습니다.'],
+    fx: { happy: 3, social: 2 }, val: { rep: 1 },
+  });
+  add(COP, {
+    id: 'j_cop_protest', rate: (S) => (el(S) === 'free' ? 0.08 : 0.25), cd: 5,
+    title: '진압 명령',
+    text: (S) => (el(S) === 'free' ? '대규모 집회 현장에 배치되었습니다. 지휘부가 해산 명령에 따르지 않는 사람은 모두 연행하라고 합니다. 대부분 평범한 시민들입니다.' : '정부를 비판하는 시위가 열렸습니다. 지휘부가 "어떤 수단을 써서라도" 해산하라고 명령합니다. 시위대 앞줄에는 대학생들이 서 있습니다.'),
+    choices: [
+      { l: '명령대로 강하게 진압한다', typ: (S) => el(S) !== 'free', t: '방패를 앞세워 밀어붙였습니다. 다친 시민들의 얼굴이 오래 잊히지 않았습니다.', fx: { happy: -5 }, val: { honest: -2, rep: -3 }, run: (S) => { if (el(S) !== 'free') raise(S, 1.03); } },
+      { l: '최소한의 힘으로 질서만 지킨다', typ: (S) => el(S) === 'free', p: (S) => (el(S) === 'free' ? 0.75 : 0.45),
+        ok: { t: '큰 충돌 없이 집회가 끝났습니다. 시민 몇이 고생했다며 물을 건넸습니다.', fx: { happy: 4 }, val: { rep: 2 } },
+        no: { t: '소극적으로 대응했다며 징계 위원회에 불려 갔습니다.', fx: { happy: -5 }, run: (S) => { raise(S, 0.95); } } },
+      { l: '부상자를 옮기는 일을 자청한다', t: '다친 사람들을 구급차로 옮기는 일을 맡았습니다.', fx: { happy: 1, social: 1 } },
+    ],
+  });
+  add(COP, {
+    id: 'j_cop_promo', rate: 0.25, cd: 4, gate: (S) => canPromo(S) && yrsIn(S) >= 4,
+    title: '승진 심사',
+    text: '승진 심사가 다가옵니다. 실적이 조금 모자라 보입니다. 동료들 사이에서는 실적을 부풀리는 방법이 오갑니다.',
+    choices: [
+      { l: '밤샘 잠복으로 실적을 쌓는다', p: 0.55,
+        ok: { t: '석 달 잠복 끝에 절도단을 붙잡았습니다. 심사에서 한 계급 올랐습니다.', fx: { happy: 6, health: -3 }, run: (S) => { promo(S, 1.15); fam(S, -2); } },
+        no: { t: '잠복은 허탕이었습니다. 몸만 상했습니다.', fx: { health: -4, happy: -3 }, run: (S) => { fam(S, -2); } } },
+      { l: '실적을 부풀린다', need: (S) => honest(S) < 60, p: 0.6,
+        ok: { t: '서류 속 숫자가 늘었습니다. 계급장이 바뀌었지만 웃음이 나오지 않았습니다.', val: { honest: -4 }, run: (S) => { promo(S, 1.15); } },
+        no: { t: '부풀린 실적이 드러나 감봉 처분을 받았습니다.', fx: { happy: -8 }, val: { honest: -3, rep: -6 }, run: (S) => { raise(S, 0.92); } } },
+      { l: '다음 기회를 기다린다', typ: true, t: '이번 심사는 넘기기로 했습니다.', fx: { happy: -1 } },
+    ],
+  });
+  add(COP, {
+    id: 'j_cop_case', rate: 0.07, cd: 8, gate: (S) => yrsIn(S) >= 2,
+    text: ['몇 달 동안 쫓던 사기 조직을 일망타진했습니다. 지방 신문에 {N}의 사진이 실렸습니다.', '십 년 묵은 미제 사건의 실마리를 찾아냈습니다. 피해자 가족이 {N}의 손을 오래 잡았습니다.'],
+    fx: { happy: 6, fame: 2 }, val: { rep: 2 }, run: (S) => { honor(S, '우수 경찰관 표창'); },
+  });
+
+  /* ================================================================ 직업군인 */
+  const SOL = ['soldier'];
+  add(SOL, {
+    id: 'j_sol_drill', rate: 0.4, cd: 2,
+    text: (S) => [`${cold(S) ? '영하의 날씨에' : '한낮 땡볕 아래'} 사흘 동안 야외 훈련을 했습니다. 발에 물집이 잡혔습니다.`, '밤새 행군을 마치고 새벽에 부대로 돌아왔습니다. 군화를 벗으니 발이 퉁퉁 부어 있었습니다.', '사격 훈련에서 부대 최고 점수를 받았습니다.', '신병들에게 총기 다루는 법을 가르쳤습니다. 잔뜩 긴장한 얼굴들이 몇 해 전 자신 같았습니다.'],
+    fx: { health: 1, happy: -1, skill: 1 },
+  });
+  const PKO = ['SSD', 'COD', 'MLI', 'LBN', 'CAF', 'SOM'];
+  const pko = (S, ctx) => ctx.dest || (ctx.dest = pickNot(S, PKO) || 'LBN');
+  add(SOL, {
+    id: 'j_sol_deploy', rate: 0.2, cd: 6, gate: (S) => yrsIn(S) >= 1,
+    title: (S) => (H.war(S) >= 1 ? '전방 배치' : '해외 파병'),
+    text: (S, ctx) => (H.war(S) >= 1 ? '부대가 분쟁 지역 최전방으로 이동합니다. 몇 달 동안 가족과 연락이 어려울 수 있습니다.' : `유엔 평화유지군으로 ${Wd.name(pko(S, ctx))}에 1년 동안 파견될 사람을 뽑습니다. 해외 근무 수당이 붙지만 가족과 떨어져 지내야 합니다.`),
+    choices: [
+      { l: (S) => (H.war(S) >= 1 ? '명령에 따라 전방으로 간다' : '파병에 지원한다'), typ: (S) => H.war(S) >= 1,
+        run: (S, ctx) => {
+          if (H.war(S) >= 1) { E.stat(S, 'health', -4); E.stat(S, 'happy', -6); earn(S, 2); return '포성이 들리는 곳에서 여섯 달을 보냈습니다. 다친 동료를 업고 내려온 밤을 잊지 못합니다.' + fam(S, -6); }
+          const d = pko(S, ctx);
+          if (!U.chance(0.6)) { E.stat(S, 'happy', -1); return '지원자가 많아 이번에는 뽑히지 못했습니다.'; }
+          H.travel(S, d); earn(S, 4); E.stat(S, 'skill', 3); E.stat(S, 'social', 2); E.stat(S, 'happy', 2);
+          return `${Wd.name(d)}의 난민촌 근처에서 1년 동안 도로를 닦고 순찰을 돌았습니다. 아이들이 서툰 말로 "고맙다"고 인사했습니다.` + fam(S, -5);
+        } },
+      { l: (S) => (H.war(S) >= 1 ? '후방 보급 부대로 보내 달라고 한다' : '이번에는 남는다'), typ: (S) => H.war(S) < 1,
+        run: (S) => {
+          if (H.war(S) < 1) return '이번에는 지원하지 않았습니다.';
+          if (U.chance(0.4)) { E.stat(S, 'happy', -2); return '보급 부대에 배치되어 탄약과 식량을 날랐습니다.'; }
+          E.stat(S, 'health', -4); E.stat(S, 'happy', -7); earn(S, 2); return '요청은 받아들여지지 않았습니다. 전방에서 여섯 달을 보냈습니다.' + fam(S, -6);
+        } },
+      { l: '전역 신청서를 낸다', need: (S) => H.war(S) >= 1 && yrsIn(S) >= 4, t: '전역 신청서를 냈습니다. 몇 달 뒤 군복을 벗었습니다.', fx: { happy: -2 }, run: (S) => { lose(S); } },
+    ],
+  });
+  add(SOL, {
+    id: 'j_sol_promo', rate: 0.25, cd: 4, gate: (S) => canPromo(S) && yrsIn(S) >= 3,
+    title: '진급 심사',
+    text: '진급 심사철입니다. 상관이 "장기 복무를 신청하면 진급에 유리하다"고 귀띔합니다. 대신 몇 해 더 군에 묶이고, 2~3년마다 근무지를 옮겨야 합니다.',
+    choices: [
+      { l: '장기 복무를 신청한다', typ: true, p: 0.65,
+        ok: { t: '진급했습니다. 계급장이 하나 늘었습니다.', fx: { happy: 5 }, run: (S) => { promo(S, 1.15); fam(S, -3); } },
+        no: { t: '이번 심사에서는 떨어졌습니다. 다음 해를 기약합니다.', fx: { happy: -4 } } },
+      { l: '군사 교육 과정을 밟아 실력으로 오른다', p: (S) => U.clamp(0.3 + (S.st.smarts - 50) / 120, 0.15, 0.75),
+        ok: { t: '야간 교육 과정을 마치고 진급했습니다.', fx: { smarts: 2, happy: 5 }, run: (S) => { promo(S, 1.15); } },
+        no: { t: '교육은 마쳤지만 진급은 다음으로 밀렸습니다.', fx: { smarts: 2, happy: -2 } } },
+      { l: '진급에 욕심내지 않는다', t: '지금 자리에 만족하기로 했습니다.', fx: { happy: 1 } },
+    ],
+  });
+  add(SOL, {
+    id: 'j_sol_move', rate: 0.25, cd: 3, gate: hasFam,
+    text: (S) => `근무지가 바뀌어 또 이삿짐을 쌌습니다. ${H.kidsAged(S, 6, 17).length ? '아이들이 세 번째 전학을 갑니다. ' : ''}관사 창밖 풍경이 또 바뀌었습니다.`,
+    fx: { social: -3, happy: -2 }, run: (S) => { fam(S, -2); },
+  });
+  add(SOL, {
+    id: 'j_sol_pay', rate: 0.25, cd: 3, gate: (S) => H.dev(S) <= 1, k: 'bad',
+    text: '봉급이 두 달째 늦게 나왔습니다. 부대 안 매점 외상이 쌓여 갑니다.',
+    fx: { money: -0.5, happy: -3 },
+  });
+  add(SOL, {
+    id: 'j_sol_exit', rate: 0.25, once: true, gate: (S) => yrsIn(S) >= 8 && H.age(S) >= 35,
+    title: '전역 뒤의 길',
+    text: (S) => `군에서 ${Math.floor(yrsIn(S))}년을 보냈습니다. 군복을 벗으면 무엇을 할지 생각할 때가 되었습니다. 공공 기관과 보안 업체에서 제대 군인을 찾는다는 공고가 보입니다.`,
+    choices: [
+      { l: '군에 남는다', typ: true, t: '군복을 더 입기로 했습니다. 아직 할 일이 남았다고 믿습니다.', fx: { happy: 1 } },
+      { l: '제대 군인 특별 채용에 지원한다', p: (S) => U.clamp(0.35 + S.edu.level * 0.08, 0.3, 0.8),
+        ok: { run: (S) => { const o = C.makeJob(S, C.JOB.civil, 1.1); o.formal = true; E.takeJob(S, o); E.stat(S, 'happy', 5); return '제대 군인 특별 채용으로 공공 기관에 들어갔습니다. 군에서 익힌 꼼꼼함이 쓸모가 있었습니다.'; } },
+        no: { t: '서류에서 떨어졌습니다. 군에 남기로 했습니다.', fx: { happy: -3 } } },
+      { l: '보안 업체 팀장 자리로 옮긴다', p: 0.75,
+        ok: { run: (S) => { const o = C.makeJob(S, C.JOB.guard, 1.5); o.title = '보안 업체 팀장'; E.takeJob(S, o); E.stat(S, 'happy', 3); return '보안 업체에 팀장으로 들어갔습니다. 군에서 익힌 일이 그대로 쓰였습니다.'; } },
+        no: { t: '자리가 이미 찼다는 연락을 받았습니다. 군에 남기로 했습니다.', fx: { happy: -2 } } },
+    ],
+  });
+
+  /* ================================================================ 교사 */
+  const TCH = ['teacher'];
+  add(TCH, {
+    id: 'j_tch_class', rate: 0.4, cd: 2,
+    text: (S) => {
+      const a = ['새 학년 담임을 맡았습니다. 서른 명 남짓한 이름을 사흘 만에 다 외웠습니다.', '졸업식 날, 학생들이 칠판 가득 "선생님 고맙습니다"라고 써 놓았습니다.', '수업 시간에 늘 엎드려 있던 학생이 처음으로 손을 들고 질문했습니다.'];
+      if (H.dev(S) <= 1) a.push(`한 교실에 학생이 ${U.randInt(60, 90)}명입니다. 교과서 한 권을 셋이 나눠 봅니다.${stat(S, 'oosPrim', (v) => `${Wd.name(H.iso(S))} 학교에 다니지 못하는 초등학생 나이 아이 ${v}%`)}`);
+      return a;
+    },
+    fx: { happy: 3, skill: 1 },
+  });
+  add(TCH, {
+    id: 'j_tch_parent', rate: 0.3, cd: 3, gate: (S) => H.dev(S) >= 2,
+    title: '학부모 민원',
+    text: '한 학부모가 학생의 생활기록부 문구를 바꿔 달라며 교무실로 찾아왔습니다. 들어주지 않으면 교육청에 민원을 넣겠다고 합니다.',
+    choices: [
+      { l: '원칙을 설명하고 정중히 거절한다', typ: true, p: 0.6,
+        ok: { t: '차분히 설명하자 학부모도 결국 수긍했습니다.', fx: { happy: 2 } },
+        no: { t: '민원이 들어가 경위서를 썼습니다. 며칠 밤잠을 설쳤습니다.', fx: { happy: -6, health: -1 } } },
+      { l: '문구를 조금 고쳐 준다', t: '표현만 조금 부드럽게 고쳤습니다. 개운하지는 않았습니다.', fx: { happy: -2 }, val: { honest: -2 } },
+      { l: '교장과 함께 면담한다', p: 0.7,
+        ok: { t: '셋이 마주 앉아 오해를 풀었습니다. 학부모가 고개를 숙였습니다.', fx: { happy: 3, social: 1 } },
+        no: { t: '면담은 고성으로 끝났습니다. 교장은 "적당히 하라"고만 했습니다.', fx: { happy: -4 } } },
+    ],
+  });
+  add(TCH, {
+    id: 'j_tch_harvest', rate: 0.3, cd: 3, gate: (S) => H.dev(S) <= 1 && H.rural(S),
+    title: '빈 교실',
+    text: '추수철이 되자 교실이 절반쯤 비었습니다. 학생들이 밭일을 거들러 갔다고 합니다.',
+    choices: [
+      { l: '집집마다 찾아가 설득한다', p: 0.5,
+        ok: { t: '저녁마다 마을을 돌며 설득했습니다. 몇 명이 다시 교실로 돌아왔습니다.', fx: { happy: 6, social: 3 }, val: { rep: 2 } },
+        no: { t: '"배워서 뭐 하냐"는 말만 듣고 돌아왔습니다.', fx: { happy: -3 } } },
+      { l: '수업을 이른 아침으로 옮긴다', t: '이른 아침에 수업을 하고 오후에는 학생들을 보내기로 했습니다. 출석이 조금 늘었습니다.', fx: { happy: 2, skill: 2 } },
+      { l: '어쩔 수 없다고 받아들인다', typ: true, t: '빈자리를 보며 남은 학생들을 가르쳤습니다.', fx: { happy: -2 } },
+    ],
+  });
+  add(TCH, {
+    id: 'j_tch_alumni', rate: 0.2, cd: 4, gate: (S) => H.age(S) >= 38 && yrsIn(S) >= 10,
+    text: ['스무 해 전 가르친 제자가 꽃을 들고 찾아왔습니다. 이제는 두 아이를 키운다고 합니다.', '옛 제자가 의사가 되었다는 소식을 신문에서 보았습니다.', '거리에서 누군가 "선생님!" 하고 불렀습니다. 처음 담임을 맡았던 반의 학생이었습니다.'],
+    fx: { happy: 6, social: 2 },
+  });
+  add(TCH, {
+    id: 'j_tch_policy', rate: 0.2, cd: 6,
+    title: '바뀌는 교육과정',
+    text: (S) => `교육 당국이 ${H.dev(S) >= 2 ? '새 교육과정과 평가 방식' : '새 교과서와 수업 방식'}을 내년부터 바로 적용하라고 발표했습니다. 연수는 짧고, 자료는 아직 내려오지 않았습니다.`,
+    choices: [
+      { l: '방학을 쪼개 연수를 받는다', t: '방학 동안 연수를 받고 수업 자료를 새로 만들었습니다. 다른 교사들이 자료를 빌려 갔습니다.', fx: { skill: 4, smarts: 2, happy: -1, social: 2 } },
+      { l: '교사 모임에서 반대 서명을 모은다', p: 0.35,
+        ok: { t: '서명이 수만 명을 넘었습니다. 시행이 한 해 미뤄졌습니다.', fx: { social: 4, happy: 4 } },
+        no: { t: '서명은 묻혔고, {N은} 교육청의 눈 밖에 났습니다.', fx: { happy: -3 } } },
+      { l: '하던 대로 가르치며 맞춰 간다', typ: true, t: '바뀐 교과서를 펴 놓고 늘 하던 방식으로 가르쳤습니다.', fx: { happy: -1 } },
+    ],
+  });
+  add(TCH, {
+    id: 'j_tch_struggle', rate: 0.25, cd: 4, who: 'newfriend',
+    title: '뒤처진 학생',
+    text: (S) => (H.dev(S) <= 1 ? '학생 {friend가} 글을 제대로 읽지 못한다는 것을 알게 되었습니다. 집에는 책 한 권 없고, 저녁마다 동생들을 돌본다고 합니다.' : '학생 {friend가} 몇 주째 수업을 빠지고 있습니다. 찾아가 보니 집안 사정이 복잡합니다.'),
+    choices: [
+      { l: '방과 후에 따로 가르친다', t: (S) => (H.dev(S) <= 1 ? '한 학기 동안 방과 후에 함께 남았습니다. 학기 말에 {friend가} 동화책 한 권을 소리 내어 읽었습니다.' : '한 학기 동안 방과 후에 함께 남았습니다. {friend가} 다시 웃으며 등교하기 시작했습니다.'), fx: { happy: 7, health: -1 }, val: { rep: 2 }, run: (S) => { fam(S, -2); } },
+      { l: '상담 교사와 복지 기관에 연결한다', p: (S) => [0.3, 0.45, 0.6, 0.75][H.dev(S)],
+        ok: { t: '도움의 손길이 닿았습니다. {friend가} 다시 교실에 나오기 시작했습니다.', fx: { happy: 4 } },
+        no: { t: '기관은 일손이 없다며 기다리라고만 했습니다.', fx: { happy: -3 } } },
+      { l: '반 전체 진도를 우선한다', typ: true, t: '진도에 쫓겨 한 학생에게 오래 머물 수 없었습니다. 마음이 쓰였습니다.', fx: { happy: -2 } },
+    ],
+  });
+  add(TCH, {
+    id: 'j_tch_unpaid', rate: 0.25, cd: 3, gate: (S) => H.dev(S) <= 1, k: 'bad',
+    text: '교사 월급이 석 달째 밀렸습니다. 동료 교사 몇은 오후에 장사를 나갑니다. 교원 노조가 파업을 이야기합니다.',
+    fx: { money: -0.6, happy: -4 },
+  });
+  add(TCH, {
+    id: 'j_tch_award', rate: 0.06, cd: 10, gate: (S) => yrsIn(S) >= 8,
+    text: '{N}의 수업이 우수 수업으로 뽑혔습니다. 다른 학교 교사들이 수업을 보러 왔습니다.',
+    fx: { happy: 6, fame: 1 }, val: { rep: 2 }, run: (S) => { honor(S, '우수 교사 표창'); },
+  });
+  add(TCH, {
+    id: 'j_tch_promo', rate: 0.2, once: true, gate: (S) => canPromo(S) && yrsIn(S) >= 12,
+    title: '교감 승진',
+    text: '교감 자리에 도전할까요? 승진 점수를 채우려면 벽지 학교 근무와 연구 실적이 필요합니다. 교실을 떠나 행정 일을 맡게 됩니다.',
+    choices: [
+      { l: '도전한다', p: 0.5,
+        ok: { t: '교감이 되었습니다. 이제 교실 대신 교무실 맨 앞자리에 앉습니다.', fx: { happy: 5 }, run: (S) => { promo(S, 1.15); fam(S, -3); } },
+        no: { t: '점수가 모자라 이번에는 밀렸습니다.', fx: { happy: -4 }, run: (S) => { fam(S, -2); } } },
+      { l: '교실에 남는다', typ: true, t: '학생들 곁에 남기로 했습니다. 평교사로 정년을 맞을 생각입니다.', fx: { happy: 3 } },
+    ],
+  });
+
+  /* ================================================================ 의사·간호사·요양보호사 */
+  const MED = ['doctor', 'nurse'];
+  const MEDC = ['doctor', 'nurse', 'care'];
+  add(MED, {
+    id: 'j_med_er', rate: 0.35, cd: 3,
+    title: '응급실의 밤',
+    text: (S) => (H.dev(S) <= 1 ? '버스가 강에 빠지는 사고가 나 환자들이 한꺼번에 실려 왔습니다. 병상도 약도 모자랍니다.' : '큰 화재로 응급 환자가 한꺼번에 몰려왔습니다. 이미 열여섯 시간째 일하는 중입니다.'),
+    choices: [
+      { l: '교대를 미루고 끝까지 남는다', typ: true, t: '새벽까지 쉬지 않고 환자를 돌봤습니다. 살린 사람들의 얼굴을 하나하나 기억합니다.', fx: { health: -4, happy: 4, skill: 3 }, val: { rep: 1 }, run: (S) => { fam(S, -2); } },
+      { l: '위급한 환자부터 가려내 혼란을 정리한다', p: (S) => U.clamp(0.35 + S.st.skill / 200 + (S.st.smarts - 50) / 200, 0.2, 0.85),
+        ok: { t: '침착한 분류 덕에 혼란이 금세 가라앉았습니다. 병원장이 따로 불러 고마워했습니다.', fx: { happy: 6, skill: 4 }, run: (S) => { raise(S, 1.03); } },
+        no: { t: '판단이 엇갈려 원망 섞인 말을 들었습니다. 그래도 최선이었습니다.', fx: { happy: -4, skill: 2 } } },
+      { l: '교대 시간에 맞춰 나온다', t: '몸이 한계였습니다. 교대 시간에 병원을 나왔지만 잠이 오지 않았습니다.', fx: { happy: -3, health: 1 } },
+    ],
+  });
+  add(MED, {
+    id: 'j_med_lawsuit', rate: (S) => (H.jobIs(S, 'doctor') ? 0.15 : 0.06), cd: 8, gate: (S) => H.dev(S) >= 1,
+    title: '의료 소송',
+    text: (S) => (H.jobIs(S, 'doctor') ? '수술 뒤 합병증으로 크게 고생한 환자의 가족이 {N을} 상대로 소송을 냈습니다. 기록을 다시 보니 판단에는 문제가 없었지만, 설명이 부족했던 것은 사실입니다.' : '투약이 잘못되었다며 환자 가족이 병원과 {N을} 고소했습니다. 실제로는 바뀐 처방을 제때 전달받지 못한 탓이었습니다.'),
+    choices: [
+      { l: '기록을 그대로 내고 법정에서 다툰다', typ: true, p: 0.6,
+        ok: { t: '과실이 없다는 판결이 나왔습니다. 그래도 환자를 대하는 마음이 조금 조심스러워졌습니다.', fx: { happy: -2 } },
+        no: { t: '일부 책임이 인정되어 배상금을 물었습니다.', fx: { happy: -8 }, run: (S) => { H.fine(S, H.jobIs(S, 'doctor') ? 4 : 1.5); } } },
+      { l: '환자 가족을 직접 만나 사과하고 합의한다', cost: 1.5, p: 0.7,
+        ok: { t: '가족은 사과를 받아들였습니다. "그 한마디를 듣고 싶었다"고 했습니다.', fx: { happy: 3 }, val: { rep: 2, honest: 1 } },
+        no: { t: '합의금만 오가고 서운함은 풀리지 않았습니다.', fx: { happy: -3 } } },
+      { l: '진료 기록을 손본다', need: (S) => honest(S) < 55, p: 0.6,
+        ok: { t: '고친 기록 덕에 소송은 흐지부지되었습니다. 밤마다 그 환자가 떠오릅니다.', fx: { happy: -4 }, val: { honest: -5 } },
+        no: { t: '기록을 고친 사실이 드러났습니다. 면허 정지 처분을 받아 병원을 떠나야 했습니다.', fx: { happy: -12, fame: 2 }, val: { honest: -4, rep: -12 }, run: (S) => { lose(S); notor(S); } } },
+    ],
+  });
+  add(MED, {
+    id: 'j_med_remote', rate: (S) => (H.jobIs(S, 'doctor') && H.war(S) < 1 ? 0.08 : 0.2), cd: 6,
+    title: (S) => (H.war(S) >= 1 ? '분쟁 지역 병원' : '의료 취약지 근무'),
+    text: (S) => (H.war(S) >= 1 ? '분쟁이 이어지는 지역의 병원이 의료진을 급히 찾고 있습니다. 위험 수당이 붙지만, 포성이 들리는 곳입니다.' : '의료진이 없는 먼 산골·섬 보건소에서 2년 동안 일할 사람을 찾습니다. 수당이 붙고 학자금 상환도 면제해 줍니다.'),
+    choices: [
+      { l: '자원한다', run: (S) => {
+        E.stat(S, 'happy', 6); E.stat(S, 'social', 4); E.stat(S, 'skill', 5); E.stat(S, 'health', -3); earn(S, 3);
+        if (S.rap) S.rap.rep = U.clamp(S.rap.rep + 3, 0, 100);
+        const war = H.war(S) >= 1;
+        honor(S, war ? '분쟁 지역 의료 활동' : '의료 취약지 근무 공로');
+        return (war ? '피란민 천막 사이에 세운 병원에서 1년을 보냈습니다. 하루에도 수십 명의 상처를 꿰맸습니다.' : '보건소에서 2년을 보냈습니다. 마을 사람들이 {N을} "우리 선생님"이라 불렀습니다.') + fam(S, -5);
+      } },
+      { l: '지금 병원에 남는다', typ: true, t: '지금 자리에서 할 일을 하기로 했습니다.', fx: { happy: -1 } },
+      { l: '휴가를 내 2주 동안 의료 봉사만 다녀온다', cost: 0.4, t: '2주 동안 의료 봉사를 다녀왔습니다. 짧았지만 오래 기억에 남았습니다.', fx: { happy: 4, social: 2, health: -1 }, val: { rep: 1 } },
+    ],
+  });
+  add(MEDC, {
+    id: 'j_med_epidemic', rate: 0.12, cd: 8,
+    title: '감염병 유행',
+    text: (S) => (H.jobIs(S, 'care') ? '요양 시설에 감염병이 돌기 시작했습니다. 어르신들이 하나둘 격리되고, 결근하는 동료가 늘었습니다.' : `${(st(S, 'tb') || 0) > 150 ? '결핵과 호흡기 감염병' : '새로운 호흡기 감염병'}이 번지고 있습니다. 병원이 격리 병동을 열고 일할 사람을 찾습니다. 보호 장비는 넉넉하지 않습니다.`),
+    choices: [
+      { l: '격리 병동을 자원한다', p: 0.8,
+        ok: { t: '두꺼운 보호복을 입고 몇 달을 버텼습니다. 집에도 못 가고 숙소에서 지냈지만 무사히 끝났습니다.', fx: { health: -4, happy: 3, skill: 3 }, val: { rep: 3 }, run: (S) => { earn(S, 1); fam(S, -4); } },
+        no: { t: '{N}도 감염되어 2주를 앓았습니다. 다행히 회복해 다시 병동으로 돌아갔습니다.', fx: { health: -9, happy: -3 }, val: { rep: 3 }, run: (S) => { earn(S, 1); fam(S, -4); } } },
+      { l: '맡은 일을 지킨다', typ: true, t: '맡은 자리를 지키며 하루하루를 넘겼습니다.', fx: { health: -2, happy: -2 } },
+      { l: '가족이 걱정되어 휴가를 낸다', need: hasFam, t: '무급 휴가를 내고 가족 곁에 있었습니다. 동료들에게 미안했습니다.', fx: { money: -1, happy: -2, social: -2 }, run: (S) => { fam(S, 3); } },
+    ],
+  });
+  add(MEDC, {
+    id: 'j_med_night', rate: 0.35, cd: 2, rework: true,
+    text: (S) => (H.jobIs(S, 'doctor') ? ['36시간 연속 당직을 서고 집에 오자마자 쓰러져 잤습니다.', '새벽 세 시, 텅 빈 복도에서 식은 도시락을 먹었습니다.'] : ['야간 근무가 이어지며 낮과 밤이 뒤바뀌었습니다.', '밤새 호출 벨이 울렸습니다. 아침에 보니 다리가 퉁퉁 부어 있었습니다.', '새벽 세 시, 텅 빈 복도에서 식은 도시락을 먹었습니다.']),
+    fx: { health: -2, happy: -2 }, run: (S) => { fam(S, -2); },
+  });
+  add(['doctor'], {
+    id: 'j_doc_day', rate: 0.25, cd: 3,
+    text: (S) => ['오래 치료하던 환자가 완치 판정을 받고 {N}의 손을 맞잡았습니다.', '하루 외래 환자 120명을 봤습니다. 환자 한 명에게 쓸 수 있는 시간은 3분이었습니다.',
+      H.dev(S) <= 1 ? `약이 떨어져 처방전만 써 주고 돌려보낸 환자가 있었습니다.${stat(S, 'phys', (v) => `${Wd.name(H.iso(S))} 인구 천 명당 의사 ${v}명`)}` : '환자 가족이 고맙다며 손으로 쓴 편지를 놓고 갔습니다.'],
+    fx: { happy: 2, skill: 1 },
+  });
+  add(['doctor'], {
+    id: 'j_doc_clinic', rate: 0.2, once: true, gate: (S) => H.age(S) >= 38 && yrsIn(S) >= 6 && H.dev(S) >= 1,
+    title: '개원',
+    text: '은행 대출로 작은 의원을 열 수 있습니다. 내 병원이 생기지만, 환자가 모이지 않으면 빚만 남습니다.',
+    choices: [
+      { l: '개원한다', cost: 6, p: (S) => U.clamp(0.45 + (S.st.social - 50) / 200 + (H.talent(S, 'biz') - 50) / 200, 0.25, 0.8),
+        ok: { t: '동네 의원이 자리를 잡았습니다. 아침마다 대기실이 찹니다.', fx: { happy: 6 }, run: (S) => { raise(S, 1.5); if (S.work.job) S.work.job.title = '개원의'; } },
+        no: { t: '환자가 모이지 않아 2년 만에 의원을 정리하고 다시 병원에 들어갔습니다. 대출만 남았습니다.', fx: { money: -6, happy: -10 } } },
+      { l: '병원에 남는다', typ: true, t: '큰 병원에 남아 하던 진료를 이어 가기로 했습니다.' },
+    ],
+  });
+  const nurseDest = (S, ctx) => ctx.dest || (ctx.dest = (() => {
+    const own = H.iso(S);
+    const mig = (Wd.social('migration', own, []) || []).map((x) => x[0]).filter((d) => DATA.c[d] && d !== own && Wd.dev(d) === 3);
+    if (mig.length) return mig[0];
+    const rk = H.region(S);
+    return pickNot(S, rk === 'sas' || rk === 'mena' ? ['ARE', 'SAU', 'GBR'] : rk === 'lac' ? ['USA', 'ESP'] : rk === 'eca' ? ['DEU', 'GBR'] : ['GBR', 'USA', 'AUS']) || 'GBR';
+  })());
+  add(['nurse'], {
+    id: 'j_nur_abroad', rate: (S) => (['PHL', 'IND', 'NGA', 'KEN', 'GHA', 'ZWE', 'NPL', 'LKA', 'JAM'].includes(H.iso(S)) ? 0.35 : 0.15), once: true, gate: (S) => H.dev(S) <= 2 && !H.migrant(S) && H.age(S) < 45,
+    title: '해외 간호사 모집',
+    text: (S, ctx) => { const d = nurseDest(S, ctx); const r = Wd.workerMedian(d) / Wd.workerMedian(H.iso(S)); return `${Wd.name(d)}의 병원들이 간호사를 모집합니다. 그곳 보통 일꾼의 벌이는 이 나라의 약 ${r >= 1.5 ? Math.round(r) : r.toFixed(1)}배입니다. 어학 시험과 면허 시험을 통과해야 합니다.`; },
+    choices: [
+      { l: '시험을 준비해 떠난다', cost: 1.5, p: (S) => U.clamp(0.3 + (S.st.smarts - 50) / 150 + S.st.skill / 400, 0.15, 0.75),
+        ok: { fx: { social: -5, happy: 2 }, run: (S, ctx) => { const d = nurseDest(S, ctx); E.moveCountry(S, d, 'visa'); const j = C.makeJob(S, C.JOB.nurse, 1.1); j.formal = true; E.takeJob(S, j); return `${Wd.name(d)}의 병원에서 간호사로 일하기 시작했습니다. 고향에 매달 돈을 부칩니다.`; } },
+        no: { t: '면허 시험에서 떨어졌습니다. 준비한 돈만 날렸습니다.', fx: { happy: -5, smarts: 2 } } },
+      { l: '고향 병원에 남는다', typ: true, t: '고향 병원에 남기로 했습니다. 떠나는 동료들의 송별회가 잦아졌습니다.', fx: { happy: -1 } },
+    ],
+  });
+  add(['nurse'], {
+    id: 'j_nur_day', rate: 0.25, cd: 3,
+    text: ['겁에 질린 아이 환자의 손을 잡고 주사를 놓았습니다. 아이가 울음을 그치고 스티커를 받아 갔습니다.', '나이 지긋한 환자가 {N}에게 자꾸 반말을 했습니다. 웃으며 이름표를 가리켰습니다.', '퇴원하는 환자가 병동 간호사들에게 빵을 돌렸습니다.', '신규 간호사가 첫 야간 근무에 울먹이자 곁을 지켜 주었습니다.', '환자 이름과 얼굴을 모두 외워 부르자 환자들이 좋아했습니다.'],
+    fx: { happy: 2, social: 1 },
+  });
+  const CARE = ['care'];
+  add(CARE, {
+    id: 'j_care_bond', rate: 0.3, cd: 2, rework: true,
+    text: ['돌보던 어르신이 {N}의 손을 꼭 잡고 "자식 같다"며 웃었습니다.', '어르신의 생신에 작은 케이크를 들고 갔습니다. 어르신이 오랜만에 노래를 불렀습니다.', '말이 없던 어르신이 처음으로 {N}의 이름을 불렀습니다.', '어르신과 함께 마당에 나가 햇볕을 쬐었습니다. 어르신이 옛 노래를 흥얼거렸습니다.'],
+    fx: { happy: 4, social: 1 },
+  });
+  add(CARE, {
+    id: 'j_care_hard', rate: 0.3, cd: 2, rework: true,
+    text: ['밤새 몇 번이고 침상을 정리하고 몸을 돌려 눕혀 드렸습니다. 허리가 끊어질 듯 아픕니다.', '오래 돌보던 어르신이 세상을 떠났습니다. 장례식장 맨 뒷줄에 조용히 앉아 있다 왔습니다.', '어르신 가족이 "돈 받고 하는 일"이라며 사소한 일로 언성을 높였습니다.', '식사를 거부하는 어르신을 한 시간 동안 달래 겨우 몇 숟가락을 떠 드렸습니다.'],
+    fx: { health: -2, happy: -2 },
+  });
+  add(CARE, {
+    id: 'j_care_wage', rate: 0.25, cd: 4,
+    title: '혼자 지키는 밤',
+    text: '요양 시설이 인력을 줄여 밤에는 혼자 어르신 스무 명을 맡게 되었습니다. 월급은 그대로입니다.',
+    choices: [
+      { l: '동료들과 노조를 만들어 인력 충원을 요구한다', p: 0.45,
+        ok: { t: '야간 인력이 한 명 늘고 수당도 올랐습니다.', fx: { social: 4, happy: 4 }, run: (S) => { raise(S, 1.08); union(S); } },
+        no: { fx: { happy: -5 }, run: (S) => { if (U.chance(0.4)) { lose(S, 'layoff'); return '앞장선 몇 사람이 계약 만료를 통보받았습니다. {N}도 그중 하나였습니다.'; } return '시설은 꿈쩍도 하지 않았습니다. 앞장선 사람들만 눈치를 봅니다.'; } } },
+      { l: '이를 악물고 버틴다', typ: true, t: '버텼습니다. 허리 통증이 심해졌습니다.', fx: { health: -3, happy: -3 } },
+      { l: '조건이 나은 시설로 옮긴다', p: 0.6,
+        ok: { t: '조금 나은 조건의 시설로 옮겼습니다.', fx: { happy: 2 }, run: (S) => { raise(S, 1.05); } },
+        no: { t: '알아본 곳마다 사정은 비슷했습니다.', fx: { happy: -2 } } },
+    ],
+  });
+
+  /* ================================================================ 변호사 */
+  const LAW = ['lawyer'];
+  add(LAW, {
+    id: 'j_law_case', rate: 0.3, cd: 4,
+    title: '어느 사건을 맡을까요?',
+    text: (S) => `같은 주에 두 사건이 들어왔습니다. 하나는 공장에서 쫓겨난 노동자들의 ${H.dev(S) <= 1 ? '밀린 임금' : '부당 해고'} 사건이고, 다른 하나는 큰 기업의 계약 분쟁입니다. 둘 다 맡기에는 시간이 없습니다.`,
+    choices: [
+      { l: '노동자들 편에 선다', p: 0.5,
+        ok: { t: '노동자들이 이겼습니다. 법정 밖에서 박수가 터졌습니다.', fx: { happy: 8, fame: 2, money: -1 }, val: { rep: 4 } },
+        no: { t: '졌습니다. 그래도 노동자들은 끝까지 고맙다고 했습니다.', fx: { happy: -2, money: -1 }, val: { rep: 2 } } },
+      { l: '기업 사건을 맡는다', typ: true, t: '큰 수임료를 받았습니다. 한 해 살림이 넉넉해졌습니다.', fx: { happy: 2 }, run: (S) => { earn(S, 5); } },
+      { l: '둘 다 맡아 밤을 새운다', t: '두 사건을 모두 맡았습니다. 몇 달 동안 사무실 소파에서 잤습니다.', fx: { health: -5, happy: 1 }, run: (S) => { earn(S, 4); fam(S, -4); } },
+    ],
+  });
+  add(LAW, {
+    id: 'j_law_evidence', rate: 0.2, cd: 5,
+    title: '없던 일로',
+    text: '큰 의뢰인이 불리한 문서 몇 장을 "없던 일로" 해 달라고 합니다. 들어주면 앞으로도 큰 사건을 계속 맡기겠다고 합니다.',
+    choices: [
+      { l: '거절하고 사건에서 손을 뗀다', typ: (S) => honest(S) >= 40, t: '사건을 내려놓았습니다. 큰 고객을 잃었지만 잠은 잘 잡니다.', fx: { money: -2, happy: 2 }, val: { honest: 3 } },
+      { l: '문서를 슬쩍 뺀다', need: (S) => honest(S) < 65, typ: (S) => honest(S) < 40, p: 0.7,
+        ok: { t: '재판에서 이겼습니다. 성공 보수가 두둑했습니다.', fx: { money: 8 }, val: { honest: -6 }, run: (S) => { corrupt(S); } },
+        no: { t: '문서를 숨긴 사실이 드러났습니다. 변호사 징계로 한동안 변론을 할 수 없게 되었습니다.', fx: { happy: -14, fame: 2 }, val: { honest: -4, rep: -12 }, run: (S) => { lose(S); notor(S); } } },
+      { l: '정직하게 다투되 합의를 권한다', p: 0.6,
+        ok: { t: '의뢰인을 설득해 합의로 끝냈습니다. 양쪽 모두 체면을 지켰습니다.', fx: { happy: 3, money: 2 } },
+        no: { t: '의뢰인이 다른 변호사를 찾아갔습니다.', fx: { money: -1, happy: -1 } } },
+    ],
+  });
+  add(LAW, {
+    id: 'j_law_partner', rate: 0.25, once: true, gate: (S) => H.age(S) >= 35 && yrsIn(S) >= 5,
+    title: '파트너 심사',
+    text: '로펌 파트너 심사를 앞두고 있습니다. 파트너가 되면 수입이 크게 늘지만, 그만큼 사건을 더 끌어와야 합니다. 몇몇 선배는 차라리 개업하라고 권합니다.',
+    choices: [
+      { l: '파트너에 도전한다', p: (S) => U.clamp(0.3 + S.st.skill / 200 + (S.st.social - 50) / 200, 0.15, 0.8),
+        ok: { t: '파트너가 되었습니다. 문패에 {N}의 이름이 새겨졌습니다.', fx: { happy: 8 }, run: (S) => { promo(S, 1.4); fam(S, -3); } },
+        no: { t: '이번에는 다른 사람이 뽑혔습니다.', fx: { happy: -6 } } },
+      { l: '개업한다', cost: 3, p: 0.55,
+        ok: { t: '작은 사무소를 열었습니다. 동네 사람들의 사건이 끊이지 않습니다.', fx: { happy: 6 }, run: (S) => { raise(S, 1.15); if (S.work.job) S.work.job.title = '개업 변호사'; } },
+        no: { t: '사건이 들어오지 않아 사무소 임대료를 메우기 바빴습니다.', fx: { money: -3, happy: -5 }, run: (S) => { raise(S, 0.85); if (S.work.job) S.work.job.title = '개업 변호사'; } } },
+      { l: '지금 자리에 남는다', typ: true, t: '지금 자리에서 경력을 더 쌓기로 했습니다.' },
+    ],
+  });
+  add(LAW, {
+    id: 'j_law_hours', rate: 0.3, cd: 2,
+    text: (S) => ['재판 서면 마감에 맞추느라 사흘 밤을 새웠습니다.', hasFam(S) ? '주말에도 의뢰인 전화를 받았습니다. 가족과의 외식이 또 미뤄졌습니다.' : '주말에도 의뢰인 전화를 받았습니다.', '증인 진술서를 수백 쪽 읽느라 눈이 침침합니다.'],
+    fx: { health: -1, happy: -1 }, run: (S) => { fam(S, -2); },
+  });
+  add(LAW, {
+    id: 'j_law_win', rate: 0.15, cd: 4,
+    text: ['긴 재판 끝에 무죄 판결을 받아 냈습니다. 의뢰인이 법정 복도에서 울었습니다.', '십 년 끈 땅 소송에서 마을 주민들 편에 서서 이겼습니다. 마을 잔치에 초대받았습니다.'],
+    fx: { happy: 6, fame: 1 }, val: { rep: 1 },
+  });
+  add(LAW, {
+    id: 'j_law_threat', rate: 0.15, cd: 5, gate: (S) => (st(S, 'homic') || 0) >= 8 || el(S) !== 'free', k: 'bad',
+    text: '맡은 사건 상대편이 보낸 듯한 협박 편지가 사무실로 왔습니다. 한동안 퇴근길이 두려웠습니다.',
+    fx: { happy: -4 },
+  });
+
+  /* ================================================================ 기자 */
+  const JOU = ['journalist'];
+  add(JOU, {
+    id: 'j_jou_scoop', rate: 0.3, cd: 4,
+    title: '특종',
+    text: '고위 공직자의 비리를 뒷받침하는 제보가 들어왔습니다. 다른 언론사도 낌새를 챈 눈치입니다. 하지만 확인된 출처는 아직 하나뿐입니다.',
+    choices: [
+      { l: '확인을 더 거친 뒤 보도한다', typ: true, p: 0.6,
+        ok: { t: '두 번째 출처를 확인하고 보도했습니다. 특종이었습니다. 의회가 조사에 나섰습니다.', fx: { fame: 4, happy: 8 }, val: { rep: 2 }, run: (S) => { if (U.chance(0.4)) honor(S, '올해의 기자상'); if (U.chance(0.3)) promo(S, 1.1); } },
+        no: { t: '확인하는 사이 다른 언론사가 먼저 터뜨렸습니다.', fx: { happy: -4 } } },
+      { l: '먼저 보도한다', p: 0.5,
+        ok: { t: '단독 보도가 하루 종일 뉴스를 뒤덮었습니다.', fx: { fame: 5, happy: 8 } },
+        no: { t: '보도 일부가 사실과 달랐습니다. 정정 보도를 내고 고소까지 당했습니다.', fx: { happy: -10, money: -2 }, val: { rep: -6 } } },
+      { l: '제보자를 보호하려 기사를 미룬다', t: '제보자의 신변이 걱정되어 기사를 미뤘습니다. 몇 달 뒤 더 단단한 기사로 돌아오기로 했습니다.', fx: { happy: -1, skill: 2 }, val: { honest: 1 } },
+    ],
+  });
+  add(JOU, {
+    id: 'j_jou_pressure', rate: 0.22, cd: 4,
+    title: '빼라는 기사',
+    text: (S) => (el(S) === 'free' ? '쓰고 있던 기사에 큰 광고주 이름이 나옵니다. 편집국장이 "이번 기사는 빼자"고 합니다.' : '정부를 비판하는 기사를 쓰자, 편집국장이 "위에서 연락이 왔다"며 기사를 빼라고 합니다.'),
+    choices: [
+      { l: '기사를 지킨다', p: (S) => (el(S) === 'free' ? 0.5 : 0.3),
+        ok: { t: '기사는 실렸습니다. 독자들의 응원이 쏟아졌습니다.', fx: { fame: 2, happy: 5 }, val: { honest: 2, rep: 3 } },
+        no: { t: '기사는 실리지 않았고, {N은} 다른 부서로 밀려났습니다.', fx: { happy: -6 }, val: { honest: 2 } } },
+      { l: '순하게 고쳐 쓴다', typ: true, t: '핵심을 덜어 낸 기사가 실렸습니다. 이름을 걸기 부끄러웠습니다.', fx: { happy: -3 }, val: { honest: -1 } },
+      { l: '독립 매체에 자료를 넘긴다', need: (S) => H.internet(S) > 0.4, p: 0.55,
+        ok: { t: '익명으로 넘긴 자료가 기사로 크게 퍼졌습니다.', fx: { happy: 4 }, val: { honest: 1, risk: 2 } },
+        no: { t: '누가 넘겼는지 들통났습니다. 해고 통지를 받았습니다.', fx: { happy: -8 }, run: (S) => { lose(S, 'layoff'); } } },
+    ],
+  });
+  add(JOU, {
+    id: 'j_jou_censor', rate: 0.25, cd: 5, gate: (S) => el(S) !== 'free',
+    title: '보도 지침',
+    text: '당국이 언론사에 새 보도 지침을 내렸습니다. 시위와 물가 이야기는 쓰지 말라고 합니다. 지침을 어긴 기자 몇이 이미 연행되었습니다.',
+    choices: [
+      { l: '지침을 따르며 버틴다', typ: true, t: '지침이 허락하는 이야기만 썼습니다. 쓰지 못한 이야기들이 수첩에 쌓여 갑니다.', fx: { happy: -4 } },
+      { l: '가명으로 해외 매체에 기고한다', p: 0.6,
+        ok: { t: '가명으로 쓴 글이 해외에서 널리 읽혔습니다. 누가 썼는지는 아무도 모릅니다.', fx: { happy: 5 }, val: { risk: 3, honest: 2 } },
+        no: { val: { risk: 2 }, fx: { happy: -10 }, run: (S) => {
+          if (U.chance(0.5)) { const m = U.randInt(2, 8); H.jail(S, m, '보도'); return `가명 뒤에 숨은 {N}의 정체가 드러났습니다. ${m}개월 동안 구금되었습니다.`; }
+          lose(S); return '가명 뒤에 숨은 {N}의 정체가 드러났습니다. 기자증을 빼앗기고 경고를 받았습니다.';
+        } } },
+      { l: '펜을 내려놓는다', t: '쓰지 못할 바에야 다른 길을 찾겠다고 마음먹었습니다.', fx: { happy: -4 }, run: (S) => { lose(S); } },
+    ],
+  });
+  add(JOU, {
+    id: 'j_jou_field', rate: 0.35, cd: 2,
+    text: (S) => [`${hzList(S).length ? `${hzWord(S)} 현장에서` : '사고 현장에서'} 밤새 기사를 송고했습니다. 신발이 진흙투성이가 되었습니다.`, '마감 5분 전에 기사를 넘겼습니다. 오늘도 심장이 뛰었습니다.', '선거 개표 방송 때문에 이틀 동안 편집국에서 지냈습니다.', '취재원이 약속 장소에 끝내 나타나지 않았습니다. 비 오는 거리에서 세 시간을 기다렸습니다.'],
+    fx: { skill: 2, health: -1 },
+  });
+  add(JOU, {
+    id: 'j_jou_decline', rate: 0.12, once: true, gate: (S) => H.dev(S) >= 2,
+    title: '줄어드는 지면',
+    text: '종이 신문 구독자가 해마다 줄어, 회사가 디지털 부서를 키우고 지면 기자를 줄인다고 합니다.',
+    choices: [
+      { l: '영상·데이터 기사를 배운다', p: 0.65,
+        ok: { t: '영상 기사를 만들기 시작했습니다. 새 독자들이 생겼습니다.', fx: { skill: 5, happy: 3 }, run: (S) => { raise(S, 1.03); } },
+        no: { t: '따라가기 버거웠습니다. 밤마다 편집 프로그램과 씨름합니다.', fx: { skill: 3, happy: -3 } } },
+      { l: '희망퇴직을 신청한다', t: '퇴직금을 받고 신문사를 나왔습니다.', fx: { money: 6 }, run: (S) => { lose(S); } },
+      { l: '지면에 남는다', typ: true, p: 0.6,
+        ok: { t: '지면 기자로 남았습니다. 줄어든 인원으로 더 많은 기사를 씁니다.', fx: { happy: -2 } },
+        no: { t: '정리 해고 명단에 이름이 올랐습니다.', fx: { happy: -4 }, run: (S) => { lose(S, 'layoff'); } } },
+    ],
+  });
+  add(JOU, {
+    id: 'j_jou_award', rate: 0.05, cd: 8, gate: (S) => yrsIn(S) >= 5,
+    text: '몇 해 동안 매달린 탐사 보도로 언론상을 받았습니다.',
+    fx: { fame: 3, happy: 8 }, val: { rep: 2 }, run: (S) => { honor(S, '언론상 수상'); },
+  });
+
+  /* ================================================================ 연구원·교수 */
+  const RES = ['researcher'];
+  add(RES, {
+    id: 'j_res_grant', rate: 0.3, cd: 3,
+    title: '연구비 공모',
+    text: '연구비 공모 마감이 다가옵니다. 요즘 뜨는 주제로 쓰면 붙을 가능성이 높지만, {N이} 정말 하고 싶은 연구는 따로 있습니다.',
+    choices: [
+      { l: '유행하는 주제로 쓴다', typ: true, p: 0.65,
+        ok: { t: '연구비를 따냈습니다. 연구실에 대학원생 두 명을 더 들였습니다.', fx: { happy: 4 }, run: (S) => { raise(S, 1.03); } },
+        no: { t: '떨어졌습니다. 경쟁률이 열 대 일이었습니다.', fx: { happy: -4 } } },
+      { l: '하고 싶은 연구로 쓴다', p: 0.35,
+        ok: { t: '심사위원 한 명이 이 주제의 가치를 알아보았습니다. 연구비를 받았습니다!', fx: { happy: 10, smarts: 3 } },
+        no: { t: '"실용성이 부족하다"는 평과 함께 떨어졌습니다.', fx: { happy: -5, smarts: 1 } } },
+      { l: '해외 연구진과 공동으로 지원한다', need: (S) => H.internet(S) > 0.4, p: 0.4,
+        ok: { run: (S) => { const d = H.travelDest(S); if (d) H.travel(S, d); E.stat(S, 'happy', 6); E.stat(S, 'smarts', 2); return d ? `${Wd.name(d)} 연구진과 손잡고 연구비를 받았습니다. 공동 워크숍 때문에 처음으로 그 나라 땅을 밟았습니다.` : '해외 연구진과 손잡고 연구비를 받았습니다.'; } },
+        no: { t: '서류를 맞추다 마감을 놓쳤습니다.', fx: { happy: -3 } } },
+    ],
+  });
+  add(RES, {
+    id: 'j_res_data', rate: 0.15, cd: 6,
+    title: '가설과 다른 결과',
+    text: '3년을 쏟은 실험 결과가 가설과 정반대로 나왔습니다. 몇몇 값만 빼면 그럴듯한 논문이 됩니다. 재임용 심사가 내년입니다.',
+    choices: [
+      { l: '결과를 그대로 발표한다', typ: true, t: '"가설이 틀렸다"는 논문을 냈습니다. 몇 해 뒤 다른 연구자들이 그 결과를 인용하기 시작했습니다.', fx: { smarts: 3, happy: 1 }, val: { honest: 3, rep: 1 } },
+      { l: '불리한 값을 뺀다', need: (S) => honest(S) < 60, p: 0.75,
+        ok: { t: '논문은 좋은 학술지에 실렸습니다. 누군가 실험을 재현해 볼까 봐 불안합니다.', fx: { happy: -2, fame: 1 }, val: { honest: -6 } },
+        no: { t: '다른 연구실이 재현에 실패하며 조작이 드러났습니다. 논문이 철회되고 연구실을 떠나야 했습니다.', fx: { happy: -15, fame: 4 }, val: { honest: -4, rep: -15 }, run: (S) => { lose(S); notor(S); } } },
+      { l: '실험을 처음부터 다시 설계한다', t: '한 해를 더 들여 실험을 다시 짰습니다.', fx: { smarts: 4, happy: -2 } },
+    ],
+  });
+  add(RES, {
+    id: 'j_res_lab', rate: 0.3, cd: 2,
+    text: ['지도하던 대학원생이 박사 학위를 받았습니다. 학위복을 입은 제자와 사진을 찍었습니다.', '연구실 학생이 밤새 실험 장비를 지키다 졸았습니다. 커피를 사 주며 일찍 들여보냈습니다.', '학회 발표 뒤 날카로운 질문에 말문이 막혔습니다. 돌아와 다시 공부했습니다.', '논문 심사평이 세 쪽이나 왔습니다. 고칠 것이 산더미입니다.', '실험 장비가 고장 나 한 달 치 실험이 미뤄졌습니다.', '교양 강의 시간에 학생들의 질문이 끊이지 않았습니다.'],
+    fx: { smarts: 1, happy: 1 },
+  });
+  add(RES, {
+    id: 'j_res_conf', rate: 0.2, cd: 3, gate: (S) => H.dev(S) >= 1,
+    run: (S) => { const d = H.travelDest(S); if (!d) return null; H.travel(S, d); E.stat(S, 'smarts', 2); E.stat(S, 'happy', 3); return `${Wd.name(d)}에서 열린 국제 학회에서 발표했습니다. 여러 나라 연구자들과 밤늦게까지 토론했습니다.`; },
+  });
+  add(RES, {
+    id: 'j_res_tenure', rate: 0.25, once: true, gate: (S) => canPromo(S) && yrsIn(S) >= 5 && (S.work.job.lv || 0) < 2,
+    title: '정년 보장 심사',
+    text: '정년 보장 심사를 앞두고 있습니다. 논문 수가 기준에 조금 모자랍니다.',
+    choices: [
+      { l: '1년 동안 논문에 매달린다', typ: true, p: (S) => U.clamp(0.35 + (S.st.smarts - 50) / 150 + H.talent(S, 'study') / 300, 0.2, 0.85),
+        ok: { t: '정년 보장을 받았습니다. 이제 쫓기지 않고 긴 연구를 할 수 있습니다.', fx: { happy: 10 }, run: (S) => { promo(S, 1.2); fam(S, -3); } },
+        no: { t: '심사에서 떨어졌습니다. 계약직 연구원으로 한 해를 더 버티기로 했습니다.', fx: { happy: -10 }, run: (S) => { raise(S, 0.9); fam(S, -3); } } },
+      { l: '공동 연구로 논문 수를 채운다', p: 0.55,
+        ok: { t: '공동 연구 논문이 연달아 실려 심사를 통과했습니다.', fx: { happy: 6, social: 2 }, run: (S) => { promo(S, 1.15); } },
+        no: { t: '"이름만 올렸다"는 평과 함께 떨어졌습니다.', fx: { happy: -6 } } },
+      { l: '기업 연구소로 옮긴다', t: '기업 연구소로 자리를 옮겼습니다. 월급은 올랐지만 연구 주제는 회사가 정합니다.', fx: { happy: 1 }, run: (S) => { raise(S, 1.25); if (S.work.job) S.work.job.title = '기업 연구원'; } },
+    ],
+  });
+
+  /* ================================================================ 성직자 */
+  const CLG = ['clergy'];
+  add(CLG, {
+    id: 'j_clg_rites', rate: 0.4, cd: 2,
+    text: (S) => ({
+      chr: ['주말에 결혼 예식을 두 번이나 집전했습니다.', '임종을 앞둔 신자의 병상에서 밤새 기도했습니다.', '성탄 준비로 한 달 내내 바빴습니다.'],
+      mus: ['금요 예배 설교를 준비하느라 밤늦게까지 경전을 읽었습니다.', '라마단 동안 가난한 이웃들에게 저녁 식사를 나눠 주었습니다.', '갓 태어난 아기의 귀에 기도문을 속삭여 주었습니다.'],
+      bud: ['새벽 예불을 마치고 마당을 쓸었습니다.', '마흔아홉째 날 재를 지내 달라는 가족의 부탁을 받았습니다.', '수행하러 온 젊은이들과 차를 마시며 이야기를 나눴습니다.'],
+      hin: ['마을 축제의 의식을 이끌었습니다.', '갓 태어난 아기의 이름을 짓는 의식을 치렀습니다.', '결혼식 날짜를 잡아 달라는 집안이 줄을 섰습니다.'],
+    }[S.rel] || ['장례 예식을 이끌었습니다. 유족들이 오래 손을 잡았습니다.', '{relPlace를} 찾은 사람들의 고민을 들어 주었습니다.']),
+    fx: { happy: 2, social: 2 }, val: { faith: 1 },
+  });
+  add(CLG, {
+    id: 'j_clg_split', rate: 0.2, cd: 6,
+    title: '갈라진 공동체',
+    text: '{relPlace} 건물을 새로 크게 짓자는 사람들과, 그 돈으로 가난한 이웃을 돕자는 사람들이 둘로 갈라졌습니다. 양쪽 모두 {N}의 결정을 기다립니다.',
+    choices: [
+      { l: '건축을 밀어준다', p: 0.6,
+        ok: { t: '새 건물이 섰습니다. 찾아오는 사람이 늘었습니다.', fx: { social: 3, happy: 3 }, run: (S) => { raise(S, 1.05); } },
+        no: { t: '공사비가 모자라 빚이 생겼습니다. 떠난 사람들도 있습니다.', fx: { social: -4, happy: -5 } } },
+      { l: '이웃을 돕는 데 쓰자고 한다', t: '그 돈으로 급식소와 장학금을 시작했습니다. 큰손 몇 사람이 떠났습니다.', fx: { happy: 4, social: -1 }, val: { rep: 4, faith: 2 } },
+      { l: '양쪽을 모아 절충안을 만든다', typ: true, p: (S) => U.clamp(0.4 + (S.st.social - 50) / 150, 0.2, 0.8),
+        ok: { t: '건물은 작게 고치고 남은 돈은 이웃을 돕는 데 쓰기로 했습니다. 다들 조금씩 양보했습니다.', fx: { social: 4, happy: 3 } },
+        no: { t: '회의는 고성으로 끝났습니다. 공동체에 금이 갔습니다.', fx: { happy: -4, social: -2 } } },
+    ],
+  });
+  add(CLG, {
+    id: 'j_clg_secret', rate: 0.15, cd: 5,
+    title: '털어놓은 비밀',
+    text: '한 사람이 찾아와 오래 숨겨 온 일을 털어놓았습니다. 집에서 가족에게 손을 대 왔다고 합니다. 도와 달라면서도 아무에게도 말하지 말아 달라고 합니다.',
+    choices: [
+      { l: '상담을 이어 가며 스스로 도움을 청하도록 설득한다', typ: true, p: 0.5,
+        ok: { t: '몇 달의 설득 끝에 그는 스스로 상담 기관을 찾아갔습니다. 그 집이 조금씩 평온해졌습니다.', fx: { happy: 5 } },
+        no: { t: '그는 발길을 끊었습니다. 그 가족이 걱정됩니다.', fx: { happy: -5 } } },
+      { l: '피해 가족을 몰래 보호 기관에 연결한다', p: 0.7,
+        ok: { t: '가족이 안전한 곳으로 옮겼습니다. 비밀을 깬 사람이 누구인지는 끝내 드러나지 않았습니다.', fx: { happy: 3 }, val: { honest: 1 } },
+        no: { t: '그 사람이 {N을} 원망하며 공동체를 떠났습니다. 그래도 가족은 안전해졌습니다.', fx: { social: -3, happy: -1 } } },
+      { l: '기도만 해 준다', t: '그를 위해 기도했습니다. 마음 한구석이 무거웠습니다.', fx: { happy: -3 } },
+    ],
+  });
+  add(CLG, {
+    id: 'j_clg_politics', rate: 0.15, cd: 6, gate: (S) => el(S) !== 'none',
+    title: '후보의 부탁',
+    text: '선거를 앞두고 한 후보가 {relPlace}에 큰 헌금을 내며, 다음 설교에서 자기를 지지해 달라고 부탁합니다.',
+    choices: [
+      { l: '헌금을 돌려보내고 설교는 바꾸지 않는다', typ: true, t: '헌금을 돌려보냈습니다. 설교 시간에는 늘 하던 이야기를 했습니다.', fx: { happy: 2 }, val: { honest: 2, rep: 2 } },
+      { l: '은근히 지지 발언을 한다', p: 0.6,
+        ok: { t: '그 후보가 당선되었습니다. {relPlace} 앞길이 새로 포장되었습니다.', val: { honest: -3 }, run: (S) => { pow(S, 5); } },
+        no: { t: '사람들 사이에서 "정치에 물들었다"는 말이 돌았습니다.', fx: { social: -3, happy: -3 }, val: { honest: -3, rep: -4 } } },
+    ],
+  });
+  add(CLG, {
+    id: 'j_clg_relief', rate: 0.2, cd: 4, gate: (S) => H.war(S) >= 1 || hzList(S).length > 0,
+    text: (S) => `${H.war(S) >= 1 ? '분쟁을 피해 온 사람들을 위해' : `${hzWord(S)} 이재민들을 위해`} {relPlace} 문을 활짝 열었습니다. 한 달 동안 밥을 짓고 담요를 나눴습니다.`,
+    fx: { social: 4, happy: 3, health: -1 }, val: { rep: 2 },
+  });
+
+  /* ================================================================ 농민(자급·상업 작물·농장 경영)·농장 일꾼 */
+  const FARM = ['subsist', 'farmhand', 'cashcrop', 'farmowner'];
+  const LANDED = ['subsist', 'cashcrop', 'farmowner'];
+  add(LANDED, {
+    id: 'j_farm_land', rate: 0.15, cd: 8,
+    title: '땅 문제',
+    text: (S) => (H.dev(S) <= 1 ? '마을 땅을 대규모 농장 회사에 넘긴다는 소문이 돕니다. 대대로 일궈 온 땅이지만 땅 문서가 없습니다.' : '근처에 도로와 물류 창고가 들어선다며 개발 업자가 {N}의 땅을 사겠다고 합니다. 시세의 두 배를 부릅니다.'),
+    choices: [
+      { l: '마을 사람들과 함께 땅 등록을 신청한다', need: (S) => H.dev(S) <= 1, p: 0.5,
+        ok: { t: '몇 년을 끈 끝에 땅 문서를 받았습니다. 이제 아무도 함부로 빼앗지 못합니다.', fx: { happy: 8, social: 4 }, val: { rep: 2 } },
+        no: { t: '서류가 관청에서 잠자는 사이 땅 일부가 남의 울타리 안으로 들어갔습니다.', fx: { money: -2, happy: -8 }, run: (S) => { raise(S, 0.85); } } },
+      { l: '그냥 지낸다', need: (S) => H.dev(S) <= 1, typ: true, p: 0.5,
+        ok: { t: '소문은 소문으로 끝났습니다.', fx: { happy: 1 } },
+        no: { t: '결국 땅 절반을 잃었습니다. 보상은 쥐꼬리만 했습니다.', fx: { money: -1, happy: -8 }, run: (S) => { raise(S, 0.75); } } },
+      { l: '땅을 지킨다', need: (S) => H.dev(S) >= 2, typ: true, t: '조상이 물려준 땅을 팔 수 없다며 거절했습니다.', fx: { happy: 1 } },
+      { l: '보상금을 받고 땅을 넘긴다', t: '보상금을 받고 땅을 넘겼습니다. 흙을 떠나 다른 일을 찾기로 했습니다.', fx: { happy: -2 }, run: (S) => { earn(S, H.dev(S) >= 2 ? 24 : 6, 'other'); lose(S); } },
+    ],
+  });
+  add(FARM, {
+    id: 'j_farm_pest', rate: 0.2, cd: 3, k: 'bad',
+    text: (S) => (['ssa', 'mena', 'sas'].includes(H.region(S)) ? ['메뚜기 떼가 하늘을 덮었습니다. 하룻밤 사이 들판의 절반이 사라졌습니다.', '가뭄 끝에 해충이 번져 잎이 누렇게 말랐습니다.'] : H.region(S) === 'eap' ? ['벼멸구가 번져 논 한쪽이 누렇게 말랐습니다.', '태풍에 쓰러진 벼를 사흘 동안 일으켜 세웠습니다.'] : ['병충해가 돌아 수확의 3분의 1을 버렸습니다.', '늦서리가 내려 꽃눈이 다 얼었습니다.']),
+    fx: { money: -0.6, happy: -4 },
+  });
+  add(FARM, {
+    id: 'j_farm_hurt', rate: 0.15, cd: 3, k: 'bad',
+    text: (S) => ['낫질을 하다 손을 베었습니다. 며칠 동안 일을 쉬었습니다.', H.dev(S) >= 1 ? '경운기가 비탈에서 미끄러졌습니다. 몸을 날려 피했지만 허리를 다쳤습니다.' : '물동이를 지고 언덕을 오르다 허리를 삐끗했습니다.', '한낮 땡볕 아래 일하다 어지러워 주저앉았습니다.'],
+    fx: { health: -3, happy: -2 },
+  });
+  add(['farmowner', 'cashcrop'], {
+    id: 'j_farm_mech', rate: 0.2, cd: 6, gate: (S) => H.dev(S) >= 1,
+    title: '농기계',
+    text: (S) => `농기계 대리점에서 새 ${H.dev(S) >= 2 ? '방제 드론' : '트랙터'}를 할부로 들이라고 권합니다. 일손은 크게 줄지만 빚이 생깁니다.`,
+    choices: [
+      { l: '할부로 들인다', cost: 3, p: 0.7,
+        ok: { t: '일하는 시간이 절반으로 줄고 수확은 늘었습니다.', fx: { happy: 4 }, run: (S) => { raise(S, 1.12); } },
+        no: { t: '흉년이 겹쳐 할부금을 내느라 허리가 휘었습니다.', fx: { money: -2, happy: -5 } } },
+      { l: '이웃과 함께 사서 나눠 쓴다', cost: 1.5, p: 0.75,
+        ok: { t: '이웃 농가 세 집과 돈을 모아 한 대를 샀습니다.', fx: { social: 3, happy: 2 }, run: (S) => { raise(S, 1.06); } },
+        no: { t: '쓰는 순서를 두고 다툼이 났습니다.', fx: { social: -4, happy: -2 } } },
+      { l: '하던 대로 한다', typ: true, t: '아직은 손으로 하던 대로 하기로 했습니다.' },
+    ],
+  });
+  add(['farmhand'], {
+    id: 'j_fhand_wage', rate: 0.3, cd: 3,
+    title: '깎인 품삯',
+    text: (S) => `${H.dev(S) >= 2 ? '계절 일꾼으로 일하는 농장' : '품을 파는 농장'} 주인이 일당을 깎겠다고 합니다. 다른 일꾼들은 투덜대면서도 일을 계속합니다.`,
+    choices: [
+      { l: '다른 농장으로 옮긴다', p: 0.6,
+        ok: { t: '조금 먼 농장에서 제값을 쳐주는 일을 구했습니다.', fx: { happy: 3 }, run: (S) => { raise(S, 1.08); } },
+        no: { t: '다른 농장도 사정은 같았습니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.95); } } },
+      { l: '일꾼들과 함께 따진다', p: 0.4,
+        ok: { t: '일꾼들이 한목소리를 내자 주인이 물러섰습니다.', fx: { social: 4, happy: 4 }, run: (S) => { raise(S, 1.05); } },
+        no: { fx: { happy: -4 }, run: (S) => { if (U.chance(0.5)) { lose(S, 'layoff'); return '앞장선 몇 명이 그날로 내쫓겼습니다. {N}도 그중 하나였습니다.'; } raise(S, 0.95); return '주인은 꿈쩍도 하지 않았습니다. 깎인 일당을 받았습니다.'; } } },
+      { l: '그냥 일한다', typ: true, t: '깎인 일당을 받으며 일했습니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.95); } },
+    ],
+  });
+  add(['farmhand'], {
+    id: 'j_fhand_season', rate: 0.3, cd: 2,
+    text: ['새벽 다섯 시부터 해 질 녘까지 과일을 땄습니다. 손가락 끝이 갈라졌습니다.', '수확철이 끝나자 일거리가 뚝 끊겼습니다. 다음 철까지 막일을 찾아 나섰습니다.', '농장 숙소의 좁은 방에서 다른 일꾼들과 고향 이야기를 나눴습니다.', '농장 주인이 수확을 마친 날 일꾼들에게 저녁을 대접했습니다.', '비닐하우스 안 열기에 땀이 비 오듯 쏟아졌습니다.'],
+    fx: { health: -1, social: 1 },
+  });
+  add(['subsist'], {
+    id: 'j_sub_lean', rate: 0.25, cd: 3, gate: (S) => H.dev(S) <= 1, k: 'bad',
+    text: ['곳간의 곡식이 다음 수확 전에 바닥났습니다. 하루 두 끼로 보릿고개를 버텼습니다.', '씨앗으로 남겨 둔 곡식까지 먹어야 할지 밤새 고민했습니다.'],
+    fx: { health: -2, happy: -3 },
+  });
+  add(['subsist'], {
+    id: 'j_sub_seed', rate: 0.2, cd: 5,
+    title: '새 종자',
+    text: '농업 지원 단체가 개량 종자와 비료를 반값에 나눠 준다고 합니다. 대신 해마다 같은 종자를 사야 합니다.',
+    choices: [
+      { l: '받아 심는다', cost: 0.3, p: 0.65,
+        ok: { t: '수확이 눈에 띄게 늘었습니다. 남는 곡식을 장에 내다 팔았습니다.', fx: { money: 0.5, happy: 5 }, run: (S) => { raise(S, 1.15); } },
+        no: { t: '비가 오지 않아 비싼 종자만 날렸습니다.', fx: { money: -0.5, happy: -4 } } },
+      { l: '집에서 받은 씨앗을 고집한다', typ: true, t: '늘 하던 대로 심었습니다. 씨앗은 공짜였습니다.' },
+      { l: '절반만 새 종자로 심는다', t: '둘로 나눠 심었습니다. 위험도 반, 기대도 반이었습니다.', fx: { happy: 1 }, run: (S) => { raise(S, 1.06); } },
+    ],
+  });
+  add(['subsist'], {
+    id: 'j_sub_market', rate: 0.25, cd: 2,
+    text: ['남은 곡식 몇 자루를 장에 내다 팔아 소금과 등유를 샀습니다.', '이웃과 품앗이로 서로의 밭을 갈아 주었습니다.', '닭이 알을 많이 낳아 장에 내다 팔았습니다.', '비가 알맞게 와서 옥수수 잎이 무릎까지 자랐습니다.', '집 앞 텃밭의 채소로 한 달 반찬을 해결했습니다.'],
+    fx: { happy: 2, social: 1, money: 0.1 },
+  });
+  add(['cashcrop'], {
+    id: 'j_cash_contract', rate: 0.25, cd: 4,
+    title: '계약 재배',
+    text: (S) => `수출 회사가 공정무역 인증 계약 재배를 제안합니다. ${jt(S).replace(/ 농민$/, '')} 값은 안정적이지만 농약을 줄이고 장부를 꼼꼼히 써야 합니다.`,
+    choices: [
+      { l: '계약한다', p: 0.7,
+        ok: { t: '인증 마크가 붙은 자루가 항구로 떠났습니다. 값이 예전보다 안정적입니다.', fx: { skill: 3, happy: 4 }, run: (S) => { raise(S, 1.12); } },
+        no: { t: '첫해 검사에서 떨어져 계약이 끊겼습니다.', fx: { happy: -4 } } },
+      { l: '중간 상인에게 계속 판다', typ: true, t: '늘 거래하던 중간 상인에게 팔았습니다.' },
+      { l: '농민 조합을 만들어 직접 수출한다', p: 0.3,
+        ok: { t: '조합이 직접 수출 길을 텄습니다. 중간 상인 몫이 농민들 주머니로 돌아왔습니다.', fx: { social: 5, happy: 6 }, run: (S) => { raise(S, 1.25); } },
+        no: { t: '서류와 운송비에 막혀 조합은 첫해를 넘기지 못했습니다.', fx: { money: -1, social: -2, happy: -3 } } },
+    ],
+  });
+  add(['cashcrop'], {
+    id: 'j_cash_scale', rate: 0.25, cd: 3,
+    text: ['중간 상인이 저울 눈금을 속인다는 것을 알아챘습니다. 다음부터는 저울을 직접 들고 갔습니다.', '올해 작물 값이 좋아 빚을 다 갚았습니다.', '수확한 자루를 트럭에 싣는데, 트럭이 진흙탕에 빠져 하루를 꼬박 기다렸습니다.'],
+    fx: { skill: 1, happy: 1 },
+  });
+  add(['farmowner'], {
+    id: 'j_fown_workers', rate: 0.25, cd: 4,
+    title: '일손',
+    text: '수확철을 앞두고 일손이 모자랍니다. 외국인 계절 노동자를 쓰면 싸지만 숙소를 마련해야 합니다. 몇몇 농장은 일꾼들의 여권을 빼앗아 말썽이 났습니다.',
+    choices: [
+      { l: '제대로 된 숙소와 계약서를 마련한다', cost: 1, t: '숙소를 고치고 계약서를 썼습니다. 일꾼들이 이듬해에도 돌아왔습니다.', fx: { happy: 2 }, val: { rep: 2, honest: 1 }, run: (S) => { raise(S, 1.05); } },
+      { l: '싸게 쓰고 숙소는 대충 때운다', typ: true, p: 0.7,
+        ok: { t: '돈은 아꼈습니다. 일꾼들의 얼굴은 어두웠습니다.', fx: { money: 2 }, val: { honest: -2 } },
+        no: { t: '노동 감독에 걸려 벌금을 물었습니다.', fx: { happy: -4 }, val: { honest: -2, rep: -4 }, run: (S) => { H.fine(S, 2); } } },
+      { l: '기계를 더 들인다', cost: 3, t: '사람 대신 기계를 늘렸습니다.', run: (S) => { raise(S, 1.08); } },
+    ],
+  });
+  add(['farmowner'], {
+    id: 'j_fown_office', rate: 0.25, cd: 3, gate: (S) => H.dev(S) >= 2,
+    text: ['농업 보조금 신청 서류를 쓰느라 사흘을 보냈습니다.', '농산물 직거래 장터에 나가 단골을 만들었습니다.', '은행에서 농지 담보 대출 조건을 다시 협상했습니다.'],
+    fx: { money: 0.5, happy: -1 },
+  });
+
+  /* ================================================================ 목축업자 */
+  const HERD = ['herder'];
+  add(HERD, {
+    id: 'j_herd_pasture', rate: 0.3, cd: 4,
+    title: '풀밭을 찾아서',
+    text: (S) => (H.region(S) === 'ssa' ? '건기가 길어져 풀을 찾아 남쪽으로 내려갔습니다. 농민들이 자기 밭에 가축이 들어왔다며 길을 막아섰습니다.' : '가뭄으로 풀이 말라 먼 목초지로 가축을 몰고 가야 합니다. 그곳 사람들이 사용료를 요구합니다.'),
+    choices: [
+      { l: '마을 원로들을 불러 협상한다', typ: true, p: 0.6,
+        ok: { t: '원로들이 물길과 지나갈 길을 정해 주었습니다. 다툼 없이 지나갔습니다.', fx: { social: 3, happy: 3 } },
+        no: { t: '협상이 길어지는 사이 가축 몇 마리가 굶어 쓰러졌습니다.', fx: { money: -1, happy: -4 } } },
+      { l: '돈을 내고 지나간다', cost: 0.5, t: '사용료를 내고 풀밭을 빌렸습니다. 가축들이 배불리 먹었습니다.', fx: { happy: 1 } },
+      { l: '먼 길로 돌아간다', p: 0.5,
+        ok: { t: '먼 길을 돌아 새 풀밭을 찾았습니다.', fx: { health: -2, happy: 2 } },
+        no: { t: '돌아가는 길에 가축을 여럿 잃었습니다.', fx: { money: -1.5, happy: -5 } } },
+    ],
+  });
+  add(HERD, {
+    id: 'j_herd_theft', rate: 0.2, cd: 3, k: 'bad',
+    text: ['밤사이 도둑이 염소 다섯 마리를 끌고 갔습니다.', '이웃 마을 무리가 가축을 몰고 갔다는 소식에 밤새 망을 봤습니다.', '늑대가 우리를 덮쳐 새끼 양 두 마리를 잃었습니다.'],
+    fx: { money: -0.6, happy: -4 },
+  });
+  add(HERD, {
+    id: 'j_herd_good', rate: 0.3, cd: 2,
+    text: ['비가 넉넉해 새끼가 많이 태어났습니다. 우리가 북적입니다.', '장에서 수소 한 마리를 좋은 값에 팔았습니다.', '젖과 치즈를 내다 팔아 생활비를 마련했습니다.', '아침 안개 속에서 가축 떼를 몰고 언덕을 넘었습니다. 오래 기억에 남을 풍경이었습니다.', '털을 깎아 장에 내다 팔았습니다.'],
+    fx: { money: 0.5, happy: 3 },
+  });
+  add(HERD, {
+    id: 'j_herd_settle', rate: 0.12, once: true, gate: (S) => H.dev(S) <= 1,
+    title: '정착촌',
+    text: '정부가 떠돌며 사는 목축민에게 정착촌에 집과 학교를 마련해 준다고 합니다. 대신 가축 수를 줄여야 합니다.',
+    choices: [
+      { l: '정착한다', t: '가축 절반을 팔고 정착촌에 자리를 잡았습니다. 밤마다 별 대신 전등을 봅니다.', fx: { money: 2, social: 2, happy: -1 }, run: (S) => { raise(S, 0.85); } },
+      { l: '떠도는 삶을 지킨다', typ: true, t: '조상들처럼 풀을 따라 사는 삶을 이어 가기로 했습니다.', fx: { happy: 2 } },
+    ],
+  });
+
+  /* ================================================================ 어부 (바다 사건은 다른 파일에도 많다) */
+  const FISH = ['fisher'];
+  add(FISH, {
+    id: 'j_fish_trawler', rate: 0.25, cd: 5,
+    title: '줄어드는 고기',
+    text: '먼바다에 외국 대형 저인망 어선들이 몰려왔습니다. 몇 해 사이 잡히는 고기가 눈에 띄게 줄었습니다.',
+    choices: [
+      { l: '어민들과 함께 단속을 요구한다', p: 0.4,
+        ok: { t: '해경이 단속을 시작했습니다. 고기가 조금씩 돌아왔습니다.', fx: { social: 4, happy: 4 }, run: (S) => { raise(S, 1.05); } },
+        no: { t: '진정서는 묻혔습니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.95); } } },
+      { l: '더 먼 바다로 나간다', p: 0.6,
+        ok: { t: '기름값은 늘었지만 그물이 찼습니다.', fx: { money: 1, health: -2 } },
+        no: { t: '먼바다에서 엔진이 멈춰 하루를 떠돌았습니다. 겨우 돌아왔습니다.', fx: { money: -1, health: -3, happy: -4 } } },
+      { l: '줄어든 만큼 견딘다', typ: true, t: '잡히는 만큼만 잡았습니다. 벌이가 줄었습니다.', fx: { happy: -2 }, run: (S) => { raise(S, 0.95); } },
+    ],
+  });
+  add(FISH, {
+    id: 'j_fish_coop', rate: 0.25, cd: 2,
+    text: ['어민들과 공동으로 생선을 경매에 내 제값을 받았습니다.', '해 질 녘 부두에서 그물을 손질하며 이웃 어부들과 차를 나눠 마셨습니다.', '새벽 경매에서 생선 값이 껑충 뛰었습니다.'],
+    fx: { social: 2, money: 0.2, happy: 2 },
+  });
+  add(FISH, {
+    id: 'j_fish_boat', rate: 0.15, once: true, gate: (S) => yrsIn(S) >= 3,
+    title: '낡은 배',
+    text: '배가 낡아 바닥에 물이 샙니다. 새 배를 사려면 큰 빚을 져야 합니다.',
+    choices: [
+      { l: '빚을 내 새 배를 산다', cost: 4, p: 0.7,
+        ok: { t: '새 배로 더 먼 바다에 나갑니다. 그물이 묵직합니다.', fx: { happy: 6 }, run: (S) => { raise(S, 1.2); } },
+        no: { t: '고기가 안 잡히는 해가 이어져 빚에 허덕였습니다.', fx: { money: -2, happy: -6 } } },
+      { l: '고쳐 쓴다', typ: true, cost: 0.5, t: '틈을 메우고 페인트를 새로 칠했습니다. 몇 해는 더 버틸 것입니다.' },
+      { l: '배를 팔고 큰 배의 선원이 된다', t: '배를 팔고 큰 어선의 선원이 되었습니다. 벌이는 일정해졌지만 내 배가 그립습니다.', fx: { happy: -2, money: 2 }, run: (S) => { raise(S, 0.9); if (S.work.job) S.work.job.title = '선원'; } },
+    ],
+  });
+
+  /* ================================================================ 농업 기술자 */
+  const AGT = ['agritech'];
+  add(AGT, {
+    id: 'j_agt_demo', rate: 0.3, cd: 4,
+    title: '새 농법 보급',
+    text: '새 품종과 물을 아끼는 농법을 마을에 보급하는 일을 맡았습니다. 나이 든 농민들은 "평생 이렇게 지어 왔다"며 고개를 젓습니다.',
+    choices: [
+      { l: '시범 밭을 만들어 직접 보여 준다', typ: true, p: 0.65,
+        ok: { t: '시범 밭의 수확을 본 농민들이 하나둘 따라 하기 시작했습니다.', fx: { happy: 6, social: 4, skill: 2 }, val: { rep: 2 } },
+        no: { t: '하필 그해 가뭄이 들어 시범 밭도 시원찮았습니다.', fx: { happy: -4 } } },
+      { l: '마을 지도자부터 설득한다', p: (S) => U.clamp(0.35 + (S.st.social - 50) / 120, 0.15, 0.75),
+        ok: { t: '이장이 먼저 따라 하자 마을이 움직였습니다.', fx: { happy: 4, social: 3 } },
+        no: { t: '이장은 끝내 고개를 저었습니다.', fx: { happy: -2 } } },
+      { l: '보고서에는 보급 완료라고 쓴다', val: { honest: -2 }, t: '서류상으로는 보급이 끝났습니다. 들판은 그대로입니다.', fx: { happy: -1 } },
+    ],
+  });
+  add(AGT, {
+    id: 'j_agt_field', rate: 0.3, cd: 2,
+    text: (S) => [H.dev(S) >= 2 ? '드론으로 논밭을 찍어 병충해를 미리 찾아냈습니다. 농민들이 신기해하며 몰려왔습니다.' : '진흙 길을 오토바이로 두 시간 달려 마을 농가 상담을 다녀왔습니다.', '흙 시료를 모아 연구소에 보냈습니다. 결과가 나오면 비료를 줄일 수 있습니다.', '가뭄에 강한 품종의 시험 재배 결과를 정리했습니다.'],
+    fx: { skill: 2, health: -1 },
+  });
+  add(AGT, {
+    id: 'j_agt_offer', rate: 0.15, once: true, gate: (S) => H.dev(S) <= 2,
+    title: '종자 회사의 제안',
+    text: '다국적 종자 회사가 두 배 월급을 제안합니다. 대신 그 회사 종자와 농약을 농민들에게 팔아야 합니다.',
+    choices: [
+      { l: '옮긴다', t: '종자 회사로 옮겼습니다. 월급은 올랐지만 농민들 앞에서 말이 조심스러워졌습니다.', fx: { happy: 2 }, val: { honest: -1 }, run: (S) => { raise(S, 1.6); if (S.work.job) S.work.job.title = '종자 회사 기술 영업'; } },
+      { l: '공공 기관에 남는다', typ: true, t: '농민들 편에서 일하는 지금 자리에 남았습니다.', fx: { happy: 2 }, val: { honest: 1 } },
+    ],
+  });
+
+  /* ================================================================ 광부·영세 광부 */
+  const MINE = ['miner', 'artisanalminer'];
+  add(MINE, {
+    id: 'j_mine_collapse', rate: 0.2, cd: 4,
+    title: '흔들리는 갱도',
+    text: (S) => `갱도 천장에서 흙이 부스스 떨어집니다. ${H.jobIs(S, 'miner') ? '감독은 "오늘 할당량을 채워야 한다"고 합니다.' : '함께 파던 사람들은 "조금만 더 들어가면 금맥"이라며 멈추지 않습니다.'}`,
+    choices: [
+      { l: '모두 밖으로 나가자고 소리친다', p: 0.7,
+        ok: { t: '모두 빠져나온 직후 갱도가 무너졌습니다. 다들 {N}의 손을 잡았습니다.', fx: { happy: 6, social: 5 }, val: { rep: 3 } },
+        no: { t: '아무도 따라 나오지 않았습니다. 그날은 무너지지 않았지만 겁쟁이 소리를 들었습니다.', fx: { social: -3, happy: -2 } } },
+      { l: '하던 일을 마저 한다', typ: true, p: 0.8,
+        ok: { t: '무사히 하루를 마쳤습니다.', fx: { health: -1 } },
+        no: { t: '떨어진 돌덩이에 다리를 다쳤습니다. 몇 주를 누워 지냈습니다.', fx: { health: -10, happy: -5, money: -0.5 } } },
+    ],
+  });
+  add(MINE, {
+    id: 'j_mine_dust', rate: 0.25, cd: 2, k: 'bad',
+    text: ['하루 종일 먼지를 마셔 저녁이면 기침이 멈추지 않습니다.', '갱 안의 열기에 셔츠가 소금기로 하얗게 굳었습니다.', '갱 안에서 하루를 보내고 나오니 햇빛에 눈을 뜰 수 없었습니다.', '갱도 안 물웅덩이에 발이 빠져 하루 종일 장화가 젖어 있었습니다.'],
+    fx: { health: -2 },
+  });
+  add(['miner'], {
+    id: 'j_mine_union', rate: 0.25, cd: 5,
+    title: '안전 장비',
+    text: '광산 회사가 안전 장비 예산을 줄였습니다. 노동조합이 작업 거부를 결의합니다.',
+    choices: [
+      { l: '작업 거부에 함께한다', p: 0.5,
+        ok: { t: '회사가 새 환기 장치와 장비를 약속했습니다.', fx: { social: 5, happy: 4 }, run: (S) => { union(S); } },
+        no: { fx: { happy: -5 }, run: (S) => { if (U.chance(0.4)) { lose(S, 'layoff'); return '회사가 앞장선 사람들을 해고했습니다. {N}의 이름도 명단에 있었습니다.'; } return '작업 거부는 흐지부지되었습니다. 앞장선 사람들만 눈 밖에 났습니다.'; } } },
+      { l: '일을 계속한다', typ: true, t: '갱으로 내려갔습니다. 동료들의 눈길이 차가웠습니다.', fx: { social: -3, happy: -2 } },
+      { l: '노조 대표로 협상에 나선다', p: (S) => U.clamp(0.3 + (S.st.social - 50) / 100, 0.15, 0.7),
+        ok: { t: '임금 7% 인상과 안전 장비를 함께 얻어 냈습니다.', fx: { social: 6, happy: 6 }, run: (S) => { raise(S, 1.07); union(S); } },
+        no: { t: '협상은 결렬되었습니다. 회사는 {N을} 문제 인물로 찍었습니다.', fx: { happy: -5, social: -2 } } },
+    ],
+  });
+  add(['miner'], {
+    id: 'j_mine_bonus', rate: 0.15, cd: 3,
+    text: ['광물 값이 올라 특별 상여금이 나왔습니다.', '무사고 1,000일 기념으로 광산 전체가 하루를 쉬었습니다.'],
+    fx: { money: 0.8, happy: 3 },
+  });
+  add(['artisanalminer'], {
+    id: 'j_amine_dig', rate: 0.3, cd: 2,
+    run: (S) => {
+      if (U.chance(0.15)) { earn(S, 3, 'other'); E.stat(S, 'happy', 8); return '금 알갱이가 박힌 돌덩이를 찾았습니다! 한 해 벌이를 하루에 벌었습니다.'; }
+      if (U.chance(0.5)) { earn(S, 0.3, 'other'); E.stat(S, 'happy', 1); return '사흘 동안 체로 흙을 걸러 금가루 몇 그램을 모았습니다.'; }
+      E.stat(S, 'happy', -3); return '일주일 동안 판 구덩이에서 아무것도 나오지 않았습니다.';
+    },
+  });
+  add(['artisanalminer'], {
+    id: 'j_amine_mercury', rate: 0.2, cd: 3, k: 'bad',
+    text: '금가루를 모으려 수은을 태운 연기를 맡았습니다. 손이 떨리고 머리가 아픕니다.',
+    fx: { health: -3 },
+  });
+  add(['artisanalminer'], {
+    id: 'j_amine_armed', rate: 0.2, cd: 4, gate: (S) => H.war(S) >= 1 || H.dev(S) === 0,
+    title: '보호비',
+    text: '무장한 사람들이 광산 입구를 막고 "보호비"를 내라고 합니다. 캐낸 금의 3분의 1입니다.',
+    choices: [
+      { l: '낸다', typ: true, t: '보호비를 냈습니다. 남는 것이 거의 없습니다.', fx: { money: -1, happy: -3 } },
+      { l: '다른 광산으로 옮긴다', p: 0.6,
+        ok: { t: '먼 곳의 광산으로 옮겼습니다. 그곳은 아직 조용합니다.', fx: { social: -2, happy: 1 } },
+        no: { t: '옮긴 곳에서도 같은 사람들이 기다리고 있었습니다.', fx: { money: -1, happy: -5 } } },
+      { l: '금 캐는 일을 그만둔다', t: '삽을 내려놓고 다른 일을 찾아 나섰습니다.', fx: { happy: -2 }, run: (S) => { lose(S); } },
+    ],
+  });
+  add(['artisanalminer'], {
+    id: 'j_amine_license', rate: 0.15, once: true, gate: (S) => H.dev(S) >= 1 || H.war(S) < 1,
+    title: '광산 허가증',
+    text: '정부가 영세 광산에 허가증을 받으라고 합니다. 허가비는 비싸지만 단속에서 벗어나고 공식 시장에 제값으로 금을 팔 수 있습니다.',
+    choices: [
+      { l: '허가를 받는다', cost: 1.5, t: '허가증을 벽에 붙였습니다. 금을 공식 구매소에 제값에 팝니다.', fx: { happy: 3 }, run: (S) => { raise(S, 1.15); } },
+      { l: '그냥 캔다', typ: true, p: 0.7,
+        ok: { t: '단속반은 오지 않았습니다.', fx: {} },
+        no: { t: '단속반이 장비를 압수했습니다.', fx: { money: -1.5, happy: -5 } } },
+    ],
+  });
+
+  /* ================================================================ 건설 노동자 */
+  const CON = ['construction'];
+  add(CON, {
+    id: 'j_con_safety', rate: 0.3, cd: 3,
+    title: '안전망 없는 현장',
+    text: '공사 기한이 빠듯하다며 현장 소장이 안전망 없이 5층 비계에 올라가라고 합니다.',
+    choices: [
+      { l: '안전 장비가 올 때까지 버틴다', p: 0.5,
+        ok: { t: '소장이 결국 안전망을 쳤습니다.', fx: { happy: 2 }, val: { honest: 1 } },
+        no: { fx: { happy: -5 }, run: (S) => { lose(S, 'layoff'); return '"일할 사람은 많다"는 말과 함께 현장에서 쫓겨났습니다.'; } } },
+      { l: '그냥 올라간다', typ: true, p: 0.85,
+        ok: { t: '조심조심 일을 마쳤습니다. 내려오니 다리가 후들거렸습니다.', fx: { happy: -1 } },
+        no: { t: '발을 헛디뎌 떨어졌습니다. 아래 자재 더미에 걸렸지만 몇 주 동안 일을 못 했습니다.', fx: { health: -10, happy: -6, money: -1 } } },
+      { l: '노동 감독 기관에 신고한다', p: (S) => [0.2, 0.3, 0.5, 0.7][H.dev(S)],
+        ok: { t: '감독관이 나와 공사를 멈추고 안전망을 치게 했습니다.', fx: { happy: 4 }, val: { honest: 2, rep: 2 } },
+        no: { fx: { happy: -5 }, run: (S) => { lose(S, 'layoff'); return '신고한 사람이 누군지 소문이 났습니다. 다음 현장부터 아무도 {N을} 부르지 않았습니다.'; } } },
+    ],
+  });
+  add(CON, {
+    id: 'j_con_wage', rate: 0.22, cd: 4,
+    title: '하청의 하청',
+    text: '하청 업체 사장이 공사 대금을 못 받았다며 석 달째 일당을 미룹니다. 원청 회사는 "우리와 상관없다"고 합니다.',
+    choices: [
+      { l: '원청 건물 앞에서 동료들과 시위한다', p: 0.5,
+        ok: { t: '원청이 밀린 임금을 대신 지급했습니다.', fx: { happy: 5, social: 4 } },
+        no: { t: '시위는 흐지부지되었습니다. 한 달 치만 받았습니다.', fx: { money: -1.5, happy: -4 } } },
+      { l: '노동 관청에 진정을 넣는다', p: (S) => [0.3, 0.4, 0.6, 0.75][H.dev(S)],
+        ok: { t: '몇 달 걸렸지만 밀린 임금을 받았습니다.', fx: { happy: 4 } },
+        no: { t: '서류만 쌓이고 돈은 돌아오지 않았습니다.', fx: { money: -2.5, happy: -4 } } },
+      { l: '다른 현장으로 옮긴다', typ: true, t: '떼인 돈은 뒤로하고 다른 현장을 찾아갔습니다.', fx: { money: -2, happy: -3 } },
+    ],
+  });
+  add(CON, {
+    id: 'j_con_day', rate: 0.35, cd: 2,
+    text: ['한여름 철근을 나르다 열기에 머리가 핑 돌았습니다.', '못에 발을 찔렸습니다. 파상풍 주사를 맞고 다시 일했습니다.', '비가 와서 공사가 멈췄습니다. 그날 일당도 없습니다.', '새벽 인력 시장에 나갔지만 일감을 받지 못하고 돌아왔습니다.', '새벽 다섯 시 현장 앞 식당에서 국 한 그릇으로 아침을 때웠습니다.', '거푸집을 짜는 솜씨를 반장이 칭찬했습니다.'],
+    fx: { health: -1, money: -0.15, happy: -2 },
+  });
+  add(CON, {
+    id: 'j_con_proud', rate: 0.15, cd: 4,
+    text: ['몇 해 동안 지은 다리가 개통했습니다. 차들이 지나가는 것을 한참 바라보았습니다.', '{N이} 지은 건물에 첫 입주자들이 이사 왔습니다. 괜히 뿌듯했습니다.'],
+    fx: { happy: 5 },
+  });
+  add(CON, {
+    id: 'j_con_foreman', rate: 0.15, once: true, gate: (S) => yrsIn(S) >= 5,
+    title: '반장 제안',
+    text: '현장 반장 자리를 제안받았습니다. 일당은 오르지만, 사고가 나면 책임도 져야 합니다.',
+    choices: [
+      { l: '맡는다', p: 0.75,
+        ok: { t: '반장이 되었습니다. 새로 온 일꾼들에게 일을 가르칩니다.', fx: { happy: 5 }, run: (S) => { raise(S, 1.2); if (S.work.job) S.work.job.title = '건설 현장 반장'; } },
+        no: { t: '맡자마자 사고가 나서 책임을 졌습니다. 그래도 반장 자리는 지켰습니다.', fx: { happy: -6, money: -1 }, run: (S) => { raise(S, 1.1); if (S.work.job) S.work.job.title = '건설 현장 반장'; } } },
+      { l: '사양한다', typ: true, t: '책임지는 자리는 사양했습니다.' },
+    ],
+  });
+
+  /* ================================================================ 공장 생산직 */
+  const FAC = ['factory'];
+  add(FAC, {
+    id: 'j_fac_line', rate: 0.35, cd: 2,
+    text: ['라인 속도가 또 빨라졌습니다. 화장실 갈 틈도 없습니다.', '생산 목표가 20% 올랐습니다. 잔업이 늘었습니다.', '같은 동작을 하루 만 번 반복하다 보니 손목이 시큰거립니다.', '야간조로 바뀌어 낮에 자는 생활을 시작했습니다.', '라인이 멈춘 틈에 동료들과 자판기 커피를 마셨습니다.', '새 제품이 들어와 작업 순서를 처음부터 다시 익혔습니다.'],
+    fx: { health: -1, happy: -2, money: 0.1 },
+  });
+  add(FAC, {
+    id: 'j_fac_injury', rate: 0.12, cd: 4, k: 'bad',
+    text: ['기계에 장갑이 말려 들어갈 뻔했습니다. 다행히 손을 뺐습니다.', '프레스 작업 중 손가락을 다쳐 열흘을 쉬었습니다.'],
+    fx: { health: -4, happy: -3 },
+  });
+  add(FAC, {
+    id: 'j_fac_union', rate: 0.22, cd: 6, gate: H.formal,
+    title: '노동조합',
+    text: '노동조합이 가입을 권합니다. 가입하면 회사가 곱지 않게 볼 수 있다는 말도 돕니다.',
+    choices: [
+      { l: '가입한다', t: '조합원이 되었습니다. 회의에서 처음으로 목소리를 냈습니다.', fx: { social: 3 }, run: (S) => { union(S); } },
+      { l: '대의원으로 나선다', p: 0.6,
+        ok: { t: '대의원으로 뽑혔습니다. 동료들이 고민을 들고 찾아옵니다.', fx: { social: 5, happy: 2 }, run: (S) => { union(S); } },
+        no: { t: '선거에서 떨어졌습니다. 관리자들의 눈총만 받았습니다.', fx: { social: -1, happy: -2 } } },
+      { l: '가입하지 않는다', typ: true, t: '조용히 지내기로 했습니다.' },
+    ],
+  });
+  add(FAC, {
+    id: 'j_fac_robot', rate: 0.1, once: true, gate: (S) => H.dev(S) >= 2,
+    title: '로봇 라인',
+    text: '공장에 로봇 팔이 들어옵니다. 회사는 남는 사람들에게 로봇 관리 교육을 하겠다지만, 자리는 절반으로 줄어듭니다.',
+    choices: [
+      { l: '교육을 받는다', p: (S) => U.clamp(0.35 + (S.st.smarts - 50) / 150 + S.st.skill / 300, 0.2, 0.85),
+        ok: { t: '로봇 정비 담당이 되었습니다. 기름 대신 화면을 들여다봅니다.', fx: { skill: 6, happy: 4 }, run: (S) => { promo(S, 1.1); } },
+        no: { t: '교육 평가에서 떨어져 정리 해고 명단에 올랐습니다.', fx: { happy: -6 }, run: (S) => { lose(S, 'layoff'); } } },
+      { l: '희망퇴직을 신청한다', t: '퇴직금을 받고 공장을 나왔습니다.', fx: { money: 6 }, run: (S) => { lose(S); } },
+      { l: '기다려 본다', typ: true, p: 0.55,
+        ok: { t: '다행히 남는 쪽에 들었습니다. 일은 두 배가 되었습니다.', fx: { happy: -2, health: -1 } },
+        no: { t: '해고 통지서를 받았습니다.', fx: { happy: -4 }, run: (S) => { lose(S, 'layoff'); } } },
+    ],
+  });
+  add(FAC, {
+    id: 'j_fac_idea', rate: 0.1, cd: 5,
+    text: '작업 공정을 줄이는 아이디어를 내 개선 제안상을 받았습니다.',
+    fx: { money: 0.4, happy: 4, skill: 2 },
+  });
+
+  /* ================================================================ 봉제 공장 노동자 */
+  const GAR = ['garment'];
+  add(GAR, {
+    id: 'j_gar_crack', rate: 0.15, cd: 6, gate: (S) => H.dev(S) <= 2,
+    title: '갈라진 벽',
+    text: '공장 건물 벽에 큰 금이 갔습니다. 관리자는 아무 문제 없으니 내일도 나오라고 합니다. 비상구는 늘 잠겨 있습니다.',
+    choices: [
+      { l: '나가지 않고 다른 사람들에게도 알린다', p: 0.6,
+        ok: { t: '다음 날 점검반이 나와 건물을 폐쇄했습니다. 보강 공사 뒤 다시 문을 열었습니다.', fx: { happy: 3, social: 4 }, val: { rep: 2 } },
+        no: { fx: { happy: -6 }, run: (S) => { lose(S, 'layoff'); return '하루 결근했다는 이유로 해고 통보를 받았습니다.'; } } },
+      { l: '나간다', typ: true, p: 0.92,
+        ok: { t: '아무 일 없이 하루가 지났습니다. 그래도 벽의 금을 볼 때마다 숨이 막힙니다.', fx: { happy: -3 } },
+        no: { t: '건물 일부가 내려앉았습니다. 계단으로 뛰어 겨우 빠져나왔습니다.', fx: { health: -8, happy: -10 } } },
+      { l: '노동 단체에 사진을 보낸다', need: (S) => H.internet(S) > 0.2, p: 0.5,
+        ok: { t: '해외 바이어들이 문제를 알게 되어 공장에 안전 점검을 요구했습니다.', fx: { happy: 4 }, val: { rep: 3 } },
+        no: { fx: { happy: -6 }, run: (S) => { lose(S, 'layoff'); return '사진을 보낸 사람이 누구인지 드러나 {N은} 쫓겨났습니다.'; } } },
+    ],
+  });
+  add(GAR, {
+    id: 'j_gar_piece', rate: 0.35, cd: 2,
+    text: ['한 장당 단가가 또 깎였습니다. 같은 돈을 벌려면 더 많이 박아야 합니다.', '해외 바이어가 오는 날만 공장이 깨끗해지고 비상구 문이 열렸습니다.', '납품일을 맞추느라 주말에도 재봉틀 앞에 앉았습니다.'],
+    fx: { happy: -2, health: -1 },
+  });
+  add(GAR, {
+    id: 'j_gar_lead', rate: 0.2, cd: 5,
+    title: '라인 반장',
+    text: '재봉 솜씨를 눈여겨본 관리자가 라인 반장 자리를 권합니다. 대신 동료들을 다그쳐 목표량을 채워야 합니다.',
+    choices: [
+      { l: '맡는다', t: '반장이 되었습니다. 월급은 올랐지만 동료들과 점심을 같이 먹기 어려워졌습니다.', fx: { social: -3, happy: 2 }, run: (S) => { raise(S, 1.15); } },
+      { l: '맡되 무리한 잔업은 거절한다', p: 0.5,
+        ok: { t: '반장이 되어 무리한 잔업을 막아 냈습니다. 다들 고마워합니다.', fx: { social: 3, happy: 4 }, run: (S) => { raise(S, 1.12); } },
+        no: { t: '관리자와 부딪쳐 반장 자리에서 내려왔습니다.', fx: { happy: -4 } } },
+      { l: '사양한다', typ: true, t: '지금 자리가 편하다며 사양했습니다.' },
+    ],
+  });
+  add(GAR, {
+    id: 'j_gar_own', rate: 0.12, once: true, gate: (S) => yrsIn(S) >= 4,
+    title: '수선 가게',
+    text: '그동안 익힌 솜씨로 동네에 옷 수선 가게를 열어 볼까요? 재봉틀 값만 있으면 됩니다.',
+    choices: [
+      { l: '가게를 연다', cost: 1, p: 0.6,
+        ok: { t: '작은 수선 가게를 열었습니다. 단골이 하나둘 늘어 갑니다.', fx: { happy: 6 }, run: (S) => { const j = S.work.job; E.takeJob(S, { id: 'craft', title: '옷 수선 가게 주인', pay: (j ? j.pay : H.pay(S, 10)) * 1.1, formal: false }); } },
+        no: { t: '손님이 없어 몇 달 만에 접고 공장으로 돌아왔습니다.', fx: { money: -1, happy: -4 } } },
+      { l: '공장에 남는다', typ: true, t: '꼬박꼬박 나오는 월급이 낫다고 생각했습니다.' },
+    ],
+  });
+
+  /* ================================================================ 수공업자 */
+  const CFT = ['craft'];
+  add(CFT, {
+    id: 'j_cft_order', rate: 0.3, cd: 4,
+    title: '큰 주문',
+    text: '도시의 가게에서 {N}의 물건을 대량으로 납품해 달라고 합니다. 손으로 만들면 석 달은 걸리는 양입니다.',
+    choices: [
+      { l: '일꾼을 들여 맞춘다', p: 0.6,
+        ok: { t: '납품을 해냈습니다. 일꾼 둘이 계속 함께 일합니다.', fx: { happy: 5 }, run: (S) => { raise(S, 1.15); } },
+        no: { t: '품질이 들쭉날쭉해 반품을 당했습니다.', fx: { money: -1, happy: -4 } } },
+      { l: '할 수 있는 만큼만 받는다', typ: true, t: '물량을 줄여 받았습니다. 솜씨는 지켰습니다.', fx: { money: 0.8 } },
+      { l: '기계를 들여 맞춘다', cost: 2, p: 0.55,
+        ok: { t: '기계를 들이니 하루 만드는 양이 세 배가 되었습니다.', fx: { happy: 4 }, run: (S) => { raise(S, 1.25); } },
+        no: { t: '기계가 손에 익지 않아 불량만 쌓였습니다.', fx: { money: -1, happy: -4 } } },
+    ],
+  });
+  add(CFT, {
+    id: 'j_cft_fair', rate: 0.25, cd: 2,
+    text: ['장날에 내놓은 물건이 한나절 만에 다 팔렸습니다.', '관광객이 {N}의 물건을 들고 사진을 찍어 갔습니다.', '공예 장터에서 상을 받았습니다.', '손때 묻은 도구들을 손질하며 하루를 보냈습니다. 도구가 곧 밑천입니다.'],
+    fx: { money: 0.3, happy: 3 }, run: (S) => { prac(S, 'art', 2); },
+  });
+  add(CFT, {
+    id: 'j_cft_cheap', rate: 0.25, cd: 3, k: 'bad',
+    text: '공장에서 찍어 낸 싼 물건이 장터를 채웠습니다. 손으로 만든 물건은 비싸다며 손님들이 지나칩니다.',
+    fx: { money: -0.4, happy: -3 },
+  });
+  add(CFT, {
+    id: 'j_cft_apprentice', rate: 0.15, once: true, gate: (S) => H.age(S) >= 40, who: 'newfriend',
+    title: '제자',
+    text: '동네 젊은이 {friend가} 기술을 배우고 싶다며 찾아왔습니다.',
+    choices: [
+      { l: '제자로 받는다', t: '{friend가} 기술을 하나하나 익혀 갔습니다. 몇 해 뒤에는 {N}보다 손이 빨라졌습니다.', fx: { social: 4, happy: 5 }, run: (S, ctx) => { addNamed(S, 'friend', ctx.friend); } },
+      { l: '혼자 하는 게 편하다며 돌려보낸다', typ: true, t: '정중히 돌려보냈습니다.' },
+    ],
+  });
+
+  /* ================================================================ 정비공·전기 기술자·용접공 */
+  const TEC = ['mechanic', 'electrician', 'welder'];
+  add(TEC, {
+    id: 'j_tec_cert', rate: 0.2, once: true,
+    title: '상위 자격증',
+    text: '상위 기능 자격증 시험이 있습니다. 붙으면 일당이 오르고 큰 현장에도 갈 수 있습니다.',
+    choices: [
+      { l: '저녁마다 학원에 다닌다', cost: 0.5, p: (S) => U.clamp(0.4 + (S.st.smarts - 50) / 150 + S.st.skill / 300, 0.2, 0.9),
+        ok: { t: '자격증을 땄습니다. 명함에 한 줄이 늘었습니다.', fx: { skill: 4, happy: 5 }, run: (S) => { raise(S, 1.12); } },
+        no: { t: '실기에서 떨어졌습니다. 내년에 다시 봅니다.', fx: { skill: 2, happy: -3 } } },
+      { l: '경험이면 충분하다', typ: true, t: '자격증보다 손이 먼저라고 생각했습니다.' },
+    ],
+  });
+  add(TEC, {
+    id: 'j_tec_side', rate: 0.25, cd: 2,
+    run: (S) => { earn(S, 0.3, 'side'); E.stat(S, 'happy', 2); E.stat(S, 'social', 1); return H.jobIs(S, 'mechanic') ? '주말에 이웃의 낡은 차를 고쳐 주고 수고비를 받았습니다.' : H.jobIs(S, 'electrician') ? '이웃집 낡은 배선을 손봐 주고 수고비를 받았습니다.' : '이웃집 녹슨 대문을 용접해 주고 수고비를 받았습니다.'; },
+  });
+  add(['mechanic'], {
+    id: 'j_mech_honest', rate: 0.3, cd: 4,
+    title: '수리 견적',
+    text: '손님 차는 부품 하나만 갈면 되는데, 정비소 주인이 "다른 것도 다 바꿔야 한다고 해"라며 눈짓합니다.',
+    choices: [
+      { l: '사실대로 말한다', typ: true, p: 0.6,
+        ok: { t: '손님이 단골이 되어 친구들까지 데려왔습니다.', fx: { happy: 3 }, val: { honest: 2, rep: 2 } },
+        no: { t: '주인이 "장사를 모른다"며 핀잔을 줬습니다.', fx: { happy: -2 }, val: { honest: 2 } } },
+      { l: '주인 말대로 한다', t: '수리비가 세 배가 되었습니다. 손님의 뒷모습이 마음에 걸렸습니다.', fx: { money: 0.3, happy: -2 }, val: { honest: -3 } },
+    ],
+  });
+  add(['mechanic'], {
+    id: 'j_mech_ev', rate: 0.12, once: true, gate: (S) => H.dev(S) >= 2,
+    title: '전기차 시대',
+    text: '전기차가 늘면서 엔진 수리 일감이 줄고 있습니다. 전기차 정비 과정을 들을까요?',
+    choices: [
+      { l: '배운다', cost: 0.5, p: 0.7,
+        ok: { t: '전기차 정비 자격을 땄습니다. 동네에서 몇 안 되는 기술자가 되었습니다.', fx: { skill: 5, happy: 4 }, run: (S) => { raise(S, 1.1); } },
+        no: { t: '배터리 구조가 낯설어 과정을 끝내지 못했습니다.', fx: { skill: 2, happy: -3 } } },
+      { l: '하던 일을 계속한다', typ: true, p: 0.6,
+        ok: { t: '아직은 엔진 손볼 차가 많습니다.' },
+        no: { t: '일감이 눈에 띄게 줄었습니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.9); } } },
+    ],
+  });
+  add(['mechanic'], {
+    id: 'j_mech_garage', rate: 0.15, once: true, gate: (S) => yrsIn(S) >= 5 && !(S.work.job.title || '').includes('사장'),
+    title: '내 정비소',
+    text: '이제 내 정비소를 차릴 때가 된 것 같습니다. 공구와 자리를 마련하려면 목돈이 듭니다.',
+    choices: [
+      { l: '정비소를 차린다', cost: 4, p: 0.55,
+        ok: { t: '간판에 {N}의 이름을 건 정비소를 열었습니다.', fx: { happy: 8 }, run: (S) => { const j = S.work.job; if (j) { j.pay *= 1.4; j.formal = false; j.title = '정비소 사장'; delete j.lv; } } },
+        no: { t: '손님이 모이지 않아 1년 만에 문을 닫고 남의 정비소로 돌아갔습니다.', fx: { money: -2, happy: -6 } } },
+      { l: '아직은 이르다', typ: true, t: '조금 더 경험을 쌓기로 했습니다.' },
+    ],
+  });
+  add(['electrician'], {
+    id: 'j_elec_shock', rate: 0.15, cd: 3, k: 'bad',
+    text: ['배전반을 만지다 전기가 튀었습니다. 손끝이 한동안 저렸습니다.', '전봇대 위에서 작업하다 미끄러질 뻔했습니다. 안전띠가 살렸습니다.'],
+    fx: { health: -3, happy: -2 },
+  });
+  add(['electrician'], {
+    id: 'j_elec_solar', rate: 0.2, once: true, gate: (S) => H.dev(S) >= 1,
+    title: '태양광',
+    text: '태양광 설치 회사들이 기술자를 구합니다. 지붕 위에서 일하지만 일감이 넘칩니다.',
+    choices: [
+      { l: '옮긴다', t: '지붕 위에서 태양광 판을 깔기 시작했습니다. 일감이 끊이지 않습니다.', fx: { skill: 3, happy: 3 }, run: (S) => { raise(S, 1.15); } },
+      { l: '지금 일을 계속한다', typ: true, t: '익숙한 일을 계속하기로 했습니다.' },
+    ],
+  });
+  add(['electrician'], {
+    id: 'j_elec_storm', rate: 0.15, cd: 4, gate: (S) => (st(S, 'elec') || 100) < 99 || hzList(S).length > 0,
+    text: '폭풍으로 동네 전기가 끊겼습니다. 밤새 줄을 잇고 퓨즈를 갈았습니다. 불이 들어오자 동네에서 박수가 터졌습니다.',
+    fx: { health: -1, happy: 4, social: 2 },
+  });
+  add(['welder'], {
+    id: 'j_weld_away', rate: 0.2, cd: 6,
+    title: '먼 현장',
+    text: '조선소와 해외 플랜트 현장에서 용접공을 모집합니다. 일당은 두 배지만, 1년 동안 숙소 생활을 해야 합니다.',
+    choices: [
+      { l: '간다', run: (S) => { earn(S, 6); E.stat(S, 'health', -3); E.stat(S, 'social', -2); return '1년 동안 숙소에서 지내며 철판을 이었습니다. 통장이 두둑해졌습니다.' + fam(S, -6); } },
+      { l: '남는다', typ: true, t: '가까운 현장에서 일하기로 했습니다.' },
+    ],
+  });
+  add(['welder'], {
+    id: 'j_weld_eyes', rate: 0.2, cd: 3, k: 'bad',
+    text: ['보안경 틈으로 불꽃이 튀어 밤새 눈이 따끔거렸습니다.', '좁은 탱크 안에서 용접하느라 연기를 잔뜩 마셨습니다.'],
+    fx: { health: -2 },
+  });
+
+  /* ================================================================ 엔지니어·생산 관리자 */
+  const ENG = ['engineer'];
+  add(ENG, {
+    id: 'j_eng_safety', rate: 0.25, cd: 5,
+    title: '빠듯한 설계',
+    text: '설계 검토에서 하중 계산이 빠듯하다는 것을 발견했습니다. 고치면 공사가 석 달 늦어지고, 윗선은 "이 정도는 괜찮다"고 합니다.',
+    choices: [
+      { l: '서명하지 않고 보강을 요구한다', typ: (S) => honest(S) >= 45, p: 0.55,
+        ok: { t: '보강 공사가 결정되었습니다. 몇 해 뒤 큰 폭풍에도 그 건물은 끄떡없었습니다.', fx: { happy: 5 }, val: { honest: 2, rep: 3 } },
+        no: { t: '고집쟁이로 찍혀 다른 팀으로 밀려났습니다.', fx: { happy: -5 }, val: { honest: 2 } } },
+      { l: '서명한다', typ: (S) => honest(S) < 45, t: '서명했습니다. 그 건물 앞을 지날 때마다 마음이 쓰입니다.', fx: { happy: -3 }, val: { honest: -3 } },
+      { l: '기술 위원회에 정식으로 올린다', p: 0.7,
+        ok: { t: '위원회가 {N}의 의견을 받아들였습니다.', fx: { happy: 4, skill: 2 } },
+        no: { t: '위원회는 "기준 안"이라며 넘어갔습니다.', fx: { happy: -2 } } },
+    ],
+  });
+  const PLANT = ['SAU', 'ARE', 'QAT', 'KAZ', 'VNM', 'IDN', 'NGA', 'IND', 'BRA', 'MEX'];
+  add(ENG, {
+    id: 'j_eng_abroad', rate: 0.2, cd: 6,
+    title: '해외 현장',
+    text: '해외 대형 플랜트 사업의 현장 엔지니어로 2년 동안 나가 달라는 제안입니다. 수당이 크고 승진에 유리합니다.',
+    choices: [
+      { l: '간다', run: (S) => { const d = pickNot(S, PLANT); if (d) H.travel(S, d); earn(S, 6); promo(S, 1.12); E.stat(S, 'skill', 4); return `${d ? Wd.name(d) : '해외'} 현장에서 2년을 보냈습니다. 돌아오니 한 직급 올라 있었습니다.` + fam(S, -6); } },
+      { l: '남는다', typ: true, t: '본사에 남기로 했습니다.' },
+    ],
+  });
+  add(ENG, {
+    id: 'j_eng_work', rate: 0.3, cd: 2,
+    text: ['납기를 앞두고 몇 주째 밤 열 시에 퇴근합니다.', '현장 문제를 해결하느라 주말에도 공장에 불려 나갔습니다.', '새 설계 프로그램을 익히느라 야간 교육을 들었습니다.', '현장 작업자들과 도면을 펴 놓고 한참을 의논했습니다.', '시험 가동이 한 번에 성공해 팀 전체가 박수를 쳤습니다.'],
+    fx: { health: -1, happy: -1, skill: 1 }, run: (S) => { fam(S, -2); },
+  });
+  add(ENG, {
+    id: 'j_eng_patent', rate: 0.07, cd: 6,
+    text: '{N이} 낸 아이디어로 회사가 특허를 받았습니다. 포상금이 나왔습니다.',
+    fx: { money: 1, happy: 5 }, run: (S) => { honor(S, '특허 등록'); },
+  });
+  const PM = ['plantmgr'];
+  add(PM, {
+    id: 'j_pm_accident', rate: 0.2, cd: 5,
+    title: '사고 보고서',
+    text: '생산 라인에서 작업자가 다쳤습니다. 본사는 "보고서에는 개인 부주의로 쓰라"고 합니다.',
+    choices: [
+      { l: '사실대로 보고하고 설비를 고친다', p: 0.6,
+        ok: { t: '설비를 고치고 안전 교육을 늘렸습니다. 사고가 눈에 띄게 줄었습니다.', fx: { happy: 4 }, val: { honest: 2, rep: 2 } },
+        no: { t: '본사의 질책을 받고 한직으로 밀려났습니다.', fx: { happy: -6 }, val: { honest: 2 }, run: (S) => { raise(S, 0.95); } } },
+      { l: '본사 말대로 쓴다', typ: true, t: '보고서는 깔끔해졌습니다. 다친 작업자와 눈을 마주치기 어렵습니다.', fx: { happy: -3 }, val: { honest: -3 } },
+    ],
+  });
+  add(PM, {
+    id: 'j_pm_target', rate: 0.25, cd: 4,
+    title: '생산 목표',
+    text: '본사가 다음 분기 생산 목표를 30% 올렸습니다. 사람은 늘려 주지 않습니다.',
+    choices: [
+      { l: '잔업으로 밀어붙인다', p: 0.6,
+        ok: { t: '목표를 채웠습니다. 성과급이 나왔지만 작업자들의 불만이 커졌습니다.', fx: { social: -3 }, run: (S) => { earn(S, 2); } },
+        no: { t: '불량이 쏟아져 목표도 품질도 놓쳤습니다.', fx: { happy: -6 } } },
+      { l: '공정을 뜯어고친다', p: (S) => U.clamp(0.3 + S.st.skill / 150 + (S.st.smarts - 50) / 200, 0.15, 0.8),
+        ok: { t: '공정을 바꿔 사람을 늘리지 않고 목표를 채웠습니다.', fx: { skill: 4, happy: 5 }, run: (S) => { promo(S, 1.12); } },
+        no: { t: '바꾼 공정이 자리를 잡지 못했습니다.', fx: { happy: -4 } } },
+      { l: '본사와 목표를 다시 협상한다', typ: true, p: 0.5,
+        ok: { t: '목표가 15%로 조정되었습니다.', fx: { happy: 2 } },
+        no: { t: '"못 하겠으면 다른 사람을 찾겠다"는 답이 돌아왔습니다.', fx: { happy: -5 } } },
+    ],
+  });
+  add(PM, {
+    id: 'j_pm_day', rate: 0.3, cd: 2,
+    text: ['새벽 세 시에 설비 고장 전화를 받고 공장으로 달려갔습니다.', '납품처 감사에 대비해 사흘 동안 서류를 정리했습니다.', '신입 작업자들에게 안전 교육을 직접 했습니다.', '설비 점검 날이라 공장 전체를 하루 동안 멈췄습니다.', '야간조 작업자들과 새벽 컵라면을 함께 먹었습니다.'],
+    fx: { health: -1, happy: -1, skill: 1 }, run: (S) => { fam(S, -1); },
+  });
+  const CHEAP = ['VNM', 'IDN', 'IND', 'MEX', 'BGD', 'THA', 'POL', 'ROU', 'ETH', 'KHM'];
+  add(PM, {
+    id: 'j_pm_offshore', rate: 0.12, once: true, gate: (S) => H.dev(S) >= 2,
+    title: '공장 이전',
+    text: '본사가 공장을 임금이 싼 나라로 옮긴다며, {N}에게 새 공장 세우는 일을 맡기겠다고 합니다. 남는 직원들은 줄어듭니다.',
+    choices: [
+      { l: '맡는다', run: (S) => { const d = pickNot(S, CHEAP); if (d) H.travel(S, d); promo(S, 1.15); earn(S, 3); return `${d ? Wd.name(d) : '해외'}에 새 공장을 세웠습니다. 옛 공장 동료들의 송별회는 쓸쓸했습니다.` + fam(S, -5); } },
+      { l: '남아서 남는 직원들을 지킨다', typ: true, p: 0.4,
+        ok: { t: '공장 일부를 남기는 안을 관철했습니다. 직원들이 고개를 숙였습니다.', fx: { happy: 4 }, val: { rep: 3 } },
+        no: { t: '공장은 결국 문을 닫았습니다. {N}도 일자리를 잃었습니다.', fx: { happy: -6 }, run: (S) => { lose(S, 'layoff'); } } },
+      { l: '사표를 낸다', t: '사표를 냈습니다. 다른 회사를 알아보기로 했습니다.', fx: { happy: -2 }, run: (S) => { lose(S); } },
+    ],
+  });
+
+  /* ================================================================ 노점상·시장 상인·작은 가게 */
+  const VEN = ['vendor'];
+  add(VEN, {
+    id: 'j_ven_fee', rate: 0.25, cd: 4, gate: H.urban,
+    title: '자릿세',
+    text: '시장 목 좋은 자리를 쓰려면 "관리인"에게 매주 자릿세를 내야 한다고 합니다. 안 내면 물건을 엎겠다고 합니다.',
+    choices: [
+      { l: '낸다', typ: true, t: '자릿세를 냈습니다. 손님은 많은 자리입니다.', fx: { money: -0.4, happy: -2 }, run: (S) => { raise(S, 1.05); } },
+      { l: '구석 자리로 옮긴다', t: '구석 자리로 옮겼습니다. 손님이 절반으로 줄었습니다.', fx: { happy: -2 }, run: (S) => { raise(S, 0.9); } },
+      { l: '다른 노점상들과 함께 시청에 진정한다', p: 0.35,
+        ok: { t: '노점 구역이 정식으로 생겼습니다. 이제 정해진 사용료만 냅니다.', fx: { social: 5, happy: 5 }, run: (S) => { raise(S, 1.05); } },
+        no: { t: '진정한 사람들의 좌판부터 엎어졌습니다.', fx: { money: -0.8, happy: -5 } } },
+    ],
+  });
+  add(VEN, {
+    id: 'j_ven_weather', rate: 0.3, cd: 2,
+    run: (S) => {
+      if (U.chance(0.35)) { earn(S, 0.4); E.stat(S, 'happy', 4); return '축제 날 손님이 몰려 하루 만에 일주일 치를 팔았습니다.'; }
+      E.addMoney(S, -H.pay(S, 0.2)); E.stat(S, 'happy', -3);
+      return U.pick(['비가 이어져 일주일 동안 좌판을 펴지 못했습니다.', '폭염에 손님이 끊겨 상한 물건을 버렸습니다.', '새벽 도매 시장에 늦게 가는 바람에 물건을 비싸게 떼 왔습니다.']);
+    },
+  });
+  add(VEN, {
+    id: 'j_ven_item', rate: 0.2, cd: 4,
+    title: '팔 물건 바꾸기',
+    text: '요즘 거리에서 잘 팔리는 물건이 따로 있다는 소문입니다. 가진 돈을 털어 물건을 바꿔 볼까요?',
+    choices: [
+      { l: '바꾼다', cost: 0.5, p: (S) => U.clamp(0.35 + (H.talent(S, 'biz') - 50) / 150, 0.15, 0.75),
+        ok: { t: '새 물건이 불티나게 팔렸습니다.', fx: { happy: 5 }, run: (S) => { raise(S, 1.2); H.reveal(S, 'biz'); } },
+        no: { t: '유행은 한 달 만에 지나갔습니다. 팔리지 않은 물건이 쌓였습니다.', fx: { money: -0.5, happy: -4 } } },
+      { l: '하던 걸 판다', typ: true, t: '늘 팔던 물건을 팔았습니다. 단골은 여전합니다.' },
+    ],
+  });
+  add(VEN, {
+    id: 'j_ven_pay', rate: 0.2, cd: 4, gate: (S) => H.phone(S) && H.internet(S) > 0.3,
+    text: '손님들이 휴대폰 송금으로 값을 치르기 시작했습니다. 잔돈 걱정이 줄고, 하루 장부가 저절로 정리됩니다.',
+    fx: { happy: 2, money: 0.1 },
+  });
+  const MKT = ['trader'];
+  add(MKT, {
+    id: 'j_mkt_supplier', rate: 0.25, cd: 4,
+    title: '오른 도매값',
+    text: (S) => `도매상이 물건값을 한꺼번에 올렸습니다${stat(S, 'infl', (v) => `${Wd.name(H.iso(S))} 물가 상승률 ${v}%`)}. 값을 올리면 손님들이 발길을 돌릴 것입니다.`,
+    choices: [
+      { l: '값을 올린다', p: 0.5,
+        ok: { t: '손님들도 사정을 알아주었습니다.', fx: { happy: 1 } },
+        no: { t: '손님이 다른 가게로 옮겨 갔습니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.9); } } },
+      { l: '이문을 줄이고 버틴다', typ: true, t: '남는 게 거의 없지만 손님은 지켰습니다.', fx: { money: -0.5, happy: -2 } },
+      { l: '먼 시장까지 가서 다른 도매상을 찾는다', p: 0.6,
+        ok: { t: '새 도매상과 거래를 텄습니다. 값이 한결 쌉니다.', fx: { health: -1, happy: 3 }, run: (S) => { raise(S, 1.08); } },
+        no: { t: '헛걸음이었습니다.', fx: { money: -0.3, happy: -2 } } },
+    ],
+  });
+  add(MKT, {
+    id: 'j_mkt_credit', rate: 0.3, cd: 2,
+    text: ['단골들의 외상 장부가 두꺼워졌습니다. 받을 돈이 한 달 벌이만큼 쌓였습니다.', '외상을 갚지 못하던 이웃이 닭 한 마리를 들고 와 사정을 했습니다.', '장부를 정리하다 보니 몇 해 묵은 외상은 포기하는 게 낫겠습니다.', '새벽 도매 시장에서 물건을 떼다 손수레 바퀴가 빠졌습니다.', '옆 가게 상인과 물건을 바꿔 팔며 하루를 넘겼습니다.'],
+    fx: { money: -0.3, happy: -1 },
+  });
+  add(MKT, {
+    id: 'j_mkt_club', rate: 0.2, cd: 5,
+    title: '계모임',
+    text: '시장 상인들이 돈을 모아 차례로 몰아주는 계모임을 만듭니다. 들어갈까요?',
+    choices: [
+      { l: '들어간다', typ: true, p: 0.85,
+        ok: { t: '차례가 돌아와 목돈을 받았습니다. 그 돈으로 진열대를 늘렸습니다.', fx: { social: 3, happy: 4 }, run: (S) => { raise(S, 1.1); } },
+        no: { t: '계주가 돈을 들고 사라졌습니다.', fx: { money: -2, happy: -6 } } },
+      { l: '혼자 모은다', t: '혼자 조금씩 모으기로 했습니다.' },
+    ],
+  });
+  add(MKT, {
+    id: 'j_mkt_fire', rate: 0.06, cd: 10, k: 'bad',
+    text: '시장에 불이 나 가게 여러 칸이 탔습니다. {N}의 가게도 물건 절반을 잃었습니다.',
+    fx: { money: -2, happy: -8 },
+  });
+  const SHOP = ['shop'];
+  add(SHOP, {
+    id: 'j_shop_rent', rate: 0.25, cd: 4, gate: H.urban,
+    title: '임대료 인상',
+    text: '건물주가 임대료를 30% 올리겠다고 합니다. 단골이 많은 자리지만 남는 게 없어집니다.',
+    choices: [
+      { l: '올려 준다', typ: true, t: '버티기로 했습니다. 이문이 줄었습니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.9); } },
+      { l: '골목 안쪽으로 옮긴다', cost: 1, p: 0.55,
+        ok: { t: '옮긴 자리에도 단골들이 찾아왔습니다.', fx: { happy: 3 } },
+        no: { t: '손님이 반으로 줄었습니다.', fx: { happy: -4 }, run: (S) => { raise(S, 0.85); } } },
+      { l: '건물주와 협상한다', p: (S) => U.clamp(0.3 + (S.st.social - 50) / 150 + (H.charm(S) - 50) / 200, 0.12, 0.7),
+        ok: { t: '10% 인상으로 합의했습니다.', fx: { happy: 2 }, run: (S) => { raise(S, 0.97); } },
+        no: { t: '건물주는 한 푼도 깎아 주지 않았습니다.', fx: { happy: -4 }, run: (S) => { raise(S, 0.9); } } },
+    ],
+  });
+  add(SHOP, {
+    id: 'j_shop_chain', rate: 0.15, cd: 8, gate: (S) => H.dev(S) >= 1,
+    title: '길 건너 대형 매장',
+    text: '길 건너에 대형 매장이 들어섰습니다. 값도 싸고 물건도 많습니다.',
+    choices: [
+      { l: '배달과 외상 같은 동네 가게의 장점을 살린다', p: (S) => U.clamp(0.4 + (H.talent(S, 'biz') - 50) / 150, 0.2, 0.75),
+        ok: { t: '동네 사람들은 여전히 {N}의 가게를 찾습니다.', fx: { social: 3, happy: 2 } },
+        no: { t: '손님이 눈에 띄게 줄었습니다.', fx: { happy: -4 }, run: (S) => { raise(S, 0.85); } } },
+      { l: '체인점으로 간판을 바꾼다', cost: 2, p: 0.7,
+        ok: { t: '본사 물건을 받아 팔기 시작했습니다. 이문은 정해져 있지만 손님이 늘었습니다.', fx: { happy: 2 }, run: (S) => { raise(S, 1.1); } },
+        no: { t: '가맹비만 나가고 손님은 늘지 않았습니다.', fx: { money: -1, happy: -4 }, run: (S) => { raise(S, 0.9); } } },
+      { l: '그냥 버틴다', typ: true, p: 0.5,
+        ok: { t: '처음 몇 달만 손님이 줄었다가 돌아왔습니다.' },
+        no: { t: '손님이 눈에 띄게 줄었습니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.88); } } },
+      { l: '가게를 접는다', t: '오래 지킨 간판을 내렸습니다.', fx: { happy: -4 }, run: (S) => { lose(S, 'closed'); } },
+    ],
+  });
+  add(SHOP, {
+    id: 'j_shop_day', rate: 0.3, cd: 2,
+    text: ['손님인 척 들어온 사람이 계산대 돈을 들고 달아났습니다.', '아이들이 과자를 몰래 주머니에 넣는 것을 보고 조용히 불러 타일렀습니다.', '이 동네에서 장사한 지 오래되어, 손님 이름을 거의 다 압니다.', '이사 가는 단골이 그동안 고마웠다며 인사를 하고 갔습니다.'],
+    fx: { social: 1 },
+  });
+  add(SHOP, {
+    id: 'j_shop_online', rate: 0.15, once: true, gate: (S) => H.internet(S) > 0.5,
+    title: '온라인 판매',
+    text: '손님들이 점점 인터넷으로 물건을 삽니다. 온라인 장터에 가게를 열어 볼까요?',
+    choices: [
+      { l: '연다', cost: 0.5, p: (S) => U.clamp(0.35 + (H.talent(S, 'biz') - 50) / 150 + (S.st.smarts - 50) / 200, 0.15, 0.75),
+        ok: { t: '온라인 주문이 매장 매출을 넘어섰습니다. 밤마다 포장을 합니다.', fx: { happy: 5, health: -1 }, run: (S) => { raise(S, 1.2); } },
+        no: { t: '사진 찍고 답글 다는 데 시간만 들고 주문은 드물었습니다.', fx: { happy: -3 } } },
+      { l: '매장에만 집중한다', typ: true, t: '손님 얼굴을 보며 파는 게 좋다고 생각했습니다.' },
+    ],
+  });
+
+  /* ================================================================ 가사 노동자 */
+  const DOM = ['domestic'];
+  add(DOM, {
+    id: 'j_dom_hours', rate: 0.3, cd: 3,
+    title: '쉬는 날',
+    text: '고용주가 쉬는 날 없이 일하라고 합니다. 새벽부터 밤까지 일해도 월급은 그대로입니다.',
+    choices: [
+      { l: '쉬는 날을 달라고 정중히 요구한다', p: 0.5,
+        ok: { t: '일요일 오후를 쉬게 되었습니다.', fx: { happy: 4 } },
+        no: { t: '"싫으면 나가라"는 말이 돌아왔습니다.', fx: { happy: -4 } } },
+      { l: '다른 집을 알아본다', p: 0.6,
+        ok: { t: '조건이 조금 나은 집으로 옮겼습니다.', fx: { happy: 3 }, run: (S) => { raise(S, 1.05); } },
+        no: { t: '마땅한 집을 찾지 못했습니다.', fx: { happy: -2 } } },
+      { l: '참는다', typ: true, t: '참고 일했습니다. 몸이 점점 무거워집니다.', fx: { health: -2, happy: -3 } },
+    ],
+  });
+  add(DOM, {
+    id: 'j_dom_good', rate: 0.25, cd: 2,
+    text: ['돌보던 집 아기가 첫걸음을 뗐습니다. 그 집 식구들보다 {N이} 먼저 봤습니다.', '주인집 아이가 {N}에게 그림을 그려 선물했습니다.', '주인 가족이 명절 보너스를 넉넉히 주었습니다.'],
+    fx: { happy: 3 },
+  });
+  add(DOM, {
+    id: 'j_dom_accuse', rate: 0.15, cd: 6,
+    title: '없어진 반지',
+    text: '주인집에서 반지가 없어졌다며 {N을} 의심합니다. 가방을 뒤지겠다고 합니다.',
+    choices: [
+      { l: '가방을 열어 보이고 결백을 밝힌다', typ: true, p: 0.7,
+        ok: { t: '반지는 소파 밑에서 나왔습니다. 주인이 머쓱하게 사과했습니다.', fx: { happy: -2 } },
+        no: { fx: { happy: -8 }, run: (S) => { lose(S, 'layoff'); return '반지는 끝내 나오지 않았고, {N은} 그 집을 나와야 했습니다.'; } } },
+      { l: '모욕을 참지 않고 그만둔다', t: '"이런 대접은 받을 수 없다"며 짐을 쌌습니다.', fx: { happy: -3 }, run: (S) => { lose(S); } },
+      { l: '노동 단체에 도움을 청한다', need: (S) => H.dev(S) >= 1, p: 0.5,
+        ok: { t: '단체가 나서 사과를 받아 냈습니다.', fx: { happy: 3, social: 2 } },
+        no: { fx: { happy: -6 }, run: (S) => { lose(S, 'layoff'); return '단체가 나섰지만 주인은 {N을} 내보냈습니다.'; } } },
+    ],
+  });
+  add(DOM, {
+    id: 'j_dom_remit', rate: 0.3, cd: 2, gate: H.migrant,
+    text: ['번 돈을 고향에 부쳤습니다. 고향 집 지붕을 새로 이었다는 소식이 왔습니다.', '쉬는 날 같은 나라에서 온 가사 노동자들과 공원에서 도시락을 나눠 먹었습니다.'],
+    fx: { happy: 3, money: -0.4 },
+  });
+
+  /* ================================================================ 운전기사·배달 라이더 */
+  const DRV = ['driver'];
+  add(DRV, {
+    id: 'j_drv_police', rate: 0.3, cd: 3, gate: (S) => H.dev(S) <= 2,
+    title: '검문소',
+    text: '검문소의 경찰이 서류를 트집 잡으며 "찻값"을 요구합니다. 승객들이 빨리 가자고 재촉합니다.',
+    choices: [
+      { l: '돈을 쥐여 준다', typ: (S) => honest(S) < 55, t: '돈을 건네자 차단봉이 올라갔습니다.', fx: { money: -0.1 }, val: { honest: -1 } },
+      { l: '서류가 다 맞다며 버틴다', typ: (S) => honest(S) >= 55, p: 0.5,
+        ok: { t: '한참 실랑이 끝에 그냥 보내 주었습니다.', fx: { happy: 1 }, val: { honest: 1 } },
+        no: { t: '차를 한나절 세워 두었습니다. 그날 벌이는 공쳤습니다.', fx: { money: -0.3, happy: -3 }, val: { honest: 1 } } },
+    ],
+  });
+  add(DRV, {
+    id: 'j_drv_wallet', rate: 0.2, cd: 5,
+    title: '두고 내린 지갑',
+    text: '승객이 두툼한 지갑을 두고 내렸습니다. 현금이 한 달 벌이만큼 들어 있습니다.',
+    choices: [
+      { l: '주인을 찾아 돌려준다', typ: true, t: '연락처를 수소문해 돌려주었습니다. 주인이 사례금을 건넸습니다.', fx: { money: 0.2, happy: 4 }, val: { honest: 3, rep: 2 } },
+      { l: '현금만 챙긴다', need: (S) => honest(S) < 60, p: 0.85,
+        ok: { t: '현금을 챙기고 지갑은 우체통에 넣었습니다.', fx: { money: 1, happy: -1 }, val: { honest: -5 } },
+        no: { t: '차 안 카메라에 찍혀 경찰서에 불려 갔습니다.', fx: { happy: -6 }, val: { honest: -4, rep: -6 }, run: (S) => { H.fine(S, 1); } } },
+    ],
+  });
+  add(DRV, {
+    id: 'j_drv_road', rate: 0.35, cd: 2,
+    text: ['열네 시간 운전 끝에 졸음이 쏟아져 갓길에 차를 세우고 잠깐 눈을 붙였습니다.', '연료값이 올라 하루 벌이의 절반이 기름값으로 나갔습니다.', '단골 승객이 생일이라며 과일을 건넸습니다.', '꽉 막힌 도로에서 세 시간을 서 있었습니다.'],
+    fx: { health: -1, happy: -1 },
+  });
+  add(DRV, {
+    id: 'j_drv_own', rate: 0.15, once: true, gate: (S) => yrsIn(S) >= 3 && !H.formal(S),
+    title: '내 차',
+    text: '할부로 내 차를 사면 차주에게 내던 사납금을 안 내도 됩니다. 대신 매달 할부금이 나갑니다.',
+    choices: [
+      { l: '할부로 산다', cost: 2, p: 0.7,
+        ok: { t: '내 차로 일하기 시작했습니다. 하루 벌이가 오롯이 내 것입니다.', fx: { happy: 6 }, run: (S) => { raise(S, 1.2); } },
+        no: { t: '고장이 잦아 수리비와 할부금에 쪼들렸습니다.', fx: { money: -1.5, happy: -5 } } },
+      { l: '남의 차를 계속 몬다', typ: true, t: '빚지기 싫어 지금처럼 일하기로 했습니다.' },
+    ],
+  });
+  const RID = ['rider'];
+  add(RID, {
+    id: 'j_rid_weather', rate: 0.3, cd: 2,
+    text: (S) => ['폭우 속에 배달을 나갔습니다. 우비 안까지 흠뻑 젖었지만 웃돈이 붙는 날이었습니다.', cold(S) ? '한겨울 칼바람 속에 하루 마흔 건을 배달했습니다.' : '폭염 경보가 내린 날, 헬멧 속이 찜통 같았습니다.', '점심시간에 주문이 몰려 신호를 기다리는 시간마저 아까웠습니다.'],
+    fx: { health: -2, money: 0.2 },
+  });
+  add(RID, {
+    id: 'j_rid_rating', rate: 0.25, cd: 2,
+    text: ['음식이 식었다는 이유로 별점 하나를 받았습니다. 승강기가 고장 난 15층이었습니다.', '고객이 "고생하셨다"며 문 앞에 음료수를 놓아두었습니다.', '주소가 틀려 같은 동네를 세 바퀴 돌았습니다.'],
+    fx: { happy: -1 },
+  });
+  add(RID, {
+    id: 'j_rid_fall', rate: 0.12, cd: 3, k: 'bad',
+    text: '빗길에 미끄러져 무릎이 까졌습니다. 다음 날도 붕대를 감고 달렸습니다.',
+    fx: { health: -4, happy: -2 },
+  });
+  add(RID, {
+    id: 'j_rid_union', rate: 0.15, cd: 6, gate: (S) => H.dev(S) >= 2,
+    title: '라이더 노조',
+    text: '배달 노동자 노조가 산재 보험 가입과 최저 배달료를 요구하며 모임을 엽니다.',
+    choices: [
+      { l: '가입해 함께 목소리를 낸다', p: 0.5,
+        ok: { t: '최저 배달료가 생겼습니다. 조금은 숨통이 트였습니다.', fx: { social: 4, happy: 4 }, run: (S) => { raise(S, 1.06); union(S); } },
+        no: { t: '회사는 대화에 나오지 않았습니다.', fx: { happy: -2, social: 2 } } },
+      { l: '관심 없다', typ: true, t: '그 시간에 한 건이라도 더 뛰기로 했습니다.' },
+    ],
+  });
+
+  /* ================================================================ 요리사·미용사 */
+  const COOK = ['cook'];
+  add(COOK, {
+    id: 'j_cook_rush', rate: 0.35, cd: 2,
+    text: ['점심시간에 주문이 몰려 불 앞에서 세 시간을 서 있었습니다.', '기름이 튀어 팔뚝에 화상을 입었습니다.', '주방장이 처음으로 {N이} 만든 소스를 칭찬했습니다.', '설거지가 산더미처럼 쌓였습니다. 마감 뒤 한 시간을 더 일했습니다.', '단체 손님 마흔 명의 음식을 한꺼번에 냈습니다. 손이 기억할 만큼 바빴습니다.'],
+    fx: { health: -1, skill: 1 }, run: (S) => { prac(S, 'cook', 1.5); },
+  });
+  add(COOK, {
+    id: 'j_cook_menu', rate: 0.2, cd: 4,
+    title: '새 메뉴',
+    text: '가게 주인이 새 메뉴를 만들어 보라고 합니다. 잘되면 메뉴판에 {N}의 이름이 붙습니다.',
+    choices: [
+      { l: '며칠 밤을 새워 만든다', p: (S) => U.clamp(0.3 + (hasPr ? Pr.eff(S, 'cook') : 50) / 150, 0.2, 0.85),
+        ok: { t: '새 메뉴가 가게 대표 음식이 되었습니다. 월급이 올랐습니다.', fx: { happy: 6 }, run: (S) => { raise(S, 1.1); prac(S, 'cook', 4); } },
+        no: { t: '손님들 반응이 시원찮았습니다.', fx: { happy: -2 }, run: (S) => { prac(S, 'cook', 2); } } },
+      { l: '하던 대로 한다', typ: true, t: '맡은 메뉴만 열심히 만들었습니다.' },
+    ],
+  });
+  add(COOK, {
+    id: 'j_cook_hygiene', rate: 0.15, cd: 5,
+    title: '상한 재료',
+    text: '가게 주인이 유통 기한이 지난 재료를 그냥 쓰라고 합니다.',
+    choices: [
+      { l: '버리자고 버틴다', p: 0.6,
+        ok: { t: '주인이 마지못해 버렸습니다.', fx: { happy: 2 }, val: { honest: 2 } },
+        no: { fx: { happy: -5 }, val: { honest: 2 }, run: (S) => { lose(S, 'layoff'); return '"주제넘다"는 말과 함께 그 식당에서 쫓겨났습니다.'; } } },
+      { l: '시키는 대로 한다', typ: true, t: '시키는 대로 했습니다. 손님 접시를 내갈 때마다 마음이 쓰였습니다.', fx: { happy: -2 }, val: { honest: -2 } },
+    ],
+  });
+  add(COOK, {
+    id: 'j_cook_own', rate: 0.15, once: true, gate: (S) => yrsIn(S) >= 5 && H.age(S) < 55,
+    title: '내 식당',
+    text: '그동안 익힌 솜씨로 작은 식당을 차려 볼까요? 가게 보증금과 주방 설비에 목돈이 듭니다.',
+    choices: [
+      { l: '식당을 연다', cost: 5, p: (S) => U.clamp(0.25 + (hasPr ? Pr.eff(S, 'cook') : 50) / 250 + (H.talent(S, 'biz') - 50) / 200, 0.15, 0.7),
+        ok: { t: '작은 식당을 열었습니다. 메뉴판 맨 위에 {N}의 대표 음식이 있습니다.', fx: { happy: 10 }, run: (S) => { H.setJob(S, 'chef', 13 * Math.exp(U.normal(0, 0.3))); if (S.work.job) S.work.job.title = '식당 주인 겸 셰프'; } },
+        no: { t: '1년을 버티지 못하고 문을 닫았습니다. 다시 남의 주방으로 돌아갔습니다.', fx: { money: -3, happy: -8 } } },
+      { l: '남의 주방에서 더 배운다', typ: true, t: '아직은 더 배울 때라고 생각했습니다.' },
+    ],
+  });
+  const HAIR = ['hair'];
+  add(HAIR, {
+    id: 'j_hair_trend', rate: 0.2, cd: 4,
+    title: '새 유행',
+    text: '새로 유행하는 머리 모양을 배우는 강습이 열립니다. 강습비가 비싸지만 젊은 손님을 끌 수 있습니다.',
+    choices: [
+      { l: '배운다', cost: 0.5, p: 0.75,
+        ok: { t: '젊은 손님들이 줄을 섰습니다.', fx: { skill: 4, happy: 4 }, run: (S) => { raise(S, 1.1); prac(S, 'art', 4); } },
+        no: { t: '배운 기술이 아직 손에 익지 않습니다.', fx: { skill: 2 }, run: (S) => { prac(S, 'art', 2); } } },
+      { l: '하던 대로 한다', typ: true, t: '단골들이 좋아하는 대로 하기로 했습니다.' },
+    ],
+  });
+  add(HAIR, {
+    id: 'j_hair_day', rate: 0.35, cd: 2,
+    text: ['단골손님이 의자에 앉자마자 집안 이야기를 털어놓았습니다. 머리보다 마음을 다듬어 준 날이었습니다.', '결혼식을 앞둔 신부의 머리를 해 주었습니다.', '파마 약 냄새에 하루 종일 머리가 아팠습니다.', '하루 종일 가위를 쥐다 보니 손목이 시큰거립니다.', '처음 온 손님이 사진 한 장을 내밀며 똑같이 해 달라고 했습니다.', '명절을 앞두고 손님이 몰려 밤늦게까지 가위를 놓지 못했습니다.'],
+    fx: { social: 2 },
+  });
+  add(HAIR, {
+    id: 'j_hair_expand', rate: 0.15, once: true, gate: (S) => yrsIn(S) >= 4,
+    title: '가게 넓히기',
+    text: '의자를 둘 더 들이고 보조를 한 명 두면 손님을 두 배로 받을 수 있습니다.',
+    choices: [
+      { l: '넓힌다', cost: 3, p: 0.6,
+        ok: { t: '가게가 북적입니다. 보조가 손님 머리를 감기는 동안 다음 손님을 맞습니다.', fx: { happy: 6 }, run: (S) => { raise(S, 1.3); } },
+        no: { t: '손님은 늘지 않고 월급만 나갔습니다.', fx: { money: -2, happy: -4 }, run: (S) => { raise(S, 0.95); } } },
+      { l: '지금 규모로 한다', typ: true, t: '혼자 꾸리는 지금이 마음 편합니다.' },
+    ],
+  });
+  add(HAIR, {
+    id: 'j_hair_regular', rate: 0.15, cd: 4,
+    text: '십 년 넘게 머리를 맡겨 온 단골이 이사를 가면서 마지막으로 머리를 하러 왔습니다. 둘 다 눈시울이 붉어졌습니다.',
+    fx: { happy: 2, social: 2 },
+  });
+
+  /* ================================================================ 경비원·청소원 (은퇴 뒤 다시 하는 일 포함) */
+  const GRD = ['guard'];
+  add(GRD, {
+    id: 'j_grd_resident', rate: 0.3, cd: 3, rework: true, gate: (S) => H.dev(S) >= 1 && H.urban(S),
+    title: '주민의 고함',
+    text: '아파트 주민 한 사람이 택배를 늦게 줬다며 경비실 앞에서 고함을 지릅니다. 다른 주민들이 지켜봅니다.',
+    choices: [
+      { l: '고개를 숙이고 사과한다', typ: true, t: '고개를 숙였습니다. 집에 돌아와 한참을 멍하니 앉아 있었습니다.', fx: { happy: -4 } },
+      { l: '차분히 사실을 설명한다', p: 0.5,
+        ok: { t: '지켜보던 주민들이 {N}의 편을 들었습니다.', fx: { happy: 2, social: 2 } },
+        no: { t: '관리 사무소에서 "주민과 다투지 말라"는 경고를 받았습니다.', fx: { happy: -5 } } },
+      { l: '관리 사무소에 정식으로 알린다', p: 0.45,
+        ok: { t: '주민 회의가 열려 경비원을 존중하자는 안내문이 붙었습니다.', fx: { happy: 4 } },
+        no: { fx: { happy: -5 }, run: (S) => { lose(S, 'layoff'); return '얼마 뒤 용역 회사가 계약을 끝냈습니다. {N}의 자리는 다른 사람이 맡았습니다.'; } } },
+    ],
+  });
+  add(GRD, {
+    id: 'j_grd_night', rate: 0.35, cd: 2, rework: true,
+    text: ['밤새 순찰을 돌고 새벽에 교대했습니다. 낮에 자려 해도 잠이 오지 않습니다.', '눈 오는 새벽, 아무도 시키지 않았지만 입구 앞 눈을 치웠습니다. 지나가던 사람들이 고맙다고 인사했습니다.', '경비실 작은 텔레비전을 벗 삼아 긴 밤을 보냈습니다.', '택배 상자 수십 개를 정리하고 주인들에게 일일이 알렸습니다.', '분리수거 날이라 아침부터 쓰레기 더미와 씨름했습니다.'],
+    fx: { health: -1 },
+  });
+  add(GRD, {
+    id: 'j_grd_thief', rate: 0.15, cd: 5, rework: true,
+    title: '수상한 소리',
+    text: '새벽 두 시, 창고 쪽에서 유리 깨지는 소리가 납니다.',
+    choices: [
+      { l: '경찰에 신고하고 지켜본다', typ: true, p: 0.7,
+        ok: { t: '경찰이 도둑을 붙잡았습니다. 회사가 감사 편지를 보냈습니다.', fx: { happy: 4 } },
+        no: { t: '경찰이 오기 전에 도둑이 달아났습니다.', fx: { happy: -2 } } },
+      { l: '직접 붙잡는다', p: 0.5,
+        ok: { t: '도둑을 붙잡아 경찰에 넘겼습니다. 포상금이 나왔습니다.', fx: { happy: 5 }, val: { rep: 2 }, run: (S) => { earn(S, 0.5); } },
+        no: { t: '몸싸움 끝에 놓쳤습니다. 어깨를 다쳤습니다.', fx: { health: -8, happy: -4 } } },
+      { l: '못 들은 척한다', p: 0.6,
+        ok: { t: '아침이 되도록 아무 일도 없었습니다.', val: { honest: -1 } },
+        no: { t: '창고 물건이 사라져 책임을 물었습니다. 월급에서 일부를 깎였습니다.', fx: { money: -1, happy: -4 }, val: { honest: -1 } } },
+    ],
+  });
+  add(GRD, {
+    id: 'j_grd_contract', rate: 0.12, cd: 6, rework: true, gate: H.formal,
+    title: '용역 회사 교체',
+    text: '용역 회사가 바뀌면서 경비원 절반을 줄인다고 합니다. 남으려면 더 낮은 임금의 새 계약서에 서명해야 합니다.',
+    choices: [
+      { l: '서명한다', typ: true, t: '서명했습니다. 월급이 조금 줄었습니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.92); } },
+      { l: '거부한다', t: '서명을 거부하고 짐을 쌌습니다.', fx: { happy: -3 }, run: (S) => { lose(S); } },
+      { l: '주민들에게 도움을 청한다', p: 0.4,
+        ok: { t: '주민들이 서명을 모아 경비원 모두가 남게 되었습니다.', fx: { happy: 6, social: 4 } },
+        no: { fx: { happy: -5 }, run: (S) => { lose(S, 'layoff'); return '주민 서명도 소용없었습니다. 계약이 끝났습니다.'; } } },
+    ],
+  });
+  const CLN = ['cleaner'];
+  add(CLN, {
+    id: 'j_cln_dawn', rate: 0.35, cd: 2, rework: true,
+    text: ['새벽 다섯 시, 사람들이 오기 전에 건물 화장실 스무 곳을 청소했습니다.', '아무도 없는 사무실을 청소하다 책상 위 가족사진을 보고 잠시 웃었습니다.', '휴게실이 계단 밑 창고라 점심을 쭈그려 앉아 먹었습니다.', '비 오는 날이라 현관 바닥을 몇 번이고 닦았습니다.', '새로 들어온 동료에게 청소 도구 쓰는 요령을 알려 주었습니다.'],
+    fx: { health: -1, happy: -1 },
+  });
+  add(CLN, {
+    id: 'j_cln_found', rate: 0.15, cd: 5, rework: true,
+    title: '쓰레기통 속 봉투',
+    text: '쓰레기통을 비우다 현금 봉투를 발견했습니다. 이름은 적혀 있지 않습니다.',
+    choices: [
+      { l: '관리 사무소에 맡긴다', typ: true, t: '주인이 나타나 고맙다며 사례를 했습니다.', fx: { money: 0.3, happy: 4 }, val: { honest: 3, rep: 2 } },
+      { l: '챙긴다', need: (S) => honest(S) < 60, p: 0.85,
+        ok: { t: '봉투를 챙겼습니다. 며칠 동안 마음이 편치 않았습니다.', fx: { money: 1, happy: -1 }, val: { honest: -4 } },
+        no: { val: { honest: -3, rep: -6 }, fx: { happy: -8 }, run: (S) => { lose(S, 'layoff'); return '복도 카메라에 찍혔습니다. 일자리를 잃었습니다.'; } } },
+    ],
+  });
+  add(CLN, {
+    id: 'j_cln_respect', rate: 0.2, cd: 3, rework: true,
+    text: ['청소를 마친 화장실 앞에서 한 사람이 "고맙습니다"라고 했습니다. 하루가 가벼워졌습니다.', '바닥을 닦는 {N} 옆을 모두 무심히 지나치는데, 한 아이가 꾸벅 인사를 했습니다.'],
+    fx: { happy: 3 },
+  });
+  add(CLN, {
+    id: 'j_cln_chem', rate: 0.12, cd: 3, rework: true, k: 'bad',
+    text: '독한 세제를 섞어 쓰다 숨이 막혀 한참 기침을 했습니다.',
+    fx: { health: -2 },
+  });
+
+  /* ================================================================ 판매원·콜센터 상담원 */
+  const SALE = ['sales'];
+  add(SALE, {
+    id: 'j_sale_target', rate: 0.3, cd: 3,
+    title: '판매 목표',
+    text: '이달 판매 목표에 한참 모자랍니다. 팀장이 "필요 없는 상품이라도 끼워 팔라"고 합니다.',
+    choices: [
+      { l: '정직하게 판다', typ: true, p: 0.5,
+        ok: { t: '단골들의 소개로 목표를 겨우 채웠습니다.', fx: { happy: 3 }, val: { honest: 2 } },
+        no: { t: '목표 미달로 성과급이 깎였습니다.', fx: { money: -0.3, happy: -3 }, val: { honest: 2 } } },
+      { l: '끼워 판다', t: '목표를 채웠습니다. 다음 달 반품 요청이 쏟아졌습니다.', fx: { money: 0.3, happy: -2 }, val: { honest: -3 } },
+      { l: '내 돈으로 사서 채운다', t: '실적을 채우려 내 돈으로 물건을 샀습니다.', fx: { money: -0.5, happy: -2 } },
+    ],
+  });
+  add(SALE, {
+    id: 'j_sale_floor', rate: 0.3, cd: 2, rework: true,
+    text: ['하루 아홉 시간 서 있었더니 다리가 퉁퉁 부었습니다.', '환불을 요구하는 손님이 한 시간 동안 소리를 질렀습니다.', '손님이 {N}의 설명이 좋았다며 칭찬 카드에 이름을 적어 주었습니다.', '재고 정리를 하느라 밤늦게까지 창고에 있었습니다.', '할인 행사 첫날 손님이 몰려 계산대 앞에 줄이 끝없이 늘어섰습니다.'],
+    fx: { health: -1, happy: -1 },
+  });
+  add(SALE, {
+    id: 'j_sale_star', rate: 0.12, cd: 4,
+    text: '이달의 판매왕에 뽑혀 상품권을 받았습니다.',
+    fx: { money: 0.3, happy: 5 },
+  });
+  add(SALE, {
+    id: 'j_sale_promo', rate: 0.2, cd: 5, gate: (S) => canPromo(S) && yrsIn(S) >= 3,
+    title: '매장 관리자',
+    text: '매장 관리자 자리가 비었습니다. 지원할까요?',
+    choices: [
+      { l: '지원한다', p: (S) => U.clamp(0.3 + (S.st.social - 50) / 150 + S.st.skill / 250, 0.15, 0.8),
+        ok: { t: '매장 관리자가 되었습니다. 이제 직원들 근무표를 짭니다.', fx: { happy: 5 }, run: (S) => { promo(S, 1.15); } },
+        no: { t: '본사에서 온 사람이 그 자리를 맡았습니다.', fx: { happy: -3 } } },
+      { l: '지금이 편하다', typ: true, t: '지금 자리가 편하다고 생각했습니다.' },
+    ],
+  });
+  const CC = ['callcenter'];
+  add(CC, {
+    id: 'j_cc_abuse', rate: 0.3, cd: 3,
+    title: '욕설 전화',
+    text: '한 고객이 30분째 욕설을 퍼붓습니다. 회사 규정은 "고객이 먼저 끊을 때까지 응대"입니다.',
+    choices: [
+      { l: '규정대로 끝까지 듣는다', typ: true, t: '끝까지 들었습니다. 통화가 끝나고 화장실에서 한참 울었습니다.', fx: { happy: -5 } },
+      { l: '경고 안내를 하고 끊는다', p: 0.6,
+        ok: { t: '팀장이 "잘했다"고 했습니다. 새로 생긴 상담원 보호 규정 덕분이었습니다.', fx: { happy: 2 } },
+        no: { t: '고객 불만이 접수되어 평가 점수가 깎였습니다.', fx: { happy: -4, money: -0.2 } } },
+      { l: '잠깐 숨 돌릴 시간을 달라고 한다', t: '십 분 동안 옥상에서 바람을 쐬었습니다.', fx: { happy: -1 } },
+    ],
+  });
+  add(CC, {
+    id: 'j_cc_quota', rate: 0.35, cd: 2,
+    text: (S) => ['하루 통화 목표 150건을 채우느라 물 마실 틈도 없었습니다.', '목이 쉬어 목소리가 나오지 않습니다.', '화장실 가는 시간까지 기록하는 새 시스템이 들어왔습니다.'].concat(['sas', 'eap'].includes(H.region(S)) && H.dev(S) <= 2 ? ['해외 고객을 상대하느라 밤에 일하고 아침에 잡니다. 낮과 밤이 바뀐 지 몇 해째입니다.'] : []),
+    fx: { happy: -2, health: -1 },
+  });
+  add(CC, {
+    id: 'j_cc_leave', rate: 0.15, cd: 5, gate: (S) => yrsIn(S) >= 2,
+    title: '남은 사람',
+    text: '같이 입사한 동기 열 명 가운데 남은 사람은 셋입니다. 다른 일을 찾아볼까요?',
+    choices: [
+      { l: '버틴다', typ: true, t: '조금 더 버텨 보기로 했습니다. 이제 신입들에게 요령을 가르칩니다.', fx: { skill: 1 } },
+      { l: '다른 일자리를 알아본다', t: '이력서를 몇 군데 넣었습니다.', run: (S) => { offers(S); } },
+      { l: '팀장 자리에 도전한다', need: canPromo, p: 0.45,
+        ok: { t: '상담 팀장이 되었습니다. 이제 다른 사람의 눈물을 닦아 줍니다.', fx: { happy: 4 }, run: (S) => { promo(S, 1.15); } },
+        no: { t: '이번에는 다른 사람이 뽑혔습니다.', fx: { happy: -3 } } },
+    ],
+  });
+
+  /* ================================================================ 사무직·회계사·개발자·관리자 */
+  const CLK = ['clerk'];
+  add(CLK, {
+    id: 'j_clk_day', rate: 0.35, cd: 2,
+    text: (S) => ['같은 보고서를 다섯 번째 고쳤습니다. 결국 첫 번째 안으로 돌아갔습니다.', '회의가 하루에 네 개였습니다. 정작 일은 저녁에 했습니다.', '사내 체육 대회 줄다리기에 나갔습니다. 우리 팀이 이겼습니다.', H.region(S) === 'mena' ? '사무실 동료의 결혼식에 다 함께 다녀왔습니다.' : '회식 자리에서 상사가 억지로 술을 권했습니다.'],
+    fx: { happy: -1, social: 1 },
+  });
+  add(CLK, {
+    id: 'j_clk_promo', rate: 0.25, cd: 4, gate: (S) => canPromo(S) && yrsIn(S) >= 3,
+    title: '인사 평가',
+    text: '인사 평가 철입니다. 팀장이 {N을} 승진 후보로 올리겠다며, 주말에 자기 이삿짐 나르는 일을 도와 달라고 합니다.',
+    choices: [
+      { l: '도와준다', typ: true, p: 0.6,
+        ok: { t: '승진했습니다. 이삿짐 덕인지 실력 덕인지는 모르겠습니다.', fx: { happy: 4 }, run: (S) => { promo(S, 1.15); } },
+        no: { t: '주말을 바쳤지만 승진은 다른 사람 차지였습니다.', fx: { happy: -4 } } },
+      { l: '정중히 거절하고 실적으로 승부한다', p: 0.45,
+        ok: { t: '실적으로 승진했습니다. 떳떳했습니다.', fx: { happy: 6 }, val: { honest: 1 }, run: (S) => { promo(S, 1.15); } },
+        no: { t: '팀장의 서운한 눈빛이 평가표에 그대로 옮겨졌습니다.', fx: { happy: -3 } } },
+      { l: '인사팀에 부당함을 알린다', p: 0.4,
+        ok: { t: '팀장이 주의를 받았습니다. 사무실 공기가 조금 맑아졌습니다.', fx: { happy: 2 }, val: { rep: 1 } },
+        no: { t: '신고한 사람이 누구인지 금세 퍼졌습니다.', fx: { social: -4, happy: -4 } } },
+    ],
+  });
+  add(CLK, {
+    id: 'j_clk_burnout', rate: 0.15, cd: 5,
+    title: '번아웃',
+    text: '몇 달째 밤 열 시까지 일했습니다. 몸이 보내는 신호가 심상치 않습니다.',
+    choices: [
+      { l: '휴가를 내고 쉰다', t: '열흘 동안 아무것도 하지 않고 쉬었습니다. 다시 웃을 수 있게 되었습니다.', fx: { happy: 5, health: 3, money: -0.2 }, run: (S) => { fam(S, 2); } },
+      { l: '버틴다', typ: true, t: '버텼습니다. 위장약이 서랍에 쌓여 갑니다.', fx: { health: -4, happy: -3 } },
+      { l: '이직을 준비한다', t: '조용히 이력서를 고쳐 쓰기 시작했습니다.', run: (S) => { offers(S); } },
+    ],
+  });
+  const ACC = ['accountant'];
+  add(ACC, {
+    id: 'j_acc_books', rate: 0.25, cd: 5,
+    title: '장부',
+    text: '결산을 앞두고 임원이 매출을 조금 "앞당겨" 잡자고 합니다. 회계 기준에 어긋납니다.',
+    choices: [
+      { l: '기준대로 한다', typ: (S) => honest(S) >= 45, p: 0.6,
+        ok: { t: '감사에서 장부가 깨끗하다는 평을 받았습니다.', fx: { happy: 3 }, val: { honest: 2 } },
+        no: { t: '임원이 {N을} 다른 부서로 보냈습니다.', fx: { happy: -5 }, val: { honest: 2 } } },
+      { l: '시키는 대로 한다', typ: (S) => honest(S) < 45, p: 0.75,
+        ok: { t: '숫자는 맞췄습니다. 다음 결산이 벌써 두렵습니다.', fx: { happy: -3 }, val: { honest: -4 } },
+        no: { t: '감사에서 적발되어 징계를 받았습니다.', fx: { happy: -10 }, val: { honest: -3, rep: -8 }, run: (S) => { raise(S, 0.9); } } },
+      { l: '외부 감사인에게 알린다', p: 0.5,
+        ok: { t: '분식 회계가 바로잡혔습니다.', fx: { happy: 4 }, val: { honest: 3, rep: 3 } },
+        no: { t: '회사는 {N을} 내보냈습니다. 진실은 서류 더미에 묻혔습니다.', fx: { happy: -6 }, val: { honest: 3 }, run: (S) => { lose(S, 'layoff'); } } },
+    ],
+  });
+  add(ACC, {
+    id: 'j_acc_day', rate: 0.35, cd: 2,
+    text: ['결산 철이라 3주 동안 자정에 퇴근했습니다.', '은행 창구에서 어르신 고객에게 송금 방법을 몇 번이고 설명했습니다.', '숫자 하나가 맞지 않아 밤늦게까지 장부를 뒤졌습니다. 범인은 소수점이었습니다.'],
+    fx: { health: -1, happy: -1 },
+  });
+  add(ACC, {
+    id: 'j_acc_cpa', rate: 0.15, once: true, gate: (S) => H.age(S) < 40 && canPromo(S),
+    title: '자격시험',
+    text: '공인회계사 시험에 도전할까요? 붙으면 몸값이 크게 오르지만 2년은 공부에 매달려야 합니다.',
+    choices: [
+      { l: '도전한다', p: (S) => U.clamp(0.2 + (S.st.smarts - 50) / 120 + H.talent(S, 'study') / 400, 0.1, 0.75),
+        ok: { t: '공인회계사 시험에 붙었습니다!', fx: { smarts: 4, happy: 10 }, run: (S) => { promo(S, 1.3); fam(S, -4); } },
+        no: { t: '두 번 떨어지고 공부를 접었습니다.', fx: { smarts: 3, happy: -6 }, run: (S) => { fam(S, -4); } } },
+      { l: '지금 일에 집중한다', typ: true, t: '지금 자리에서 경력을 쌓기로 했습니다.' },
+    ],
+  });
+  add(ACC, {
+    id: 'j_acc_scam', rate: 0.12, cd: 5,
+    title: '수상한 송금',
+    text: '창구에 온 어르신이 "조카가 급하다"며 큰돈을 보내 달라고 합니다. 전화 사기 같은 낌새가 있습니다.',
+    choices: [
+      { l: '송금을 멈추고 경찰에 알린다', typ: true, p: 0.8,
+        ok: { t: '사기였습니다. 어르신의 평생 모은 돈을 지켰습니다. 지점장이 따로 칭찬했습니다.', fx: { happy: 6 }, val: { rep: 2 } },
+        no: { t: '알고 보니 정말 급한 일이었습니다. 어르신께 몇 번이고 사과했습니다.', fx: { happy: -2 } } },
+      { l: '고객 뜻대로 보낸다', p: 0.3,
+        ok: { t: '정말 급한 일이었습니다.' },
+        no: { t: '다음 날 사기였다는 걸 알았습니다. 마음이 무거웠습니다.', fx: { happy: -5 } } },
+    ],
+  });
+  const DEV = ['programmer'];
+  add(DEV, {
+    id: 'j_dev_crunch', rate: 0.35, cd: 2,
+    text: ['출시를 앞두고 2주 동안 사무실에서 먹고 잤습니다.', '새벽 세 시에 서버 장애 알림이 울렸습니다.', '내가 만든 기능을 수만 명이 쓰기 시작했습니다. 숫자가 올라가는 걸 한참 보았습니다.', '코드 검토에서 후배가 {N}의 실수를 찾아냈습니다. 고맙다고 했습니다.', '새 프로그래밍 언어를 익히느라 주말을 보냈습니다.'],
+    fx: { health: -1, skill: 2 }, run: (S) => { fam(S, -2); },
+  });
+  add(DEV, {
+    id: 'j_dev_startup', rate: 0.15, once: true, gate: (S) => H.age(S) < 45, who: 'newfriend',
+    title: '스타트업',
+    text: '대학 선배 {friend가} 차린 스타트업에서 함께하자고 합니다. 월급은 절반, 대신 회사 지분을 줍니다.',
+    choices: [
+      { l: '합류한다', p: 0.25,
+        ok: { t: '몇 해 뒤 회사가 큰 기업에 팔렸습니다. 지분이 큰돈이 되었습니다!', fx: { happy: 15, skill: 6 }, run: (S, ctx) => { earn(S, 30, 'other'); addNamed(S, 'friend', ctx.friend); } },
+        no: { t: '3년 만에 회사가 문을 닫았습니다. 돈은 잃었지만 많이 배웠습니다.', fx: { money: -4, skill: 6, happy: -4 }, run: (S, ctx) => { addNamed(S, 'friend', ctx.friend); } } },
+      { l: '지금 회사에 남는다', typ: true, t: '안정된 월급을 택했습니다. 가끔 그 회사 소식을 찾아봅니다.' },
+    ],
+  });
+  add(DEV, {
+    id: 'j_dev_offer', rate: 0.2, cd: 4,
+    title: '이직 제안',
+    text: '경쟁사가 연봉 30% 인상을 제안했습니다.',
+    choices: [
+      { l: '옮긴다', t: '새 회사로 옮겼습니다. 처음 보는 코드가 산더미입니다.', fx: { happy: 3, social: -2 }, run: (S) => { raise(S, 1.3); } },
+      { l: '제안을 지렛대로 협상한다', p: 0.5,
+        ok: { t: '회사가 연봉을 15% 올려 주었습니다.', fx: { happy: 4 }, run: (S) => { raise(S, 1.15); } },
+        no: { t: '"가고 싶으면 가라"는 답이 돌아왔습니다. 머쓱하게 남았습니다.', fx: { happy: -3 } } },
+      { l: '남는다', typ: true, t: '지금 팀이 좋아 남기로 했습니다.' },
+    ],
+  });
+  add(DEV, {
+    id: 'j_dev_bug', rate: 0.15, cd: 5,
+    title: '장애',
+    text: '{N이} 짠 코드의 실수로 서비스가 반나절 멈췄습니다. 회의에서 원인을 밝혀야 합니다.',
+    choices: [
+      { l: '내 실수였다고 솔직히 말한다', typ: true, p: 0.75,
+        ok: { t: '팀장이 "숨기지 않아 고맙다"고 했습니다. 재발 방지책을 함께 만들었습니다.', fx: { happy: 1, skill: 3 }, val: { honest: 2 } },
+        no: { t: '평가에 기록이 남았습니다.', fx: { happy: -4 }, val: { honest: 2 } } },
+      { l: '다른 원인을 찾아 둘러댄다', p: 0.6,
+        ok: { t: '그럭저럭 넘어갔습니다. 개운하지 않습니다.', fx: { happy: -2 }, val: { honest: -3 } },
+        no: { t: '기록에 다 남아 있었습니다. 신뢰를 잃었습니다.', fx: { social: -5, happy: -6 }, val: { honest: -3, rep: -3 } } },
+    ],
+  });
+  const MGR = ['manager'];
+  add(MGR, {
+    id: 'j_mgr_cut', rate: 0.2, cd: 5,
+    title: '인원 감축',
+    text: '본사가 {N}의 부서 인원 다섯 명을 줄이라고 지시했습니다. 명단은 {N이} 직접 정해야 합니다.',
+    choices: [
+      { l: '성과대로 명단을 정한다', typ: true, t: '명단을 정해 올렸습니다. 마지막 날 그들과 눈을 마주칠 수 없었습니다.', fx: { happy: -6, social: -3 } },
+      { l: '내 연봉을 깎아 인원을 지키자고 제안한다', p: 0.35,
+        ok: { t: '임원들이 받아들였습니다. 부서원들이 그 사실을 알고 말없이 고개를 숙였습니다.', fx: { happy: 4, social: 6 }, val: { rep: 4 }, run: (S) => { raise(S, 0.85); } },
+        no: { t: '"감상적"이라는 평과 함께 거절당했습니다.', fx: { happy: -5 } } },
+      { l: '지시를 거부한다', p: 0.3,
+        ok: { t: '본사가 한발 물러섰습니다. 감축은 다음 해로 미뤄졌습니다.', fx: { happy: 3 } },
+        no: { t: '본사의 눈 밖에 났습니다. 다음 인사에서 밀려났습니다.', fx: { happy: -6 }, run: (S) => { raise(S, 0.9); } } },
+    ],
+  });
+  add(MGR, {
+    id: 'j_mgr_day', rate: 0.3, cd: 2,
+    text: ['주말마다 거래처 접대 자리에 불려 나갔습니다.', '분기 실적 발표 전날 잠을 이루지 못했습니다.', '부하 직원의 결혼식에서 축사를 부탁받았습니다.', '신입 때 가르친 직원이 다른 회사 팀장이 되어 감사 인사를 왔습니다.', '예산 회의에서 다른 부서와 신경전을 벌였습니다.', '부서 회식에서 막내 직원의 고민을 들어 주었습니다.'],
+    fx: { social: 1 }, run: (S) => { fam(S, -2); },
+  });
+  add(MGR, {
+    id: 'j_mgr_exec', rate: 0.2, cd: 6, gate: (S) => canPromo(S) && (S.work.job.lv || 0) >= 1 && H.age(S) >= 38,
+    title: '임원 승진',
+    text: '임원 승진 후보에 올랐습니다. 마지막 관문은 대표가 밀어붙이는 무리한 신사업을 맡는 것입니다.',
+    choices: [
+      { l: '맡는다', p: 0.45,
+        ok: { t: '신사업이 자리를 잡았습니다. 임원이 되었습니다.', fx: { happy: 8 }, run: (S) => { promo(S, 1.35); fam(S, -4); } },
+        no: { t: '신사업이 실패해 책임을 지고 회사를 떠났습니다.', fx: { happy: -10 }, run: (S) => { lose(S); } } },
+      { l: '사양한다', typ: true, t: '지금 자리에서 할 일이 더 많다며 사양했습니다.' },
+    ],
+  });
+
+  /* ================================================================ 관광 가이드 */
+  const GD = ['guide'];
+  add(GD, {
+    id: 'j_gd_season', rate: 0.35, cd: 2,
+    run: (S) => {
+      const v = U.randInt(0, 2);
+      if (v === 0) { earn(S, 0.4); E.stat(S, 'happy', 3); return '외국인 관광객이 {N}의 설명에 감동했다며 팁을 두둑이 주었습니다.'; }
+      if (v === 1) { E.stat(S, 'health', -1); E.stat(S, 'social', 2); return '성수기라 하루 세 팀을 안내했습니다. 목이 쉬었습니다.'; }
+      E.addMoney(S, -H.pay(S, 0.3)); E.stat(S, 'happy', -3); return '관광객이 끊기는 철이라 몇 주째 일감이 없습니다.';
+    },
+  });
+  add(GD, {
+    id: 'j_gd_crisis', rate: 0.15, cd: 6,
+    title: '끊긴 예약',
+    text: (S) => `${H.war(S) >= 1 || el(S) !== 'free' ? '정치 불안' : '감염병 유행'} 소식에 예약이 줄줄이 취소되었습니다.`,
+    choices: [
+      { l: '국내 여행객 상대로 바꾼다', p: 0.6,
+        ok: { t: '동네 사람들의 소풍과 학교 견학을 안내하며 버텼습니다.', fx: { happy: 1 }, run: (S) => { raise(S, 0.95); } },
+        no: { t: '국내 손님도 많지 않았습니다.', fx: { money: -1, happy: -3 } } },
+      { l: '다른 일로 버틴다', typ: true, t: '관광객이 돌아올 때까지 막일을 했습니다.', fx: { money: -0.5, happy: -2 } },
+      { l: '외국어를 하나 더 배운다', cost: 0.3, t: '새 외국어를 익혀 안내할 수 있는 손님이 늘었습니다.', fx: { smarts: 3, skill: 3 }, run: (S) => { raise(S, 1.05); } },
+    ],
+  });
+  add(GD, {
+    id: 'j_gd_lost', rate: 0.12, cd: 5,
+    title: '사라진 관광객',
+    text: '산길 투어 중 관광객 한 명이 일행에서 떨어져 보이지 않습니다. 해가 지기 시작합니다.',
+    choices: [
+      { l: '일행을 안전한 곳에 두고 직접 찾아 나선다', p: 0.7,
+        ok: { t: '한 시간 만에 발목을 삔 관광객을 찾아 업고 내려왔습니다.', fx: { happy: 6, health: -2 }, val: { rep: 2 } },
+        no: { t: '찾지 못해 구조대를 불렀습니다. 다행히 밤늦게 구조되었습니다.', fx: { happy: -4 } } },
+      { l: '구조대부터 부른다', typ: true, p: 0.85,
+        ok: { t: '구조대가 금세 찾아냈습니다.', fx: { happy: 1 } },
+        no: { t: '밤새 수색한 끝에 새벽에야 찾았습니다. 여행사에서 경위서를 써야 했습니다.', fx: { happy: -4 } } },
+    ],
+  });
+  add(GD, {
+    id: 'j_gd_review', rate: 0.15, cd: 4, gate: (S) => H.internet(S) > 0.4,
+    text: '여행 후기 사이트에 {N}의 이름을 칭찬하는 글이 줄줄이 올라왔습니다. 예약이 늘었습니다.',
+    fx: { happy: 4 }, run: (S) => { raise(S, 1.04); },
+  });
+
+  /* ================================================================ 사업가 */
+  const BIZ = ['entrepreneur'];
+  add(BIZ, {
+    id: 'j_biz_investor', rate: 0.2, cd: 5,
+    title: '투자 제안',
+    text: '투자자가 큰돈을 넣겠다고 합니다. 대신 회사 지분 40%와 이사회 자리를 달라고 합니다.',
+    choices: [
+      { l: '받는다', p: 0.55,
+        ok: { t: '투자금으로 사업이 두 배로 컸습니다.', fx: { happy: 6 }, run: (S) => { raise(S, 1.4); } },
+        no: { t: '투자자와 경영 방향이 부딪쳐 하루하루가 전쟁입니다.', fx: { happy: -6 }, run: (S) => { raise(S, 1.05); } } },
+      { l: '지분을 지킨다', typ: true, t: '내 회사는 내가 지키기로 했습니다.' },
+    ],
+  });
+  add(BIZ, {
+    id: 'j_biz_staff', rate: 0.2, cd: 5,
+    title: '떠나는 직원',
+    text: '가장 믿던 직원이 고객 명단을 들고 경쟁사로 옮긴다는 소식입니다.',
+    choices: [
+      { l: '연봉을 올려 붙잡는다', cost: 1, p: 0.6,
+        ok: { t: '남아 주었습니다. 서로 섭섭했던 이야기를 털어놓았습니다.', fx: { happy: 2 } },
+        no: { t: '결국 떠났습니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.92); } } },
+      { l: '소송을 건다', cost: 1.5, p: 0.5,
+        ok: { t: '법원이 고객 명단 사용을 금지했습니다.', fx: { happy: 2 } },
+        no: { t: '소송은 길어지고 고객은 떠났습니다.', fx: { happy: -5 }, run: (S) => { raise(S, 0.9); } } },
+      { l: '보내 주고 새 사람을 키운다', typ: true, t: '보내 주었습니다. 새 직원을 처음부터 가르쳤습니다.', fx: { happy: -1 }, run: (S) => { raise(S, 0.95); } },
+    ],
+  });
+  add(BIZ, {
+    id: 'j_biz_tax', rate: 0.15, cd: 6,
+    title: '세무 조사',
+    text: '세무 조사 통지가 왔습니다. 몇 해 전 현금 매출 일부를 신고하지 않은 것이 마음에 걸립니다.',
+    choices: [
+      { l: '자진 신고하고 낸다', typ: true, t: '밀린 세금과 가산세를 냈습니다. 이제 발 뻗고 잡니다.', fx: { money: -3, happy: 1 }, val: { honest: 3 } },
+      { l: '세무사를 통해 최대한 줄인다', cost: 1, p: 0.6,
+        ok: { t: '추징금을 크게 줄였습니다.', fx: { money: -1 } },
+        no: { t: '숨긴 매출이 더 나와 추징금이 불어났습니다.', fx: { money: -4, happy: -4 } } },
+      { l: '아는 공무원에게 부탁한다', need: (S) => honest(S) < 55, p: 0.55,
+        ok: { t: '조사가 흐지부지 끝났습니다. 그 공무원에게 신세를 졌습니다.', fx: { happy: -1 }, val: { honest: -4 }, run: (S) => { corrupt(S); } },
+        no: { t: '청탁까지 드러나 벌금이 두 배가 되었습니다.', fx: { happy: -10 }, val: { honest: -4, rep: -10 }, run: (S) => { H.fine(S, 8); S.flags.scandal = true; } } },
+    ],
+  });
+  add(BIZ, {
+    id: 'j_biz_day', rate: 0.3, cd: 2,
+    text: ['월말이 다가오자 직원들 월급을 맞추느라 밤새 통장을 들여다보았습니다.', '큰 거래처가 대금을 석 달째 미루고 있습니다.', '창업 기념일에 직원들과 조촐한 잔치를 했습니다.', '새 거래처와 계약서에 도장을 찍었습니다.', '직원 한 명이 아이를 낳아 회사가 작은 축하 자리를 마련했습니다.'],
+    fx: { happy: -1 },
+  });
+
+  /* ================================================================ 예술가·음악가 */
+  const ART = ['artist'];
+  add(ART, {
+    id: 'j_art_show', rate: 0.3, cd: 4,
+    title: (S) => (talentHi(S) === 'music' ? '단독 공연' : '개인전'),
+    text: (S) => (talentHi(S) === 'music' ? '작은 공연장에서 단독 공연 제안이 왔습니다. 대관료를 반씩 내야 합니다.' : '작은 갤러리에서 개인전 제안이 왔습니다. 대관료를 반씩 내야 합니다.'),
+    choices: [
+      { l: '연다', cost: 1, p: (S) => U.clamp(0.2 + (hasPr ? Pr.eff(S, talentHi(S)) : 50) / 160, 0.15, 0.8),
+        ok: { t: (S) => (talentHi(S) === 'music' ? '객석이 가득 찼습니다. 평론가 한 사람이 좋은 글을 써 주었습니다.' : '작품이 거의 다 팔렸습니다. 평론가 한 사람이 좋은 글을 써 주었습니다.'), fx: { fame: 2, happy: 8 }, run: (S) => { earn(S, 2); prac(S, talentHi(S), 3); } },
+        no: { t: (S) => (talentHi(S) === 'music' ? '객석에는 가족과 친구들뿐이었습니다.' : '찾아온 사람은 가족과 친구들뿐이었습니다.'), fx: { happy: -4 }, run: (S) => { prac(S, talentHi(S), 2); } } },
+      { l: '돈이 모일 때까지 미룬다', typ: true, t: '조금 더 준비해서 하기로 했습니다.' },
+    ],
+  });
+  add(ART, {
+    id: 'j_art_gig', rate: 0.35, cd: 2,
+    run: (S) => {
+      const mus = talentHi(S) === 'music';
+      prac(S, mus ? 'music' : 'art', 1.5);
+      if (U.chance(0.6)) { earn(S, 0.3, 'side'); E.stat(S, 'happy', 2); return mus ? U.pick(['결혼식 축가를 불러 주고 사례비를 받았습니다.', '거리 공연에서 모자에 지폐가 수북이 쌓였습니다.']) : U.pick(['카페 벽화를 그려 주고 한 달 생활비를 벌었습니다.', '그림 한 점이 처음 보는 사람에게 팔렸습니다.']); }
+      E.stat(S, 'happy', -2); return mus ? '공연장 음향이 엉망이라 노래가 묻혔습니다.' : '물감 값이 올라 작은 캔버스만 씁니다.';
+    },
+  });
+  add(ART, {
+    id: 'j_art_ad', rate: 0.2, cd: 5,
+    title: '광고 제안',
+    text: '광고 회사가 {N}의 작품 스타일을 광고에 쓰고 싶다며 큰돈을 제안합니다. 대신 회사가 원하는 대로 고쳐야 합니다.',
+    choices: [
+      { l: '받아들인다', t: '광고가 전국에 나갔습니다. 통장은 두둑해졌지만 내 작품 같지 않았습니다.', fx: { happy: 1, fame: 1 }, run: (S) => { earn(S, 4, 'side'); } },
+      { l: '거절한다', typ: true, t: '거절했습니다. 가난해도 내 것을 하고 싶습니다.', fx: { happy: 2 } },
+      { l: '조건을 협상한다', p: 0.5,
+        ok: { t: '작품을 크게 고치지 않는 조건으로 계약했습니다.', fx: { happy: 4 }, run: (S) => { earn(S, 3, 'side'); } },
+        no: { t: '협상이 틀어져 다른 작가에게 넘어갔습니다.', fx: { happy: -2 } } },
+    ],
+  });
+  add(ART, {
+    id: 'j_art_grant', rate: 0.12, cd: 4,
+    text: '창작 지원금 공모에 선정되어 한 해 작업비를 받았습니다.',
+    fx: { happy: 5 }, run: (S) => { earn(S, 1.5, 'other'); },
+  });
+
+  /* ================================================================ 프리랜서(번역·디자인·개발)·과외 */
+  const FL = ['translator', 'designer', 'freedev'];
+  add(FL, {
+    id: 'j_fl_unpaid', rate: 0.25, cd: 3,
+    title: '떼인 대금',
+    text: '석 달 전 끝낸 일의 대금을 의뢰인이 아직 주지 않습니다. 연락도 잘 안 됩니다.',
+    choices: [
+      { l: '정중히 독촉한다', typ: true, p: 0.6,
+        ok: { t: '대금이 들어왔습니다.', fx: { happy: 2 } },
+        no: { t: '끝내 받지 못했습니다.', fx: { money: -1, happy: -4 } } },
+      { l: '내용 증명을 보내 법적으로 받는다', cost: 0.3, p: 0.75,
+        ok: { t: '내용 증명을 받은 의뢰인이 서둘러 돈을 보냈습니다.', fx: { happy: 3 } },
+        no: { t: '회사가 문을 닫아 받을 길이 없어졌습니다.', fx: { money: -1, happy: -4 } } },
+      { l: '포기하고 다음 일을 한다', t: '잊기로 했습니다. 다음부터는 계약금을 먼저 받기로 했습니다.', fx: { money: -1, happy: -3 } },
+    ],
+  });
+  add(FL, {
+    id: 'j_fl_rhythm', rate: 0.35, cd: 2,
+    run: (S) => {
+      const v = U.randInt(0, 2);
+      if (v === 0) { earn(S, 0.6); E.stat(S, 'health', -2); return U.pick(['급한 일이 몰려 사흘 밤을 새웠습니다. 통장은 든든해졌습니다.', '마감 세 개가 한 주에 겹쳤습니다. 커피로 버텼습니다.', '큰 의뢰를 끝내고 대금이 한꺼번에 들어왔습니다.']); }
+      if (v === 1) { E.stat(S, 'happy', -3); return U.pick(['한 달 내내 일감이 없어 통장 잔고만 들여다봤습니다.', '견적만 열 번 넣고 일은 하나도 받지 못한 달이었습니다.', '의뢰인이 마지막 순간에 일을 취소했습니다.']); }
+      E.stat(S, 'happy', 3); E.stat(S, 'social', 1); return U.pick(['오래 거래한 의뢰인이 다른 의뢰인을 소개해 주었습니다.', '카페 창가 자리에서 일하다 같은 처지의 프리랜서와 친해졌습니다.', '의뢰인이 결과물이 마음에 든다며 웃돈을 얹어 보냈습니다.']);
+    },
+  });
+  add(FL, {
+    id: 'j_fl_platform', rate: 0.15, cd: 6, gate: (S) => H.internet(S) > 0.4,
+    title: '수수료 인상',
+    text: '일감을 받던 플랫폼이 수수료를 20%로 올렸습니다.',
+    choices: [
+      { l: '플랫폼에 남는다', typ: true, t: '수수료를 떼이고 남는 만큼만 법니다.', fx: { happy: -2 }, run: (S) => { raise(S, 0.92); } },
+      { l: '직접 의뢰인을 찾는다', p: (S) => U.clamp(0.3 + (S.st.social - 50) / 150, 0.12, 0.7),
+        ok: { t: '직접 거래하는 단골 의뢰인이 생겼습니다.', fx: { social: 2, happy: 4 }, run: (S) => { raise(S, 1.05); } },
+        no: { t: '혼자서는 일감을 구하기 어려웠습니다.', fx: { happy: -4 }, run: (S) => { raise(S, 0.85); } } },
+    ],
+  });
+  add(['translator'], {
+    id: 'j_tr_machine', rate: 0.15, once: true, gate: (S) => H.internet(S) > 0.5,
+    title: '기계 번역',
+    text: '기계 번역이 좋아지면서 의뢰인들이 "기계 번역을 다듬기만 하면 되니 반값에 해 달라"고 합니다.',
+    choices: [
+      { l: '받아들인다', typ: true, t: '반값 일감을 두 배로 받아 버팁니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.8); } },
+      { l: '문학·법률 같은 전문 번역으로 옮긴다', p: (S) => U.clamp(0.25 + (S.st.smarts - 50) / 120, 0.1, 0.7),
+        ok: { t: '전문 번역가로 자리를 잡았습니다. 기계가 못 하는 일이 아직 많습니다.', fx: { happy: 5, smarts: 2 }, run: (S) => { raise(S, 1.1); } },
+        no: { t: '전문 분야의 벽은 높았습니다.', fx: { happy: -4 }, run: (S) => { raise(S, 0.85); } } },
+      { l: '다른 일을 알아본다', t: '다른 일자리를 알아보기 시작했습니다.', run: (S) => { offers(S); } },
+    ],
+  });
+  add(['designer'], {
+    id: 'j_ds_client', rate: 0.25, cd: 2,
+    text: ['의뢰인이 로고 시안을 스무 번째 고쳐 달라고 했습니다. 결국 첫 번째 시안으로 돌아갔습니다.', '{N이} 만든 포스터가 거리 곳곳에 붙었습니다.', '"그냥 예쁘게 해 주세요"라는 주문을 받았습니다.'],
+    fx: { skill: 1 }, run: (S) => { prac(S, 'art', 1.5); },
+  });
+  add(['freedev'], {
+    id: 'j_fd_hack', rate: 0.15, cd: 5,
+    title: '뚫린 서버',
+    text: '{N이} 만들어 준 쇼핑몰이 해킹당했습니다. 코드의 허점 때문이라고 합니다.',
+    choices: [
+      { l: '밤새 고치고 책임을 진다', typ: true, t: '사흘 밤을 새워 고쳤습니다. 의뢰인은 계속 일을 맡기기로 했습니다.', fx: { money: -1, skill: 3, happy: -3 }, val: { rep: 1 } },
+      { l: '계약서의 책임 조항을 내민다', p: 0.6,
+        ok: { t: '책임 범위가 정리되어 추가 수리비를 받았습니다.', fx: { happy: 1 } },
+        no: { t: '의뢰인이 등을 돌리고 나쁜 후기를 남겼습니다.', fx: { money: -2, social: -3, happy: -4 } } },
+    ],
+  });
+  const TUT = ['tutor'];
+  add(TUT, {
+    id: 'j_tut_day', rate: 0.35, cd: 2,
+    text: ['가르치던 학생이 시험에서 목표 점수를 받았습니다. 학부모 소개로 학생이 둘 늘었습니다.', '숙제를 안 해 오는 학생과 실랑이하다 하루가 갔습니다.', '시험 기간이라 하루에 네 집을 돌았습니다.', '학생 집 거실에서 밤늦게까지 문제를 풀었습니다. 학생 보호자가 과일을 내왔습니다.', '방학 특강 시간표를 짜느라 달력이 빼곡해졌습니다.', '학생이 갑자기 이사를 가게 되어 수업 하나가 끊겼습니다.'],
+    fx: { happy: 1, social: 1 },
+  });
+  add(TUT, {
+    id: 'j_tut_rule', rate: 0.15, cd: 6, gate: (S) => H.dev(S) >= 2,
+    title: '과외 신고제',
+    text: '정부가 과외 교습비 상한과 신고 제도를 강화한다고 합니다. 신고하면 세금이 늘고, 안 하면 단속 위험이 있습니다.',
+    choices: [
+      { l: '신고한다', typ: true, t: '신고를 마쳤습니다. 세금이 늘었지만 마음은 편합니다.', val: { honest: 2 }, run: (S) => { raise(S, 0.92); } },
+      { l: '몰래 계속한다', need: (S) => honest(S) < 65, p: 0.8,
+        ok: { t: '아무 일 없이 지나갔습니다.', val: { honest: -2 } },
+        no: { t: '단속에 걸려 과태료를 물었습니다.', fx: { happy: -5 }, val: { honest: -2, rep: -3 }, run: (S) => { H.fine(S, 1); } } },
+    ],
+  });
+  add(TUT, {
+    id: 'j_tut_parent', rate: 0.15, cd: 4,
+    title: '성적 항의',
+    text: '학부모가 성적이 오르지 않으면 수업료를 돌려 달라고 합니다.',
+    choices: [
+      { l: '수업 방식을 바꿔 다시 해 본다', typ: true, p: 0.6,
+        ok: { t: '석 달 뒤 성적이 올랐습니다. 학부모가 머쓱해했습니다.', fx: { happy: 4, skill: 2 } },
+        no: { t: '성적은 그대로였습니다. 그 집 수업이 끊겼습니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.93); } } },
+      { l: '그 집 수업을 그만둔다', t: '그 집 수업을 정리했습니다.', fx: { happy: -1 }, run: (S) => { raise(S, 0.92); } },
+    ],
+  });
+
+  /* ================================================================ 특별 직업: 운동선수 */
+  const ATH = ['athlete'];
+  add(ATH, {
+    id: 'j_ath_doping', rate: 0.15, cd: 5,
+    title: '검사에 안 걸리는 약',
+    text: '시즌을 앞두고 몸이 예전 같지 않습니다. 팀 트레이너가 "검사에 안 걸리는 약"이 있다고 귀띔합니다.',
+    choices: [
+      { l: '거절한다', typ: true, t: '깨끗하게 뛰기로 했습니다.', fx: { happy: 1 }, val: { honest: 2 } },
+      { l: '맞는다', need: (S) => honest(S) < 60, p: 0.6,
+        ok: { t: '몸이 가벼워져 시즌 최고 기록을 냈습니다. 마음은 무거웠습니다.', fx: { fame: 3, happy: 2, health: -3 }, val: { honest: -6 } },
+        no: { t: '도핑 검사에 걸려 출전 정지를 받았습니다. 선수 생활이 그렇게 끝났습니다.', fx: { fame: 3, happy: -15 }, val: { honest: -4, rep: -12 }, run: (S) => { notor(S); lose(S); } } },
+    ],
+  });
+  add(ATH, {
+    id: 'j_ath_contract', rate: 0.25, cd: 3,
+    title: '재계약',
+    text: '재계약 협상 철입니다. 구단은 연봉 동결을 제시했습니다.',
+    choices: [
+      { l: '에이전트를 통해 강하게 협상한다', p: (S) => U.clamp(0.3 + (S.fame || 0) / 150 + (H.talent(S, 'sport') - 70) / 100, 0.15, 0.8),
+        ok: { t: '연봉이 크게 올랐습니다.', fx: { happy: 5 }, run: (S) => { raise(S, 1.3); } },
+        no: { t: '협상이 틀어져 하위 팀으로 트레이드되었습니다.', fx: { happy: -6 }, run: (S) => { raise(S, 0.8); } } },
+      { l: '구단 제안을 받아들인다', typ: true, t: '연봉 동결에 사인했습니다. 성적으로 보여 주기로 했습니다.', fx: { happy: -1 } },
+      { l: '다년 계약으로 안정을 택한다', t: '연봉은 조금 올리고 계약 기간을 늘렸습니다.', fx: { happy: 2 }, run: (S) => { raise(S, 1.1); } },
+    ],
+  });
+  add(ATH, {
+    id: 'j_ath_day', rate: 0.3, cd: 2,
+    text: ['고향 아이들을 위한 {sport} 캠프를 열었습니다. 아이들 눈빛이 반짝였습니다.', '훈련 뒤 남아 팬들에게 한 시간 동안 사인을 해 주었습니다.', '부상 재활 훈련이 지루하게 이어졌습니다.', '원정 경기 버스에서 밤을 새우고 아침에 경기를 뛰었습니다.'],
+    fx: { social: 2, happy: 1 }, run: (S) => { prac(S, 'sport', 2); },
+  });
+
+  /* ================================================================ 특별 직업: 연예인 */
+  const ENT = ['entertainer'];
+  add(ENT, {
+    id: 'j_ent_contract', rate: 0.2, once: true,
+    title: '노예 계약',
+    text: '소속사와의 계약서를 다시 읽어 보니 수익 배분이 9 대 1입니다. 계약 기간은 아직 7년이 남았습니다.',
+    choices: [
+      { l: '소송을 건다', cost: 2, p: 0.5,
+        ok: { t: '법원이 불공정 계약이라고 판결했습니다. 새 조건으로 활동합니다.', fx: { happy: 8 }, run: (S) => { raise(S, 1.4); } },
+        no: { t: '소송이 길어지는 동안 활동을 못 했습니다.', fx: { fame: -4, happy: -8 } } },
+      { l: '참고 활동한다', typ: true, t: '계약이 끝날 날만 기다리며 무대에 섰습니다.', fx: { happy: -3 } },
+      { l: '재계약을 협상한다', p: 0.5,
+        ok: { t: '배분율이 7 대 3으로 바뀌었습니다.', fx: { happy: 4 }, run: (S) => { raise(S, 1.2); } },
+        no: { t: '소속사는 꿈쩍도 하지 않았습니다.', fx: { happy: -3 } } },
+    ],
+  });
+  add(ENT, {
+    id: 'j_ent_day', rate: 0.3, cd: 2,
+    text: ['예능 프로그램에서 망가지는 모습을 보여 줬더니 반응이 뜨거웠습니다.', '팬 미팅에서 팬들이 직접 만든 선물을 받았습니다.', '하루 네 시간 자며 촬영과 연습을 오갔습니다.', '지방 공연을 마치고 새벽 고속도로를 달려 다음 촬영장으로 갔습니다.', '오디션에서 떨어진 신인 시절 이야기를 방송에서 털어놓았습니다.', '촬영장 막내 스태프들에게 밥을 샀습니다.'],
+    fx: { fame: 1, happy: 1, health: -1 }, run: (S) => { prac(S, 'perform', 1.5); },
+  });
+  add(ENT, {
+    id: 'j_ent_rest', rate: 0.15, cd: 5, gate: (S) => (S.fame || 0) >= 20,
+    title: '지친 몸',
+    text: '몇 년째 쉬지 못했습니다. 무대 위에서 숨이 가빠지는 일이 잦아졌습니다.',
+    choices: [
+      { l: '활동을 잠시 쉰다', t: '반년 동안 활동을 멈추고 몸과 마음을 돌봤습니다.', fx: { fame: -4, health: 5, happy: 6, money: -2 } },
+      { l: '계속한다', typ: true, t: '일정을 그대로 소화했습니다.', fx: { health: -4, happy: -4 } },
+      { l: '상담을 받으며 일정을 줄인다', cost: 0.5, t: '상담을 받으며 일정을 절반으로 줄였습니다.', fx: { health: 2, happy: 3, fame: -1 } },
+    ],
+  });
+
+  /* ================================================================ 특별 직업: 작가·크리에이터·셰프 */
+  const WRI = ['writer'];
+  add(WRI, {
+    id: 'j_wri_day', rate: 0.3, cd: 2,
+    text: ['편집자가 원고 마감이 사흘 남았다고 연락했습니다. 아직 반도 못 썼습니다.', '북 콘서트에서 독자가 {N}의 책 한 구절을 외워 읽어 주었습니다.', '도서전 무대에서 다른 작가들과 대담을 나눴습니다.', '한 줄도 쓰지 못한 채 하루가 갔습니다. 빈 화면만 바라봤습니다.', '취재하러 낯선 동네에 한 달 동안 머물렀습니다.', '작은 도서관에서 열린 글쓰기 모임에 강사로 나갔습니다.'],
+    fx: { smarts: 1, happy: 1 },
+  });
+  add(WRI, {
+    id: 'j_wri_censor', rate: 0.2, cd: 5, gate: (S) => el(S) !== 'free',
+    title: '출판 심의',
+    text: '새 책 원고가 출판 심의에 걸렸습니다. 몇 장을 빼야 출간할 수 있다고 합니다.',
+    choices: [
+      { l: '뺀다', typ: true, t: '문제가 된 장을 들어냈습니다. 책은 나왔지만 반쪽 같습니다.', fx: { happy: -3 } },
+      { l: '해외에서 출간한다', p: 0.4,
+        ok: { t: '해외 출판사가 원고를 그대로 냈습니다. 몰래 들여온 책이 돌려 읽힙니다.', fx: { fame: 3, happy: 5 } },
+        no: { t: '해외 출간이 알려져 당국의 경고를 받았습니다.', fx: { happy: -6 }, val: { risk: 2 } } },
+      { l: '서랍에 넣어 둔다', t: '원고를 서랍에 넣었습니다. 언젠가 꺼낼 날이 올 것입니다.', fx: { happy: -2 } },
+    ],
+  });
+  add(WRI, {
+    id: 'j_wri_ghost', rate: 0.15, cd: 5,
+    title: '대필',
+    text: '이름난 사람이 자서전을 대신 써 달라고 합니다. 이름은 실리지 않지만 사례가 큽니다.',
+    choices: [
+      { l: '쓴다', t: '남의 이름으로 책이 나왔습니다. 서점에서 그 책을 보면 웃음이 납니다.', fx: { happy: -1 }, run: (S) => { earn(S, 4, 'other'); } },
+      { l: '내 글만 쓴다', typ: true, t: '내 이름을 건 글만 쓰기로 했습니다.', fx: { happy: 1 } },
+    ],
+  });
+  const STR = ['streamer'];
+  add(STR, {
+    id: 'j_str_day', rate: 0.3, cd: 2, gate: (S) => !!S.stream,
+    text: ['라이브 방송 도중 정전이 되어 다음 날 사과 영상을 올렸습니다.', '구독자 한 사람이 "덕분에 힘든 시기를 버텼다"는 편지를 보냈습니다.', '편집하느라 새벽 네 시에 잠들었습니다.', '조회수가 생각만큼 나오지 않아 썸네일을 세 번 바꿨습니다.'],
+    fx: { happy: 1, health: -1 },
+  });
+  add(STR, {
+    id: 'j_str_brand', rate: 0.25, cd: 4, gate: (S) => !!S.stream,
+    title: '광고 제안',
+    text: '건강 보조제 회사가 광고를 제안합니다. 효과가 의심스러운 제품이지만 광고비가 한 달 수입의 두 배입니다.',
+    choices: [
+      { l: '거절한다', typ: true, t: '거절했습니다. 구독자들을 속일 수는 없었습니다.', fx: { happy: 1 }, val: { honest: 2, rep: 1 } },
+      { l: '광고한다', p: 0.6,
+        ok: { t: '광고비가 들어왔습니다. 구독자 몇 명의 항의 글이 마음에 걸립니다.', val: { honest: -3 }, run: (S) => { earn(S, 2, 'side'); } },
+        no: { t: '제품 부작용 기사가 나며 구독자 항의가 빗발쳤습니다.', fx: { happy: -6 }, val: { honest: -3, rep: -5 }, run: (S) => { earn(S, 2, 'side'); fans(S, 0.85); } } },
+      { l: '직접 써 보고 솔직하게 리뷰한다', p: 0.5,
+        ok: { t: '솔직한 리뷰에 구독자들이 박수를 쳤습니다.', fx: { happy: 4 }, run: (S) => { earn(S, 0.8, 'side'); fans(S, 1.05); } },
+        no: { t: '솔직한 리뷰에 회사가 광고비를 깎았습니다.', fx: { happy: -1 }, run: (S) => { earn(S, 0.3, 'side'); } } },
+    ],
+  });
+  add(STR, {
+    id: 'j_str_collab', rate: 0.2, cd: 4, gate: (S) => !!S.stream,
+    title: '합동 방송',
+    text: '구독자가 훨씬 많은 크리에이터가 합동 방송을 제안했습니다.',
+    choices: [
+      { l: '함께한다', p: 0.6,
+        ok: { t: '합동 방송이 화제가 되었습니다. 구독자가 크게 늘었습니다.', fx: { happy: 5 }, run: (S) => { fans(S, 1.15); } },
+        no: { t: '분위기가 어색해 반응이 시원찮았습니다.', fx: { happy: -2 } } },
+      { l: '내 색깔을 지킨다', typ: true, t: '내 방식대로 하기로 했습니다.' },
+    ],
+  });
+  add(STR, {
+    id: 'j_str_dox', rate: 0.1, cd: 6, gate: (S) => !!S.stream && S.stream.fans >= 10000,
+    title: '드러난 집 주소',
+    text: '누군가 {N}의 집 주소를 알아내 인터넷에 올렸습니다.',
+    choices: [
+      { l: '경찰에 신고하고 이사한다', cost: 3, t: '이사를 했습니다. 한동안 창문 커튼을 열지 못했습니다.', fx: { happy: -4 } },
+      { l: '방송에서 정면으로 이야기한다', p: 0.5,
+        ok: { t: '구독자들이 함께 신고해 글이 지워졌습니다. 응원이 쏟아졌습니다.', fx: { happy: 2 }, run: (S) => { fans(S, 1.05); } },
+        no: { t: '관심이 오히려 커졌습니다. 집 앞을 서성이는 사람이 생겼습니다.', fx: { happy: -6 } } },
+      { l: '한동안 방송을 쉰다', typ: true, t: '한 달 동안 방송을 쉬었습니다.', fx: { happy: -3 }, run: (S) => { fans(S, 0.95); } },
+    ],
+  });
+  const CHEF = ['chef'];
+  add(CHEF, {
+    id: 'j_chef_critic', rate: 0.2, cd: 4,
+    title: '평론가',
+    text: '이름난 음식 평론가가 예고 없이 식당에 왔다는 소문입니다. 오늘 주방은 일손이 하나 모자랍니다.',
+    choices: [
+      { l: '직접 그 테이블 요리를 맡는다', p: (S) => U.clamp(0.25 + (hasPr ? Pr.eff(S, 'cook') : 55) / 140, 0.2, 0.85),
+        ok: { t: '평론가가 "올해의 발견"이라고 썼습니다. 예약이 석 달 치 찼습니다.', fx: { fame: 3, happy: 8 }, run: (S) => { raise(S, 1.15); prac(S, 'cook', 3); } },
+        no: { t: '"평범하다"는 한 줄 평이 실렸습니다.', fx: { happy: -6 }, run: (S) => { raise(S, 0.95); } } },
+      { l: '평소대로 한다', typ: true, p: 0.5,
+        ok: { t: '"꾸밈없는 맛"이라는 평이 실렸습니다.', fx: { fame: 1, happy: 3 }, run: (S) => { raise(S, 1.05); } },
+        no: { t: '평론가는 아무 글도 쓰지 않았습니다.' } },
+    ],
+  });
+  add(CHEF, {
+    id: 'j_chef_day', rate: 0.25, cd: 2,
+    text: ['위생 점검을 무사히 통과했습니다.', '주방 직원 둘이 한꺼번에 그만둬 한 달 동안 혼자 주방을 지켰습니다.', '제철 재료를 찾아 새벽 시장을 돌았습니다.', '새 계절 메뉴를 시식한 단골들이 엄지를 들었습니다.', '재료값이 올라 메뉴판 가격을 고칠지 밤새 고민했습니다.', '수습 요리사에게 칼 쓰는 법을 처음부터 가르쳤습니다.'],
+    fx: { skill: 1 }, run: (S) => { prac(S, 'cook', 1.5); },
+  });
+  add(CHEF, {
+    id: 'j_chef_tv', rate: 0.15, cd: 5, gate: (S) => (S.fame || 0) >= 6 || yrsIn(S) >= 6,
+    title: '요리 방송',
+    text: '요리 방송에서 고정 출연을 제안합니다.',
+    choices: [
+      { l: '출연한다', t: '주방보다 방송국에 있는 날이 많아졌습니다.', fx: { fame: 5, happy: 3 }, run: (S) => { earn(S, 2, 'side'); fam(S, -2); } },
+      { l: '주방을 지킨다', typ: true, t: '주방이 내 자리라며 사양했습니다.', fx: { happy: 2 } },
+    ],
+  });
+
+  /* ================================================================ 사건이 적던 직업 보충 */
+  add(CLK, {
+    id: 'j_clk_transfer', rate: 0.15, cd: 6,
+    title: '지방 발령',
+    text: '회사가 {N을} 지방 사업장 관리부로 발령 냈습니다. 거절하면 인사 고과에 불리하다는 말이 따라붙었습니다.',
+    choices: [
+      { l: '받아들인다', typ: true, run: (S) => { E.stat(S, 'skill', 2); raise(S, 1.03); if (hasFam(S)) { E.stat(S, 'happy', -3); return '주말마다 기차를 타고 집에 오가는 생활이 시작되었습니다.' + fam(S, -4); } E.stat(S, 'social', 1); return '낯선 도시에서 새 동료들과 일을 시작했습니다.'; } },
+      { l: '사정을 설명하고 거절한다', p: 0.5,
+        ok: { t: '인사팀이 사정을 받아들였습니다.', fx: { happy: 2 } },
+        no: { t: '거절은 받아들여졌지만 그해 평가가 바닥이었습니다.', fx: { happy: -4 } } },
+      { l: '이참에 이직을 알아본다', t: '이력서를 다시 꺼냈습니다.', run: (S) => { offers(S); } },
+    ],
+  });
+  add(CLK, {
+    id: 'j_clk_good', rate: 0.2, cd: 3,
+    text: ['{N이} 정리한 업무 매뉴얼을 팀 전체가 쓰기 시작했습니다.', '사내 동호회에서 마음 맞는 사람들을 만났습니다.', '신입 사원이 "{N} 선배 덕분에 버텼다"며 고맙다고 했습니다.'],
+    fx: { happy: 3, social: 2 },
+  });
+  add(MGR, {
+    id: 'j_mgr_complaint', rate: 0.15, cd: 5, who: 'newfriend',
+    title: '괴롭힘 신고',
+    text: '부서원 {friend가} 팀장 한 사람에게 오랫동안 폭언을 들었다며 신고서를 냈습니다. 그 팀장은 부서 실적 1등입니다.',
+    choices: [
+      { l: '규정대로 조사하고 징계한다', typ: true, t: '조사 끝에 팀장이 징계를 받았습니다. 실적은 잠시 흔들렸지만 부서 분위기가 달라졌습니다.', fx: { happy: 2, social: 2 }, val: { honest: 2, rep: 3 } },
+      { l: '조용히 부서만 옮겨 준다', t: '{friend를} 다른 부서로 옮겨 주었습니다. 팀장은 그대로입니다.', fx: { happy: -2 }, val: { honest: -1 } },
+      { l: '실적을 생각해 덮는다', need: (S) => honest(S) < 60, p: 0.6,
+        ok: { t: '일은 조용히 묻혔습니다. {friend는} 얼마 뒤 회사를 그만두었습니다.', fx: { happy: -3 }, val: { honest: -3 } },
+        no: { t: '신고가 묵살된 사실이 기사로 나왔습니다. {N}도 책임을 지고 감봉을 받았습니다.', fx: { happy: -8 }, val: { honest: -3, rep: -6 }, run: (S) => { raise(S, 0.9); } } },
+    ],
+  });
+  add(MGR, {
+    id: 'j_mgr_abroad', rate: 0.12, once: true, gate: (S) => H.age(S) < 55,
+    title: '해외 법인장',
+    text: '회사가 {N}에게 해외 법인을 맡아 달라고 합니다. 3년 동안 나가 있어야 합니다.',
+    choices: [
+      { l: '간다', run: (S) => { const d = pickNot(S, CHEAP.concat(PLANT)); if (d) H.travel(S, d); promo(S, 1.15); earn(S, 4); E.stat(S, 'skill', 4); return `${d ? Wd.name(d) : '해외'} 법인에서 3년을 보냈습니다. 현지 직원들과 정이 많이 들었습니다.` + fam(S, -5); } },
+      { l: '사양한다', typ: true, t: '본사에 남기로 했습니다.' },
+    ],
+  });
+  add(CC, {
+    id: 'j_cc_good', rate: 0.2, cd: 3,
+    text: ['어르신 고객이 통화 끝에 "고마워요, 젊은이"라고 했습니다. 하루 종일 그 말이 남았습니다.', '해결하기 어려운 문의를 끝까지 붙잡아 풀었습니다. 고객 칭찬이 접수되었습니다.', '휴식 시간에 옆자리 상담원과 서로의 하소연을 들어 주었습니다.'],
+    fx: { happy: 3, social: 1 },
+  });
+  add(TUT, {
+    id: 'j_tut_bond', rate: 0.2, cd: 3,
+    text: ['가르치던 학생이 대학에 붙었다며 꽃다발을 들고 찾아왔습니다.', '공부보다 고민 상담을 더 오래 한 날이었습니다. 학생이 처음으로 웃었습니다.', '수학을 싫어하던 학생이 문제를 풀고 손뼉을 쳤습니다.'],
+    fx: { happy: 4 },
+  });
+  add(CHEF, {
+    id: 'j_chef_branch', rate: 0.15, cd: 6,
+    title: '2호점',
+    text: '단골 손님 한 사람이 투자를 할 테니 2호점을 내자고 합니다. 대신 주방을 다른 사람에게 맡겨야 합니다.',
+    choices: [
+      { l: '2호점을 낸다', p: 0.55,
+        ok: { t: '2호점도 자리를 잡았습니다. 두 주방을 오가느라 바쁩니다.', fx: { happy: 6, health: -2 }, run: (S) => { raise(S, 1.4); fam(S, -2); } },
+        no: { t: '맛이 달라졌다는 말이 돌아 2호점은 1년 만에 문을 닫았습니다.', fx: { money: -3, happy: -6 } } },
+      { l: '한 주방만 지킨다', typ: true, t: '내 손이 닿는 한 곳만 하기로 했습니다.', fx: { happy: 2 } },
+    ],
+  });
+  add(AGT, {
+    id: 'j_agt_climate', rate: 0.2, cd: 3,
+    text: (S) => [`해마다 장마와 가뭄의 때가 달라져 파종 시기 안내를 다시 짰습니다.${hzList(S).length ? ` 올해도 ${U.j(hzWord(S), '이')} 걱정입니다.` : ''}`, '농민들과 함께 빗물 저장 웅덩이를 팠습니다.', '병충해 경보 문자를 마을 이장들에게 돌렸습니다.'],
+    fx: { skill: 1, social: 2 },
+  });
+
+  /* ================================================================ 등록 */
+  C.addEvents(L);
+  // typ 이 함수인 선택지(정직함·나라 사정에 따라 '보통의 선택'이 달라짐)를 풀어 준다
+  for (const d of L) {
+    const dec = d.choices && C.DEC['x_' + d.id];
+    if (!dec) continue;
+    const ch0 = dec.choices;
+    dec.choices = (S, ctx) => ch0(S, ctx).map((c) => (typeof c.typ === 'function' ? { ...c, typ: !!c.typ(S, ctx) } : c));
+  }
+
+  /* ================================================================ 상태·연결 고리 */
+  E.hook('ensure', (S) => { if (!S.jx || typeof S.jx !== 'object') S.jx = { rec: 0 }; if (typeof S.jx.rec !== 'number' || !isFinite(S.jx.rec)) S.jx.rec = 0; });
+  // 정치를 떠나면 의정 성과는 몇 해에 걸쳐 잊힌다
+  E.hook('year', (S) => { if (S.jx && S.jx.rec && !H.jobIs(S, 'politician')) { S.jx.rec *= 0.8; if (Math.abs(S.jx.rec) < 0.1) S.jx.rec = 0; } });
+
+  // 의정 성과가 다음 선거 당선 가능성에 조금 반영된다(이유 목록에도 보인다)
+  if (hasCr && typeof Cr.electP === 'function') {
+    const e0 = Cr.electP;
+    Cr.electP = (S, t, inc) => {
+      const r = e0(S, t, inc);
+      const v = (S.jx && S.jx.rec) || 0;
+      if (r && Math.abs(v) >= 0.5) {
+        const sh = U.clamp(v * 0.12, -0.6, 0.6);
+        r.p = U.clamp(U.shiftP(r.p, sh), 0.01, t === 4 ? 0.6 : 0.95);
+        if (r.why) r.why.push([v > 0 ? '의정 성과' : '의정 실패', sh]);
+      }
+      return r;
+    };
+  }
+
+  /** 화면용: 정치인의 의정 성과 { v(-5~6), label } 또는 null */
+  C.JOBEV.view = (S) => {
+    const v = (S.jx && S.jx.rec) || 0;
+    if (!H.jobIs(S, 'politician') && Math.abs(v) < 0.5) return null;
+    const label = v >= 3 ? '눈에 띄는 성과' : v >= 1 ? '꾸준한 성과' : v > -1 ? '그저 그럼' : v > -3 ? '실망스러움' : '실패로 평가됨';
+    return { v: Math.round(v * 10) / 10, label };
+  };
+})();
+
 /* 80억분의 1 — 인생 시뮬레이션 엔진
  * 상태(S)는 JSON 으로 저장 가능한 순수 객체다. 화면 코드는 E.month() 를 부르고 S 를 그린다.
  * 문장·선택지는 content.js(C) 에 있다.
@@ -16985,7 +19908,7 @@ const Pr = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.9';
+E.VERSION = '0.3.11';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
@@ -17033,12 +19956,12 @@ E.newLife = (opts = {}) => {
   const sex = opts.sex || (U.chance(c.srb / (1 + c.srb)) ? 'm' : 'f');
   const famP = opts.famP !== undefined ? opts.famP : U.rand();
   const u = c.urban / 100;
-  const urban = U.chance(U.clamp(u + (famP - 0.5) * Math.min(u, 1 - u) * 1.2, 0.02, 0.98));
+  const urban = opts.urban !== undefined ? !!opts.urban : U.chance(U.clamp(u + (famP - 0.5) * Math.min(u, 1 - u) * 1.2, 0.02, 0.98));
   const now = new Date();
   const fatherNm = Wd.makeName(iso, 'm');
   const name = Wd.makeName(iso, sex, fatherNm.fi, fatherNm.given);
   const cities = Wd.cities(iso);
-  const city = urban ? U.weighted(cities.map((cn, i) => [cn, 1 / (i + 1)])) : cities[0];
+  const city = urban && opts.city && cities.includes(opts.city) ? opts.city : urban ? U.weighted(cities.map((cn, i) => [cn, 1 / (i + 1)])) : cities[0];
   const tfr = c.tfr || 2;
 
   // 부모
@@ -17107,6 +20030,7 @@ E.newLife = (opts = {}) => {
     peak: { income: 0, wealthP: famP, gp: 0 },
     stats: { illnesses: 0, moves: 0, jobs: 0 },
   };
+  if (opts.admin) S.admin = true; // 운영자 모드로 정한 인생(피드백 55번)
   S.flags.vaccinated = U.chance((c.measles || 80) / 100 * (famP < 0.3 ? 0.85 : 1));
   S.flags.warZone = U.chance(Wd.conflictZoneShare(iso));
   E.setPace(S);
@@ -18285,11 +21209,12 @@ UI.initTitle = () => {
   const nAch = Object.keys(ach).length;
   $('#btn-ach').hidden = !lives.length;
   $('#btn-ach').textContent = `업적 ${nAch} / ${Object.keys(C.ACH).length}`;
+  $('#t-ver').textContent = `v${E.VERSION} (${E.BUILD_DATE})`;
 };
 
 /* ================================================================ 출생 */
-UI.newLife = () => {
-  const S = E.newLife();
+UI.newLife = (opts) => {
+  const S = E.newLife(opts || {});
   UI.S = S;
   UI.logCount = 0;
   UI.deathShown = false;
@@ -18392,7 +21317,7 @@ UI.tick = () => {
   const dt = Math.min(0.5, (now - UI.lastT) / 1000);
   UI.lastT = now;
   if (!S || UI.screen !== 'play') return;
-  if (S.alive && !S.queue.length && UI.speed > 0 && $('#sheet').hidden) {
+  if (S.alive && !S.queue.length && UI.speed > 0 && $('#sheet').hidden && !UI.adminOpen) {
     UI.acc += dt * UI.speed;
     let spm = E.secPerMonth(S);
     let guard = 0;
@@ -18830,9 +21755,12 @@ UI.onDeath = () => {
   lives.unshift(UI.lifeRecord(S));
   for (let i = 30; i < lives.length; i++) delete lives[i].g;
   store.set(KEY_LIVES, lives.slice(0, 200));
-  const ach = store.get(KEY_ACH) || {};
-  for (const id of [...(S.achLife || []), ...C.metaAch(lives)]) if (!ach[id]) ach[id] = { t: Date.now(), who: S.name.full };
-  store.set(KEY_ACH, ach);
+  // 운영자 모드로 바꾼 인생은 업적 모음에 더하지 않는다(피드백 55번)
+  if (!S.admin) {
+    const ach = store.get(KEY_ACH) || {};
+    for (const id of [...(S.achLife || []), ...C.metaAch(lives.filter((l) => !l.adm))]) if (!ach[id]) ach[id] = { t: Date.now(), who: S.name.full };
+    store.set(KEY_ACH, ach);
+  }
   try { if (UI.wake) UI.wake.release(); } catch (e) { /* 무시 */ }
   setTimeout(() => UI.showObit(S), 1600);
 };
@@ -18843,6 +21771,7 @@ UI.lifeRecord = (S) => ({
   kids: S.fam.kids.length, y0: S.start.y, y1: S.death.year, gp: S.peak.gp, when: Date.now(),
   score: S.score ? S.score.total : 0, ach: (S.achLife || []).length,
   g: UI.packGraph(S),
+  ...(S.admin ? { adm: 1 } : {}),
 });
 
 UI.showObit = (S) => {
@@ -18922,7 +21851,7 @@ UI.showLives = () => {
   const avg = n ? lives.reduce((a, b) => a + b.ageM, 0) / n / 12 : 0;
   const nations = new Set(lives.map((l) => l.iso)).size;
   $('#l-summary').textContent = n ? `지금까지 ${n}번 태어났습니다. ${nations}개 나라, 평균 ${avg.toFixed(1)}세까지 살았습니다.` : '아직 살아 본 인생이 없습니다.';
-  $('#l-list').innerHTML = lives.map((l, i) => `<li><b>${esc(l.name)}${l.g ? ` <button class="btn ghost" style="padding:2px 8px;font-size:12px" data-lg="${i}">그래프</button>` : ''}</b><span>${UI.flag(l.iso)} ${esc(Wd.name(l.iso))} · ${l.sex === 'm' ? '남' : '여'} · ${l.y0}–${l.y1} · ${l.age}세</span><small>${esc((C.CAUSE[l.cause] || { ko: l.cause }).ko)} · ${C.EDU_NAME[l.edu]}${l.job ? ' · ' + esc(l.job) : ''} · 자녀 ${l.kids}명${l.score ? ` · ${l.score}점` : ''}</small></li>`).join('');
+  $('#l-list').innerHTML = lives.map((l, i) => `<li><b>${esc(l.name)}${l.adm ? '<span class="adm-badge">운영자</span>' : ''}${l.g ? ` <button class="btn ghost" style="padding:2px 8px;font-size:12px" data-lg="${i}">그래프</button>` : ''}</b><span>${UI.flag(l.iso)} ${esc(Wd.name(l.iso))} · ${l.sex === 'm' ? '남' : '여'} · ${l.y0}–${l.y1} · ${l.age}세</span><small>${esc((C.CAUSE[l.cause] || { ko: l.cause }).ko)} · ${C.EDU_NAME[l.edu]}${l.job ? ' · ' + esc(l.job) : ''} · 자녀 ${l.kids}명${l.score ? ` · ${l.score}점` : ''}</small></li>`).join('');
 };
 
 /* ================================================================ 할 일 */
@@ -18930,7 +21859,7 @@ UI.actHTML = (S) => {
   const ap = S.ap || 0, max = C.apCap(S);
   if (max === 0) return '<div class="card"><h3>할 일</h3><p class="src">여섯 살부터 스스로 할 일을 고를 수 있어요. 지금은 부모님 품에서 자라는 중입니다.</p></div>';
   const pips = Array.from({ length: max }, (_, i) => `<i class="${i < ap ? 'on' : ''}"></i>`).join('');
-  let html = `<div class="ap"><div><b>지금 쓸 수 있는 기회 ${ap}번</b><div class="src" style="margin:2px 0 0">${C.apEvery(S) === 3 ? '석 달' : C.apEvery(S) === 6 ? '여섯 달' : '1년'}마다 1번씩 생기고 ${max}번까지 모아 둘 수 있습니다.${ap < max ? ` 다음 기회까지 ${C.apNext(S)}달.` : ' 더 모이지 않으니 써 보세요.'} 시간은 계속 흐릅니다.</div></div><div class="pips">${pips}</div></div>`;
+  let html = `<div class="ap"><div><b>지금 쓸 수 있는 기회 ${ap}번</b><div class="src" style="margin:2px 0 0">${C.apEvery(S) === 3 ? '석 달' : C.apEvery(S) === 6 ? '여섯 달' : '1년'}마다 1번씩 생기고 ${max}번까지 모아 둘 수 있습니다. 일상은 기회 1번, 노력이 드는 일은 2번, 삶의 큰일은 3번을 씁니다.${ap < max ? ` 다음 기회까지 ${C.apNext(S)}달.` : ' 더 모이지 않으니 써 보세요.'} 시간은 계속 흐릅니다.</div></div><div class="pips">${pips}</div></div>`;
   for (const [cat, ko] of C.ACT_CATS) {
     const list = C.ACTIONS.filter((a) => a.cat === cat && E.age(S) >= a.age[0] - 0.01 && E.age(S) <= a.age[1] && (!a.where || a.where(S)));
     if (!list.length) continue;
@@ -18938,10 +21867,12 @@ UI.actHTML = (S) => {
     for (const a of list) {
       const st = C.actionState(S, a);
       const cost = C.actionCost(S, a);
-      const ok = st === true && (ap > 0 || a.free);
+      const w = C.actAP(S, a);
+      const ok = st === true;
       const hint = st === true && a.hint ? a.hint(S) + ' · ' : '';
-      const sub = st !== true ? st : a.free ? '기회를 쓰지 않습니다' : ap <= 0 ? `${C.apNext(S)}달 뒤에 기회가 생깁니다` : hint + cost > 0 ? `비용 ${H.amt(S, cost)}` : '비용 없음';
-      html += `<button class="act" data-act="${a.id}" aria-disabled="${!ok}"><b>${esc(a.koS ? a.koS(S) : a.ko)}</b><small>${esc(sub)}</small></button>`;
+      const sub = st !== true ? st : a.free ? '기회를 쓰지 않습니다' : hint + (cost > 0 ? `비용 ${H.amt(S, cost)}` : '비용 없음');
+      const wTag = w > 1 ? `<span class="apw" aria-label="기회 ${w}번">${'●'.repeat(w)}</span>` : '';
+      html += `<button class="act" data-act="${a.id}" aria-disabled="${!ok}"><b>${esc(a.koS ? a.koS(S) : a.ko)}${wTag}</b><small>${esc(sub)}</small></button>`;
     }
     html += '</div>';
   }
@@ -19250,6 +22181,283 @@ const start = (hot) => {
 };
 if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(start);
 else start((window.claude && window.claude.hot && window.claude.hot.data) || {});
+
+/* 80억분의 1 — 운영자 모드 (피드백 55번)
+ * 들어가는 법: 타이틀 화면 오른쪽 아래 버전 표시를 3초 안에 다섯 번 누르면 암호 창이 뜬다.
+ * 암호가 맞으면 이 탭을 닫을 때까지 열려 있고(sessionStorage), 타이틀의 '운영자 모드' 단추와 게임 메뉴로 다시 연다.
+ * 할 수 있는 일: 원하는 나라·도시/시골·도시 이름·성별·집안 형편으로 태어나기,
+ *               지금 인생의 능력치·명성·권력·명예·현금·재산·빚·할 일 기회·(독립 전) 집안 형편 바꾸기.
+ * 운영자 모드로 정하거나 바꾼 인생에는 S.admin 이 붙는다: 업적 모음에 더하지 않고, 지난 인생 목록에 '운영자' 표시.
+ * 암호는 해시로만 들어 있다(바꾸기: node tools/set_admin_pw.js 새암호). 한 파일 웹게임이라 보안 장치가 아니라 잠금 장치다.
+ */
+'use strict';
+
+const Ad = {};
+(() => {
+  const SALT = 'oneIn8B.operator.';
+  const PW_HASH = '256447bb6a013'; // tools/set_admin_pw.js 가 바꾼다
+  const KEY = 'oneIn8B.admin';
+  const TAPS = 5, TAP_MS = 3000;
+
+  /** cyrb53: 짧은 문자열 해시(53비트) */
+  const cyrb53 = (str, seed = 0) => {
+    let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+    for (let i = 0, ch; i < str.length; i++) {
+      ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+    h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+    h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+  };
+  Ad.hash = (pw) => cyrb53(SALT + String(pw).normalize('NFC')).toString(16);
+
+  if (typeof document === 'undefined' || typeof UI === 'undefined') return; // 화면 없는 검사 도구(node)에서는 여기까지
+
+  let unlocked = false;
+  Ad.on = () => {
+    if (unlocked) return true;
+    try { return sessionStorage.getItem(KEY) === '1'; } catch (e) { return false; }
+  };
+  const unlock = () => {
+    unlocked = true;
+    try { sessionStorage.setItem(KEY, '1'); } catch (e) { /* 저장 불가: 이 화면에서만 열림 */ }
+  };
+
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const num = (v, d) => { const x = Number(String(v).replace(/[,\s]/g, '')); return Number.isFinite(x) ? x : d; };
+
+  /* ---------------------------------------------------------------- 시트 열고 닫기 */
+  const show = (title, html) => {
+    $('#adm-title').textContent = title;
+    $('#adm-body').innerHTML = html;
+    $('#adm').hidden = false;
+    UI.adminOpen = true;
+  };
+  Ad.close = () => {
+    $('#adm').hidden = true;
+    UI.adminOpen = false;
+    UI.lastT = performance.now();
+  };
+
+  /* ---------------------------------------------------------------- 들어가기: 다섯 번 누르기 + 암호 */
+  let taps = [], fails = 0, lockUntil = 0;
+  const onVerTap = () => {
+    const now = Date.now();
+    taps = taps.filter((t) => now - t < TAP_MS);
+    taps.push(now);
+    if (taps.length < TAPS) return;
+    taps = [];
+    if (Ad.on()) Ad.open();
+    else askPw();
+  };
+  const askPw = () => {
+    show('운영자 모드', `<form class="adm-form" id="adm-pw-form" autocomplete="off">
+      <label>암호<input type="password" id="adm-pw" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go"></label>
+      <p class="adm-err" id="adm-pw-err" role="alert"></p>
+      <button class="btn primary" type="submit">들어가기</button>
+      <button class="btn ghost" type="button" data-adm="close">닫기</button>
+    </form>`);
+    setTimeout(() => { const i = $('#adm-pw'); if (i) i.focus(); }, 50);
+  };
+  const tryPw = () => {
+    const err = $('#adm-pw-err');
+    if (Date.now() < lockUntil) { err.textContent = `잠시 뒤에 다시 시도해 주세요. (${Math.ceil((lockUntil - Date.now()) / 1000)}초)`; return; }
+    if (Ad.hash($('#adm-pw').value) === PW_HASH) { fails = 0; unlock(); Ad.open(); UI.initTitle(); return; }
+    fails++;
+    $('#adm-pw').value = '';
+    if (fails >= 5) { lockUntil = Date.now() + 30000; fails = 0; err.textContent = '다섯 번 틀려 30초 동안 잠갔습니다.'; }
+    else err.textContent = '암호가 맞지 않습니다.';
+  };
+
+  /* ---------------------------------------------------------------- 운영자 화면 */
+  const countryOptions = (q) => {
+    const tot = Object.values(DATA.c).reduce((s, c) => s + (c.births || 0), 0);
+    const qq = (q || '').trim().toLowerCase();
+    return Object.keys(DATA.c)
+      .map((iso) => [iso, Wd.name(iso), DATA.c[iso].births || 0])
+      .filter(([iso, ko]) => !qq || ko.toLowerCase().includes(qq) || iso.toLowerCase().includes(qq) || (DATA.c[iso].en || '').toLowerCase().includes(qq))
+      .sort((a, b) => a[1].localeCompare(b[1], 'ko'))
+      .map(([iso, ko, b]) => `<option value="${iso}">${esc(ko)} · 출생 ${(b / tot * 100).toFixed(b / tot >= 0.01 ? 1 : 2)}%</option>`)
+      .join('');
+  };
+  const cityOptions = (iso) => `<option value="">무작위</option>` + (iso ? Wd.cities(iso).map((c) => `<option>${esc(c)}</option>`).join('') : '');
+  const pctLabel = (v) => (v >= 50 ? `상위 ${100 - v}%` : `하위 ${v}%`);
+
+  const birthHTML = () => `<p class="adm-sec">새 인생 조건</p>
+    <label>나라 찾기<input type="search" id="adm-q" placeholder="이름이나 ISO 코드(예: 한국, KOR)"></label>
+    <label>태어날 나라<select id="adm-iso"><option value="">무작위(출생아 수 비례)</option>${countryOptions('')}</select></label>
+    <div class="adm-row">
+      <label>도시·시골<select id="adm-urban"><option value="">무작위</option><option value="1">도시</option><option value="0">시골</option></select></label>
+      <label>도시 이름<select id="adm-city" disabled>${cityOptions('')}</select></label>
+    </div>
+    <div class="adm-row">
+      <label>성별<select id="adm-sex"><option value="">무작위</option><option value="m">남</option><option value="f">여</option></select></label>
+      <label>집안 형편 <span id="adm-famv">무작위</span><input type="range" id="adm-fam" min="0" max="99" step="1" value="0"></label>
+    </div>
+    <p class="adm-note">집안 형편은 0이면 무작위, 1~99는 그 나라 안에서의 순위입니다.</p>
+    <button class="btn primary" type="button" data-adm="born">이 조건으로 태어나기</button>`;
+
+  const STATS = [['health', '건강'], ['smarts', '지식'], ['happy', '행복'], ['social', '관계'], ['charm', '매력'], ['luck', '운'], ['skill', '경력']];
+  const lifeHTML = (S) => {
+    const iso = E.iso(S), ppp = Wd.c(iso).ppp || 1, unit = Wd.currencyUnit(iso);
+    const nw = typeof Ec !== 'undefined' && Ec.netWorth ? Ec.netWorth(S) : S.money;
+    const field = (id, label, v, min = 0, max = 100) => `<label>${label}<input type="number" inputmode="numeric" id="adm-${id}" min="${min}" max="${max}" value="${Math.round(v)}"></label>`;
+    const types = typeof Ec !== 'undefined' && Ec.TYPES ? Object.entries(Ec.TYPES).map(([k, t]) => `<option value="${k}">${esc(t.ko)}</option>`).join('') : '';
+    return `<p class="adm-sec">지금 인생 · ${esc(S.name.given)}, ${esc(Wd.name(iso))}, ${Math.floor(S.ageM / 12)}세</p>
+    <div class="adm-row3">${STATS.map(([k, ko]) => field('st-' + k, ko, k === 'charm' ? H.charm(S) : k === 'luck' ? H.luck(S) : S.st[k] || 0)).join('')}
+      ${field('fame', '명성', S.fame || 0)}${field('power', '권력', S.power || 0)}${field('rep', '명예', St && St.rep ? St.rep(S) : 50)}</div>
+    <p class="adm-note">명성·권력은 하는 일에 따라 다시 서서히 움직입니다.</p>
+    <label>현금(${esc(unit)}) · 지금 ${esc(Wd.money(iso, S.money))}, 순자산 ${esc(Wd.money(iso, nw))}<input type="number" inputmode="numeric" id="adm-money" value="${Math.round(S.money * ppp)}"></label>
+    ${types ? `<div class="adm-row"><label>재산 더하기<select id="adm-atype">${types}</select></label><label>금액(${esc(unit)})<input type="number" inputmode="numeric" id="adm-aamt" min="0" value="0"></label></div>` : ''}
+    <div class="adm-row">
+      <label>할 일 기회(최대 ${C.apCap(S)})<input type="number" inputmode="numeric" id="adm-ap" min="0" max="${C.apCap(S)}" value="${S.ap || 0}"></label>
+      <label>빚(${(S.loans || []).length}건)<select id="adm-loans"><option value="">그대로</option><option value="clear">모두 없애기</option></select></label>
+    </div>
+    ${!S.indep ? `<label>집안 형편 <span id="adm-pfamv">${pctLabel(Math.round((S.fam.famP || 0.5) * 100))}</span><input type="range" id="adm-pfam" min="1" max="99" step="1" value="${Math.round((S.fam.famP || 0.5) * 100)}"></label>` : ''}
+    <button class="btn primary" type="button" data-adm="apply">바꾼 값 적용</button>`;
+  };
+
+  Ad.open = () => {
+    if (!Ad.on()) return askPw();
+    const S = UI.S && UI.S.alive && UI.screen === 'play' ? UI.S : null;
+    show('운영자 모드', `<div class="adm-form">
+      ${S ? lifeHTML(S) : ''}
+      ${birthHTML()}
+      <p class="adm-note">운영자 모드로 정하거나 바꾼 인생은 업적 모음에 더해지지 않고, 지난 인생 목록에 '운영자' 표시가 붙습니다.</p>
+      <button class="btn ghost" type="button" data-adm="lock">운영자 모드 잠그기</button>
+      <button class="btn ghost" type="button" data-adm="close">닫기</button>
+    </div>`);
+  };
+
+  const born = () => {
+    const iso = $('#adm-iso').value || undefined;
+    const u = $('#adm-urban').value;
+    const fam = Number($('#adm-fam').value);
+    const opts = { admin: true };
+    if (iso) opts.iso = iso;
+    if (u !== '') opts.urban = u === '1';
+    if (u === '1' && $('#adm-city').value) opts.city = $('#adm-city').value;
+    if ($('#adm-sex').value) opts.sex = $('#adm-sex').value;
+    if (fam > 0) opts.famP = fam / 100;
+    Ad.close();
+    if (UI.S && UI.S.alive && UI.screen === 'play') UI.save();
+    UI.newLife(opts);
+  };
+
+  const apply = () => {
+    const S = UI.S;
+    if (!S || !S.alive) return Ad.close();
+    const iso = E.iso(S), ppp = Wd.c(iso).ppp || 1;
+    const clamp = (v) => U.clamp(v, 0, 100);
+    for (const [k] of STATS) {
+      const el = $('#adm-st-' + k);
+      if (el) S.st[k] = clamp(num(el.value, S.st[k] || 0));
+    }
+    S.fame = clamp(num($('#adm-fame').value, S.fame || 0));
+    S.power = clamp(num($('#adm-power').value, S.power || 0));
+    if (S.rap) S.rap.rep = clamp(num($('#adm-rep').value, S.rap.rep));
+    S.money = num($('#adm-money').value, S.money * ppp) / ppp;
+    const at = $('#adm-atype'), amt = $('#adm-aamt') ? num($('#adm-aamt').value, 0) / ppp : 0;
+    if (at && amt > 0) {
+      const home = at.value === 'house' && !S.assets.some((a) => a.home);
+      S.assets.push({ id: Ec.uid(S), type: at.value, ...(home ? { home: true } : {}), value: amt, cost: amt, iso, m0: S.ageM });
+      if (home) S.flags.house = true;
+    }
+    S.ap = U.clamp(Math.round(num($('#adm-ap').value, S.ap || 0)), 0, C.apCap(S));
+    if ($('#adm-loans').value === 'clear') S.loans = [];
+    const pf = $('#adm-pfam');
+    if (pf && !S.indep) {
+      const p = Number(pf.value) / 100;
+      S.fam.famP = p;
+      S.fam.cons = Wd.consumptionAt(iso, p);
+      S.hhCons = S.fam.cons;
+      if (typeof Ec !== 'undefined' && Ec.initParents) Ec.initParents(S);
+      if (typeof Ev !== 'undefined' && Ev.update) Ev.update(S, true);
+    }
+    S.admin = true;
+    Ad.close();
+    UI.render(true);
+    UI.toast('바꾼 값을 적용했습니다.');
+  };
+
+  /* ---------------------------------------------------------------- 연결 */
+  document.addEventListener('click', (ev) => {
+    if (ev.target.closest('#t-ver')) return onVerTap();
+    const b = ev.target.closest('[data-adm]');
+    if (!b) { if (ev.target.id === 'adm') Ad.close(); return; }
+    const k = b.dataset.adm;
+    if (k === 'close') Ad.close();
+    else if (k === 'born') born();
+    else if (k === 'apply') apply();
+    else if (k === 'open') Ad.open();
+    else if (k === 'lock') { unlocked = false; try { sessionStorage.removeItem(KEY); } catch (e) { /* 무시 */ } Ad.close(); UI.initTitle(); UI.toast('운영자 모드를 잠갔습니다.'); }
+  });
+  document.addEventListener('submit', (ev) => {
+    if (ev.target.id !== 'adm-pw-form') return;
+    ev.preventDefault();
+    tryPw();
+  });
+  document.addEventListener('input', (ev) => {
+    const t = ev.target;
+    if (t.id === 'adm-q') {
+      const sel = $('#adm-iso'), cur = sel.value;
+      sel.innerHTML = `<option value="">무작위(출생아 수 비례)</option>${countryOptions(t.value)}`;
+      if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+      else if (t.value.trim() && sel.options.length > 1) sel.selectedIndex = 1;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    } else if (t.id === 'adm-fam') $('#adm-famv').textContent = Number(t.value) > 0 ? pctLabel(Number(t.value)) : '무작위';
+    else if (t.id === 'adm-pfam') $('#adm-pfamv').textContent = pctLabel(Number(t.value));
+  });
+  document.addEventListener('change', (ev) => {
+    const t = ev.target;
+    if (t.id === 'adm-iso' || t.id === 'adm-urban') {
+      const iso = $('#adm-iso').value, urb = $('#adm-urban').value === '1';
+      const city = $('#adm-city');
+      city.innerHTML = cityOptions(urb ? iso : '');
+      city.disabled = !(urb && iso);
+    }
+  });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && UI.adminOpen) Ad.close(); });
+
+  // 타이틀: 열려 있으면 '운영자 모드' 단추
+  const initTitle0 = UI.initTitle;
+  UI.initTitle = () => {
+    initTitle0();
+    let b = $('#btn-adm');
+    if (!b) {
+      b = document.createElement('button');
+      b.id = 'btn-adm';
+      b.className = 'btn ghost';
+      b.dataset.adm = 'open';
+      b.textContent = '운영자 모드';
+      const box = $('#scr-title .btns');
+      if (box) box.appendChild(b);
+    }
+    b.hidden = !Ad.on();
+  };
+  // 게임 메뉴: 열려 있으면 '운영자 모드' 줄
+  const openMenu0 = UI.openMenu;
+  UI.openMenu = () => {
+    openMenu0();
+    if (!Ad.on()) return;
+    const list = UI._menu.concat([{ label: '운영자 모드', sub: '능력치·지위·돈·재산을 바꾸거나 조건을 정해 새로 태어납니다', run: () => { UI.closeSheet(); Ad.open(); } }]);
+    UI.openSheet($('#d-title').textContent, $('#d-text').textContent, list);
+  };
+  // 이름 옆 '운영자' 표시
+  const render0 = UI.render;
+  UI.render = (full) => {
+    render0(full);
+    const S = UI.S, nm = $('#p-name');
+    if (S && nm && S.admin && !nm.querySelector('.adm-badge')) nm.insertAdjacentHTML('beforeend', '<span class="adm-badge">운영자</span>');
+  };
+  // ui.js 가 이미 첫 화면을 그렸으므로 한 번 더(운영자 단추·버전 표시)
+  UI.initTitle();
+})();
 </script>
 </body>
 </html>
