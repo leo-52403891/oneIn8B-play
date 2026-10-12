@@ -1509,7 +1509,10 @@ const PARTNER_TRAITS = ['다정한', '성실한', '유머가 많은', '무뚝뚝
 C.makePartner = (S, arranged) => {
   const iso = E.iso(S), psex = S.sex === 'm' ? 'f' : 'm';
   const gap = Wd.smam(iso, 'm') - Wd.smam(iso, 'f');
-  const age = Math.round(U.clamp(E.age(S) + (S.sex === 'm' ? -gap : gap) + U.normal(0, 3), 15, 90));
+  // 18세 미만 상대는 조혼이 실제로 있는 나라의 중매혼에서, 그 나라 조혼율만큼만(피드백 42번)
+  const cm = (Wd.c(iso).cmarr18 || 0) / 100;
+  const minAge = arranged && psex === 'f' && U.chance(cm) ? 15 : 18;
+  const age = Math.round(U.clamp(E.age(S) + (S.sex === 'm' ? -gap : gap) + U.normal(0, 3), minAge, 90));
   const nm = Wd.makeName(S.flags.migrantM !== undefined && U.chance(0.5) ? S.born.iso : iso, psex);
   const edu = U.clamp(S.edu.level + U.randInt(-1, 1), 0, 5);
   const c = Wd.c(iso);
@@ -2441,7 +2444,9 @@ H.bestFriend = (S) => (S.friends || []).filter((f) => f.alive && !f.lost).sort((
 /** 연애 시작 */
 H.startDating = (S, partner) => {
   const p = partner || C.makePartner(S, false);
-  S.romance = { ...p, since: S.ageM, love: 50 };
+  // 미성년의 연애 상대는 또래(성인이 아니다)
+  if (E.age(S) < 18) { p.age = Math.round(U.clamp(E.age(S) + U.normal(0, 1), 13, Math.max(13, Math.floor(E.age(S)) + 1))); p.pay = 0; }
+  S.romance = { ...p, since: S.ageM, love: 50, ageFix: true };
   return S.romance;
 };
 H.breakUp = (S) => { S.romance = null; };
@@ -2675,7 +2680,8 @@ E.ensure = (S) => {
   S.stats.trips = S.stats.trips || 0;
   S.stats.jail = S.stats.jail || 0;
   S.stream = S.stream || null;
-  if (S.work.job && S.work.job.lv && !H.ladder(S)) delete S.work.job.lv; // 예전 저장: 사장님의 직급 지우기
+  if (S.work.job && S.work.job.lv && !H.ladder(S)) delete S.work.job.lv;
+  if (S.romance && !S.romance.ageFix) { S.romance.age = (S.romance.age || E.ageY(S)) + Math.floor((S.ageM - (S.romance.since || S.ageM)) / 12); S.romance.ageFix = true; } // 예전 저장: 사장님의 직급 지우기
   if (typeof Ec !== 'undefined') Ec.ensure(S);
   E.fire('ensure', S);
   return S;
@@ -2738,6 +2744,8 @@ C.hooksMonth = (S) => {
 C.hooksYear = (S, ay) => {
   if (ay === 6) { S.ap = Math.max(S.ap || 0, 1); S.apM = 0; E.log(S, C.t(S, '{N은} 여섯 살이 되었습니다. 이제 아래 "할 일"에서 하고 싶은 일을 직접 고를 수 있습니다.'), 'act'); }
   const iso = E.iso(S);
+  // 연인도 해마다 나이를 먹는다(예전에는 사귀기 시작한 나이에 멈춰 있었다, 피드백 42번)
+  if (S.romance) S.romance.age = (S.romance.age || ay) + 1;
   // 친구: people.js 가 C.friendYear 를 두면 그쪽이 맡는다
   if (C.friendYear) C.friendYear(S, ay);
   else for (const f of S.friends) {
@@ -16961,7 +16969,7 @@ const Pr = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.2';
+E.VERSION = '0.3.3';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
@@ -17962,13 +17970,15 @@ E.sysMarriageYear = (S, ay) => {
       return;
     }
   }
-  if (S.romance && S.romance.love >= 55 && S.ageM - S.romance.since >= 12 && ay >= 16 && !S.queue.length && U.chance(0.5)) {
+  // 결혼 이야기는 성인부터(조혼이 흔한 나라는 16세부터), 연인도 성인이어야 한다(피드백 42번)
+  const minWed = (c.cmarr18 || 0) >= 10 ? 16 : 18;
+  if (S.romance && S.romance.love >= 55 && S.ageM - S.romance.since >= 12 && ay >= minWed && (S.romance.age || 0) >= minWed && !S.queue.length && U.chance(0.5)) {
     E.ask(S, 'proposal', { arranged: false, partner: { ...S.romance }, dating: true });
     return;
   }
   if (fam.nextProposal === null) {
     const sm = Wd.smam(iso, S.sex);
-    fam.nextProposal = Math.max(17, U.normal(sm, 3.2));
+    fam.nextProposal = Math.max(minWed, U.normal(sm, 3.2));
   }
   if (ay > 45 && !U.chance(0.12)) return;
   if (ay >= fam.nextProposal && !S.queue.length) {
