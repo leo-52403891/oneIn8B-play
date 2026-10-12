@@ -11923,7 +11923,19 @@ const Cr = {};
   };
   /** 이름이 알려진 사람의 채널에 저절로 모이는 구독자(명성·권력, 언어권 상한 안): 피드백 46번
    *  예) 지방의원(명성 10·권력 20) 약 400명, 단체장 약 5천, 국회의원 약 7만, 명성 80 연예인 약 90만 */
-  Cr.fameFans = (S, st) => Math.min(st.pool * Cr.CAP_FRAC, Math.pow(10, 1.5 + ((S.fame || 0) + 0.5 * (S.power || 0)) / 18));
+  /** 공직에서 오는 관심(피드백 72번): 지역 주민·지지자가 정치인의 채널과 책을 찾는다. 지금 자리, 물러난 뒤에는 지낸 가장 높은 자리의 40%.
+   *  인터넷 쓰는 인구 4천만 명 나라 기준 지방의원 2천 · 단체장 1.5만 · 국회의원 7만 · 국가 지도자 80만(나라 크기의 제곱근에 비례) */
+  Cr.OFFICE_FANS = [0, 2000, 15000, 70000, 800000];
+  Cr.officeTier = (S) => {
+    const cur = Cr.curTier(S);
+    if (cur) return { t: cur, f: 1 };
+    const past = ((S.cr && S.cr.offices) || []).filter((o) => o.iso === E.iso(S)).reduce((m, o) => Math.max(m, o.t), 0)
+      || (S.honors || []).filter((h) => h.k === 'office').reduce((m, h) => Math.max(m, h.t || Cr.tierOfTitle(h.ko)), 0);
+    return { t: past, f: past ? 0.4 : 0 };
+  };
+  Cr.officeScale = (S) => { const c = Wd.c(E.iso(S)); return U.clamp(Math.sqrt(((c.pop || 1e7) * (c.internet || 50) / 100) / 4e7), 0.15, 3); };
+  Cr.officeFans = (S) => { const o = Cr.officeTier(S); return o.t ? Cr.OFFICE_FANS[o.t] * o.f * Cr.officeScale(S) : 0; };
+  Cr.fameFans = (S, st) => Math.min(st.pool * Cr.CAP_FRAC, Math.max(Math.pow(10, 1.5 + ((S.fame || 0) + 0.5 * (S.power || 0)) / 18), Cr.officeFans(S)));
   Cr.streamMonth = (S) => {
     const st = S.stream;
     if (!st) return;
@@ -12018,6 +12030,11 @@ const Cr = {};
       why.push('첫 원고');
     }
     why.push(`원고 완성도 ${ctx.q}`);
+    const ot = Cr.officeTier(S);
+    if (ot.t) {
+      const po = [0, 0.55, 0.7, 0.85, 0.97][ot.t] * (ot.f < 1 ? 0.8 : 1);
+      if (po > p) { p = po; why.push(ot.f < 1 ? '정치인 출신' : '현직 정치인'); }
+    }
     if (inf >= 35) {
       const pi = U.clamp(0.25 + (inf - 35) / 50, 0, 0.92);
       if (pi > p) { p = pi; why.push('알려진 이름'); }
@@ -12036,10 +12053,24 @@ const Cr = {};
     // 이미 따르는 사람이 많으면 처음부터 많이 알려진다(품질이 낮으면 덜 이어진다)
     const reach = (S.stream ? S.stream.fans : 0) * 0.01 + Cr.fameReach(S) * [0.0001, 0.0002, 0.0004, 0.001][Wd.dev(E.iso(S))];
     total += reach * Math.exp(U.normal(0, 0.5)) * U.clamp(Math.exp((q - 55) / 25), 0.3, 2);
+    // 정치인의 책은 지지자·지역 주민이 사 준다(피드백 72번)
+    const ot = Cr.officeTier(S);
+    if (ot.t) total += [0, 1500, 6000, 20000, 120000][ot.t] * ot.f * Cr.officeScale(S) * Math.exp(U.normal(0, 0.35));
     total = Math.round(Math.max(50, Math.min(total, Cr.pool(lang, S).n * 0.02)));
     const per = Wd.workerMedian(E.iso(S)) * 0.000045; // 한 권당 인세(정가의 약 10%)
     const b = { t: Cr.bookTitle(S), y: E.year(S), m: S.ageM, iso: E.iso(S), lang, total, sold: 0, per, q: Math.round(q), bestAt: Math.round(10000 * U.clamp(sm, 0.15, 3)), best: false };
     if (how === 'ghost') b.ghost = true;
+    if (ot.t && how !== 'memoir') {
+      b.t = U.pick(['다시, 우리 동네', '현장에 답이 있다', '사람이 먼저입니다', '내일을 여는 약속', '골목에서 배운 정치', '함께 걷는 길']) + ` — ${S.name.given}의 이야기`;
+      b.pol = true;
+      // 출판기념회: 지지자가 모여 책을 사고 후원금을 낸다(현직일 때)
+      if (ot.f === 1) {
+        const fund = H.pay(S, [0, 2, 5, 10, 20][ot.t] * Math.exp(U.normal(0, 0.3)));
+        Ec.earn(S, 'gig', fund);
+        H.fameUp(S, 1);
+        b.launch = fund;
+      }
+    }
     // 첫해에 크게 팔릴 책은 몇 달 안에 베스트셀러가 된다
     if (total * 0.3 >= b.bestAt * 0.45) b.bestM = S.ageM + U.randInt(2, 6);
     S.books.push(b);
@@ -12061,6 +12092,8 @@ const Cr = {};
     if (U.chance(p)) {
       const b = Cr.publish(S, ctx.q, ctx.off ? 'offer' : 'submit');
       const exp = U.fmtKo(Math.round(b.total * 0.3 / 100) * 100 || 100);
+      const launch = b.launch ? ` 출판기념회에 지지자들이 몰려 책에 사인을 해 주었고, 후원금 ${fj(S, b.launch, '이')} 모였습니다.` : '';
+      if (b.pol) return C.t(S, `${Cr.curTier(S) ? '현직 정치인' : '정치인 출신'}의 책이라 출판사가 선뜻 계약했습니다. ${bk(b.t, '이')} 나왔고, 계약금 ${fj(S, b.adv, '을')} 받았습니다. 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.${launch}`);
       if (ctx.off || (first && inf >= 45)) return C.t(S, `출판사 여러 곳이 서로 내겠다고 나섰습니다. ${bk(b.t, '이')} 나왔고, 계약금 ${fj(S, b.adv, '을')} 받았습니다. 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.`);
       if (first) return C.t(S, `출판사에서 책을 내자는 연락이 왔습니다! 첫 책 ${bk(b.t, '이')} 서점에 나왔습니다. {N은} 작가가 되었습니다. (계약금 ${fmt(S, b.adv)})`);
       return C.t(S, `${S.books.length}번째 책 ${bk(b.t, '이')} 나왔습니다. 계약금 ${fj(S, b.adv, '을')} 받았고, 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.`);
@@ -22864,7 +22897,7 @@ const Cm = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.20';
+E.VERSION = '0.3.21';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
