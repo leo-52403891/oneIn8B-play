@@ -2672,7 +2672,7 @@ E.ensure = (S) => {
   S.talentSeen = S.talentSeen || {};
   S.boost = S.boost || { health: 0, happy: 0 };
   if (S.boost.charm === undefined) S.boost.charm = 0;
-  S.ap = S.ap === undefined ? 2 : S.ap;
+  S.ap = S.ap === undefined ? 0 : S.ap; // 기회는 6세부터 생긴다(피드백 48번)
   S.actCd = S.actCd || {};
   S.prison = S.prison || null;
   S.visited = S.visited || [];
@@ -16982,7 +16982,7 @@ const Pr = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.7';
+E.VERSION = '0.3.8';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
@@ -18436,7 +18436,7 @@ UI.render = (full) => {
   if (S.stream && S.stream.fans >= 100) tl.push(`구독자 ${U.fmtKo(S.stream.fans)}`);
   $('#p-talents').textContent = tl.join(' · ');
   const badge = $('#ap-badge');
-  badge.hidden = !(S.ap > 0);
+  badge.hidden = !(S.ap > 0 && C.apCap(S) > 0); // 할 일을 고를 수 없는 나이에는 숫자를 띄우지 않는다
   badge.textContent = S.ap;
   // 능력치
   const st = S.st;
