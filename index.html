@@ -3516,6 +3516,45 @@ C.DEC.invest = {
       if (can !== true && !has) continue;
       out.push({ label: Ec.TYPES[k].ko + (has ? ' (가진 것 있음)' : ''), sub: Ec.TYPES[k].note, run: (S) => { E.ask(S, 'asset', { type: k }); return null; } });
     }
+    if (S.loans.length) out.push({ label: '빚 미리 갚기', sub: `남은 빚 ${Ec.fmt(S, Ec.loansTotal(S))} · 현금과 예금으로 한꺼번에 갚습니다`, run: (S) => { E.ask(S, 'prepay', {}); return null; } });
+    out.push({ label: '그만둔다', typ: true, run: () => null });
+    return out;
+  },
+};
+
+/** 빚 미리 갚기(피드백 60번): 현금+예금으로 대출을 한꺼번에(또는 절반) 갚는다.
+ *  받은 지 3년이 안 된 주택담보대출은 갚는 돈의 1%를 중도상환 수수료로 낸다. 절반을 갚으면 남은 기간은 그대로, 다달이 내는 돈이 줄어든다. */
+Ec.prepayFee = (S, l, amt) => (l.type === 'mortgage' && S.ageM - (l.m0 || 0) < 36 ? amt * 0.01 : 0);
+Ec.prepay = (S, l, frac) => {
+  const iso = E.iso(S);
+  const bal = Ec.conv(l.bal, l.iso, iso), amt = bal * frac, fee = Ec.prepayFee(S, l, amt);
+  Ec.withdrawBank(S, amt + fee);
+  S.money -= amt + fee;
+  Ec.book(S, 'loanPay', -(amt + fee));
+  if (frac >= 0.999) {
+    S.loans = S.loans.filter((x) => x !== l);
+    E.stat(S, 'happy', l.type === 'mortgage' ? 8 : 3);
+    if (l.type === 'mortgage') H.ach(S, 'mortgage_free');
+    return C.t(S, `${U.j(l.ko, '을')} ${Ec.fmt(S, amt)} 한꺼번에 갚았습니다.${fee > 0 ? ` 중도상환 수수료 ${Ec.fmt(S, fee)}도 냈습니다.` : ''} ${l.type === 'mortgage' ? '이제 집이 온전히 내 것입니다.' : '홀가분합니다.'}`);
+  }
+  l.bal *= 1 - frac;
+  l.pay = Ec.annuity(l.bal, l.rate, Math.max(1, l.left) / 12);
+  E.stat(S, 'happy', 2);
+  return C.t(S, `${l.ko} 가운데 ${Ec.fmtJ(S, amt, '을')} 미리 갚았습니다.${fee > 0 ? ` 중도상환 수수료 ${Ec.fmt(S, fee)}도 냈습니다.` : ''} 이제 매달 ${Ec.fmt(S, Ec.conv(l.pay, l.iso, iso))}씩 갚습니다.`);
+};
+C.DEC.prepay = {
+  title: () => '빚 미리 갚기',
+  text: (S) => C.t(S, `쓸 수 있는 돈(현금+예금) ${Ec.fmt(S, Math.max(0, Ec.liquid(S)))}. 받은 지 3년이 안 된 주택담보대출은 갚는 돈의 1%를 중도상환 수수료로 냅니다. 갚을 빚을 고르세요.`),
+  choices: (S) => {
+    const iso = E.iso(S), cash = Ec.liquid(S), out = [];
+    for (const l of S.loans) {
+      const bal = Ec.conv(l.bal, l.iso, iso);
+      for (const [frac, how] of [[1, '다 갚기'], [0.5, '절반 갚기']]) {
+        const need = bal * frac + Ec.prepayFee(S, l, bal * frac);
+        const ok = cash >= need;
+        out.push({ label: `${l.ko} ${how}`, sub: `${Ec.fmt(S, need)} 필요${Ec.prepayFee(S, l, 1) > 0 ? '(수수료 포함)' : ''} · 지금 매달 ${Ec.fmt(S, Ec.conv(l.pay, l.iso, iso))}, ${Math.ceil(l.left / 12)}년 남음${ok ? '' : ' · 돈이 모자랍니다'}`, disabled: !ok, run: (S2) => Ec.prepay(S2, l, frac) });
+      }
+    }
     out.push({ label: '그만둔다', typ: true, run: () => null });
     return out;
   },
@@ -10677,21 +10716,21 @@ const Lg = {};
     return out.slice(0, 6);
   };
 
-  /** 한 번 공부하기: 결과 문장을 돌려준다 */
-  Lg.study = (S, code) => {
+  /** 한 번 공부하기: 결과 문장을 돌려준다. opt = { k: 배우는 양 배율, how: 공부한 방법 문장, smarts: 지식 증가 } */
+  Lg.study = (S, code, opt = {}) => {
     const before = Lg.level(S, code);
     const a = ageOf(S);
     const ageF = a < 13 ? 1.2 : a < 25 ? 1.1 : a < 45 ? 1 : a < 65 ? 0.85 : 0.7;
     const here = (Lg.country(E.iso(S)).w[code] || 0) >= 0.5 ? 1.4 : 1;
-    const g = 0.7 * (apt(S) / Math.pow(Lg.hard(code), 1.2)) * ageF * here * (1 + Lg.relBonus(S, code));
+    const g = 0.7 * (apt(S) / Math.pow(Lg.hard(code), 1.2)) * ageF * here * (1 + Lg.relBonus(S, code)) * (opt.k || 1);
     grow(S, code, g);
     const after = Lg.level(S, code);
-    E.stat(S, 'smarts', 2);
+    E.stat(S, 'smarts', opt.smarts !== undefined ? opt.smarts : 2);
     S.flags.langs = (S.flags.langs || 0) + 1;
     if (Lg.count(S, 2) >= 4) H.ach(S, 'polyglot');
     const nm = Lg.name(code);
     const b0 = Math.floor(before + 1e-6), b1 = Math.floor(after + 1e-6);
-    const how = here > 1 ? U.pick(['이웃과 일부러 그 말로 이야기했습니다.', '시장에서 그 말로 흥정을 해 보았습니다.', '동네 어학 강좌에 다녔습니다.'])
+    const how = opt.how ? opt.how : here > 1 ? U.pick(['이웃과 일부러 그 말로 이야기했습니다.', '시장에서 그 말로 흥정을 해 보았습니다.', '동네 어학 강좌에 다녔습니다.'])
       : U.pick(['저녁마다 단어장을 붙들었습니다.', '그 말로 된 영화와 노래를 찾아 들었습니다.', '온라인으로 원어민과 대화 연습을 했습니다.', '학원에 다니며 문법을 익혔습니다.']);
     const rel = Lg.relBonus(S, code) >= 0.3 ? ' 이미 아는 말과 닮아 배우기가 수월했습니다.' : '';
     const left = Math.max(1, Math.round((1 - (after - b1)) * 100));
@@ -10742,6 +10781,29 @@ const Lg = {};
       else { E.stat(S, 'smarts', 2); return '아는 말들을 다시 복습했습니다.'; }
       return null;
     };
+  }
+
+  /* 외국에 살 때: 그 나라 말은 날마다 쓰므로 석 달마다 익힐 수 있다(피드백 59번).
+   * '외국어 배우기'(1년짜리 강좌, 기회 2번)와 따로, 기회 1번으로 한 철 동안 어학 강좌·이웃·일터에서 부딪치며 익힌다.
+   * 한 번에 느는 양은 1년 강좌의 1/4 — 석 달마다 빠짐없이 익히면 한국어 모국어인 어른이 독일어 생활 단계까지 약 1년 반, 능통까지 약 3년(저절로 느는 몫 포함). */
+  const hereCode = (S) => (S.langs && S.langHere && !Lg.isNative(S, S.langHere) && Lg.level(S, S.langHere) < 3.9 ? S.langHere : null);
+  const LOCAL_HOW = (S) => {
+    const list = ['이민자를 위한 어학 강좌에 다녔습니다.', '이웃과 일부러 그 말로 이야기했습니다.', '시장에서 그 말로 흥정을 해 보았습니다.', '그 나라 뉴스를 자막 없이 들어 보았습니다.', '동네 언어 교환 모임에 나갔습니다.'];
+    if (S.work.job) list.push('일하는 곳에서도 그 말로만 이야기하려고 애썼습니다.');
+    if (S.edu.stage !== null) list.push('친구들과 그 말로만 이야기했습니다.');
+    return U.pick(list);
+  };
+  if (!C.ACTION.locallang) {
+    const la = {
+      id: 'locallang', ko: '현지 말 익히기', koS: (S) => `${Lg.name(hereCode(S) || S.langHere || 'en')} 익히기`, cat: 'learn', age: [6, 120], cd: 3, ap: 1, cost: 0.05,
+      where: (S) => !!hereCode(S),
+      need: (S) => (hereCode(S) ? true : '이 나라 말은 이미 잘합니다'),
+      hint: (S) => progTxt(S, hereCode(S)),
+      run: (S) => { const code = hereCode(S); if (!code) return '이 나라 말은 이미 잘합니다.'; return Lg.study(S, code, { k: 0.25, how: LOCAL_HOW(S), smarts: 1 }); },
+    };
+    const i = C.ACTIONS.findIndex((x) => x.id === 'language');
+    C.ACTIONS.splice(i >= 0 ? i + 1 : C.ACTIONS.length, 0, la);
+    C.ACTION.locallang = la;
   }
 
   /* ================================================================ 다른 사건과 잇기 */
@@ -19913,7 +19975,7 @@ const Pr = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.12';
+E.VERSION = '0.3.13';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
