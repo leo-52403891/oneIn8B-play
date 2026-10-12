@@ -2221,7 +2221,10 @@ C.EVENTS = [
   ev({ id: 'vacc', minAge: 0.6, maxAge: 1.5, rate: 3, once: true, when: (S) => S.flags.vaccinated, run: minorRun(['홍역 예방접종을 맞았습니다. ({country} 접종률 {measles}%)'], { health: 2 }) }),
   ev({ id: 'novacc', minAge: 0.6, maxAge: 2, rate: 3, once: true, when: (S) => !S.flags.vaccinated, run: minorRun(['보건소가 멀어 예방접종을 받지 못했습니다. ({country} 홍역 접종률 {measles}%)'], { health: -3 }) }),
   ev({ id: 'fever', minAge: 0.3, maxAge: 6, rate: 0.35, cd: 1, run: minorRun((S) => U.pick([`열이 펄펄 끓어 ${U.j(C.elders(S), '이')} 밤을 새우셨습니다.`, '기침이 심해 며칠을 앓았습니다.']), { health: -4 }) }),
-  ev({ id: 'diarrhea', minAge: 0.3, maxAge: 8, rate: (S) => U.clamp(cc(S).washmort / 40, 0.02, 1.2), cd: 1, run: minorRun(['깨끗하지 않은 물을 마시고 심한 설사를 앓았습니다. ({country}에서 안전한 식수를 쓰는 사람은 {water}%)'], { health: -6 }) }),
+  ev({ id: 'diarrhea', minAge: 0.3, maxAge: 8, rate: (S) => U.clamp(cc(S).washmort / 40, 0.02, 1.2), cd: 1, run: minorRun((S) => (S.env && !S.env.noSafe
+    // 안전한 물을 쓰는 집: 흔한 장염·배탈(피드백 49번)
+    ? U.pick(['장염에 걸려 며칠 동안 배탈과 설사로 고생했습니다.', '어린이집에서 옮아 온 장염으로 며칠 앓았습니다.', '상한 음식을 먹고 배탈이 났습니다.'])
+    : '깨끗하지 않은 물을 마시고 심한 설사를 앓았습니다. ({country}에서 안전한 식수를 쓰는 사람은 {water}%)'), (S) => ({ health: S.env && !S.env.noSafe ? -3 : -6 })) }),
   ev({ id: 'malariaEp', minAge: 0.5, rate: (S) => U.clamp(cc(S).malaria / 1000, 0, 0.6) * (E.age(S) < 10 ? 1.3 : 0.6), cd: 1, run: minorRun(['말라리아에 걸려 며칠 동안 열과 오한에 시달렸습니다.', '모기장이 찢어진 밤, 말라리아에 걸렸습니다.'], (S) => ({ health: E.age(S) < 10 ? -10 : -6, money: -Wd.workerMedian(E.iso(S)) * 0.02 })) }),
   ev({ id: 'grandma', minAge: 2, maxAge: 9, rate: 0.25, cd: 3, run: minorRun(['할머니가 옛날이야기를 들려주셨습니다.', '할아버지 무릎에 앉아 노래를 배웠습니다.'], { happy: 2, social: 1 }) }),
   ev({ id: 'toy', minAge: 1.5, maxAge: 7, rate: 0.3, cd: 3, run: minorRun((S) => (S.fam.famP < 0.35 ? '깡통과 나무 막대로 만든 장난감을 가장 좋아합니다.' : S.fam.famP < 0.75 ? '낡은 공 하나로 하루 종일 놀았습니다.' : '새 장난감 블록으로 성을 쌓았습니다.'), { happy: 2 }) }),
@@ -16982,7 +16985,7 @@ const Pr = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.8';
+E.VERSION = '0.3.9';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
