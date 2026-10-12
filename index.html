@@ -11445,8 +11445,10 @@ const Mg = {};
     const ppp = Wd.priceLevel(cur) / Wd.priceLevel(dest);
     const out = [r.why + '.'];
     if (r.route !== 'return' && r.ent && r.ent.code !== 'o' && !/여권으로는/.test(r.why) && r.route !== 'free') out.push(`참고로 ${r.ent.why}.`);
-    if (S.work.job && typeof Cr !== 'undefined' && Cr.mobile && Cr.mobile(S)) out.push(`지금 하는 일(${S.work.job.title})은 어디서든 할 수 있어 그곳에서도 그대로 이어 갑니다.`);
-    else if (S.work.job) out.push(`지금 하는 일(${S.work.job.title})은 그만두고 그곳에서 새로 구해야 합니다.`);
+    const hasCr = typeof Cr !== 'undefined' && Cr.mobile;
+    if (S.work.job && hasCr && Cr.mobile(S)) out.push(`지금 하는 일(${S.work.job.title})은 어디서든 할 수 있어 그곳에서도 그대로 이어 갑니다.`);
+    else if (S.work.job && !(S.work.job.id === 'athlete' && hasCr && Cr.hasLeague && Cr.hasLeague(dest))) out.push(`지금 하는 일(${S.work.job.title})은 그만두고 그곳에서 새로 구해야 합니다.`);
+    if (hasCr && Cr.moveJobNote) { const nt = Cr.moveJobNote(S, dest); if (nt) out.push(nt); }
     else if (!S.work.retired && E.age(S) < 60) out.push('그곳에서 일자리를 새로 구해야 합니다.');
     const pen = S.work.pension || 0;
     if (pen > 0) out.push(`받는 연금(연 ${Ec.fmt(S, pen)})은 그대로 받습니다. 그곳 물가로는 연 ${Wd.money(dest, Ec.conv(pen, cur, dest))}에 해당해 쓸 수 있는 돈이 ${ratioTxt(ppp)}가 됩니다.`);
@@ -11848,7 +11850,7 @@ const Cr = {};
       const lj = (S, why) => {
         const j = S.work && S.work.job;
         if (j && why === 'layoff' && (j.id === 'streamer' || j.id === 'writer')) return; // 수입이 줄면 career.js 가 스스로 접는다
-        if (j && S.cr && S.cr.moving && MOBILE.includes(j.id)) return;
+        if (j && S.cr && S.cr.moving && (MOBILE.includes(j.id) || (j.id === 'athlete' && Cr.hasLeague(S.cr.movingTo)))) return;
         return lj0(S, why);
       };
       lj._cr = true;
@@ -11857,8 +11859,8 @@ const Cr = {};
     if (E.moveCountry && !E.moveCountry._cr) {
       const mc0 = E.moveCountry;
       const mc = (S, dest, how) => {
-        if (S.cr) S.cr.moving = true;
-        try { return mc0(S, dest, how); } finally { if (S.cr) delete S.cr.moving; }
+        if (S.cr) { S.cr.moving = true; S.cr.movingTo = dest; }
+        try { return mc0(S, dest, how); } finally { if (S.cr) { delete S.cr.moving; delete S.cr.movingTo; } }
       };
       mc._cr = true;
       E.moveCountry = mc;
@@ -12507,6 +12509,7 @@ const Cr = {};
     if (E.age(S) < (j.minAge || 15)) return `${j.minAge || 15}세부터 지원할 수 있습니다`;
     if (j.need && !j.need(S)) return NEED_WHY[j.id] || '지원 조건이 맞지 않습니다';
     if (PUBLIC.includes(j.id) && !Cr.citizen(S)) return '이 나라 국적이 필요합니다';
+    if (Cr.LIC && Cr.LIC[j.id] && !Cr.licOK(S, j.id)) return `${Wd.name(E.iso(S))}에서 일하려면 ${Cr.LIC[j.id].ko}를 다시 따야 합니다(할 일 '면허·자격 다시 따기')`;
     return null;
   };
   /** 합격 가능성과 이유 */
@@ -12584,6 +12587,19 @@ const Cr = {};
     },
     choices: (S) => {
       const out = [];
+      // 예전에 하던 일로 바로 지원하기(피드백 68번): 1년 넘게 한 일 가운데 가장 오래 한 것
+      const prev = Object.keys((S.work.exp && S.work.exp.j) || {}).filter((id) => C.JOB[id] && hireable(C.JOB[id]) && Cr.expY(S, 'j', id) >= 1 && !(S.work.job && S.work.job.id === id)).sort((a, b) => Cr.expY(S, 'j', b) - Cr.expY(S, 'j', a))[0];
+      if (prev) {
+        const pj = C.JOB[prev], why = Cr.blockReason(S, pj);
+        out.push({ label: `예전에 하던 일: ${C.jobTitle(S, pj)}`, sub: why || `같은 일 경력 ${Math.floor(Cr.expY(S, 'j', prev))}년 · 경력을 살려 지원합니다`, disabled: !!why,
+          run: (S2) => {
+            const f = Cr.fieldOf(prev), r = Cr.postings(S2, f);
+            if (!r.offers.some((o) => o.id === prev)) { if (U.chance(commonW(S2, pj) > 0 ? 0.75 : 0.3)) r.offers.unshift(C.makeJob(S2, pj)); }
+            if (!r.offers.length) return `${C.jobTitle(S2, pj)} 자리는 지금 뽑는 곳이 없었습니다.`;
+            E.ask(S2, 'cr_jobApply', { f, offers: r.offers.slice(0, 4), blocked: r.blocked });
+            return null;
+          } });
+      }
       const tot = Cr.FIELDS.reduce((s, [f]) => s + Cr.fieldJobs(f).reduce((t, j) => t + commonW(S, j), 0), 0) || 1;
       for (const [f, ko] of Cr.FIELDS) {
         const all = Cr.fieldJobs(f);
@@ -12684,7 +12700,7 @@ const Cr = {};
   };
   const mo0 = C.makeOffers;
   C.makeOffers = (S, n) => {
-    const cand = mo0(S, n * 2);
+    const cand = mo0(S, n * 2).filter((o) => !Cr.LIC || !Cr.LIC[o.id] || Cr.licOK(S, o.id));
     if (!cand.length) return cand;
     // 외국에서 말이 서툴면 면접 단계에서 제안이 무산되기도 한다(lang.js 가 이 일을 career.js 에 넘긴다)
     if (S.work.seeking && !S.work.job && typeof Lg !== 'undefined' && Lg && typeof Lg.workFactor === 'function') {
@@ -13517,7 +13533,103 @@ const Cr = {};
     if (!j) return;
     S.work.seeking = false;
     if (j.cr && j.cr.base) j.cr.base = Ec.conv(j.cr.base, from, to);
+    if (j.id === 'athlete' && from !== to) {
+      j.pay *= U.clamp(Math.sqrt(Wd.workerMedian(to) / Wd.workerMedian(from)), 0.5, 3);
+      E.log(S, C.t(S, `${Wd.name(to)} 리그 팀으로 옮겨 선수 생활을 이어 갑니다. 새 연봉은 ${fmt(S, j.pay)}입니다.`), 'ev');
+    }
   });
+
+  /* ================================================================ 면허·자격(피드백 68번)
+   * 의사·간호사·변호사·교사는 나라마다 면허가 따로다(S.cr.lic = {직업: [나라…]}). 그 나라에서 그 일을 하면 면허가 생긴다.
+   * 같은 자유 이동 협정(EU 등, 일할 권리까지 있는 협정) 나라끼리는 자격을 서로 인정한다(EU 전문 자격 인정 지침 2005/36).
+   * 그 밖의 나라로 옮기면 '면허·자격 다시 따기'(시험 여러 단계, 그 나라 말 필요)를 거쳐야 그 일을 다시 할 수 있다. */
+  Cr.LIC = {
+    doctor: { ko: '의사 면허', steps: 3, lang: 2.5, cost: 3, exam: ['의학 지식 필기시험', '임상 실기시험', '현지 병원 수련 평가'] },
+    lawyer: { ko: '변호사 자격', steps: 3, lang: 3, cost: 2, exam: ['그 나라 법 공부(편입 과정)', '변호사 시험 1차', '변호사 시험 2차'] },
+    nurse: { ko: '간호사 면허', steps: 2, lang: 2, cost: 1.5, exam: ['간호 실무 평가', '간호사 면허 시험'] },
+    teacher: { ko: '교원 자격', steps: 2, lang: 2.5, cost: 1, exam: ['학력·경력 인정 심사', '교원 자격 시험'] },
+  };
+  const licOf = (S) => (S.cr && S.cr.lic) || {};
+  /** 그 나라에서 이 일을 할 면허가 있나: 면허를 딴 적이 없으면(그 나라에서 처음 공부해 들어가는 길) 막지 않는다 */
+  Cr.licOK = (S, id, iso = E.iso(S)) => {
+    const L = licOf(S)[id];
+    if (!L || !L.length) return true;
+    if (L.includes(iso)) return true;
+    return typeof Mg !== 'undefined' && Mg.blocPair ? L.some((a) => { const r = Mg.blocPair(a, iso); return !!(r && r.rank === 2); }) : false;
+  };
+  /** 다시 따야 하는 면허(1년 넘게 해 온 일 가운데 이 나라에서 인정되지 않는 것) */
+  Cr.relicTarget = (S) => Object.keys(Cr.LIC).filter((id) => (licOf(S)[id] || []).length && !Cr.licOK(S, id) && Cr.expY(S, 'j', id) >= 1).sort((a, b) => Cr.expY(S, 'j', b) - Cr.expY(S, 'j', a))[0] || null;
+  /** 리그가 있는 나라(운동선수가 옮겨 가도 선수 생활을 이어 갈 수 있음): 저소득국이 아니고 인구 100만 명 이상 */
+  Cr.hasLeague = (iso) => !!iso && !!DATA.c[iso] && Wd.dev(iso) >= 1 && (DATA.c[iso].pop || 0) >= 1e6;
+  E.hook('takeJob', (S, o) => {
+    if (!S.cr || !Cr.LIC[o.id]) return;
+    S.cr.lic = S.cr.lic || {};
+    const L = (S.cr.lic[o.id] = S.cr.lic[o.id] || []);
+    if (!L.includes(E.iso(S))) L.push(E.iso(S));
+  });
+  E.hook('ensure', (S) => {
+    if (!S.cr || S.cr.lic) return;
+    // 예전 저장: 해 온 면허 직업은 태어난 나라(지금 그 일을 하고 있으면 지금 나라)의 면허로 본다
+    S.cr.lic = {};
+    for (const id of Object.keys(Cr.LIC)) {
+      const now = S.work.job && S.work.job.id === id;
+      if (now || Cr.expY(S, 'j', id) >= 1) S.cr.lic[id] = [now ? E.iso(S) : S.born.iso];
+    }
+  });
+  if (!C.ACTION.relicense) {
+    const ra = {
+      id: 'relicense', ko: '면허·자격 다시 따기', cat: 'learn', age: [22, 70], cd: 12, ap: 2,
+      koS: (S) => { const id = Cr.relicTarget(S); return id ? `${Cr.LIC[id].ko} 다시 따기` : '면허·자격 다시 따기'; },
+      cost: (S) => { const id = Cr.relicTarget(S); return id ? Cr.LIC[id].cost : 1; },
+      where: (S) => !!Cr.relicTarget(S),
+      need: (S) => {
+        const id = Cr.relicTarget(S);
+        if (!id) return '다시 딸 면허가 없습니다';
+        const R = Cr.LIC[id], ll = Cr.localLevel(S);
+        if (ll < R.lang) return `${Cr.langKo(Cr.localLang(S))} 실력이 '${R.lang >= 3 ? '능통' : '생활'}' 단계는 되어야 시험을 볼 수 있습니다`;
+        return true;
+      },
+      hint: (S) => {
+        const id = Cr.relicTarget(S);
+        if (!id) return '';
+        const R = Cr.LIC[id], st = S.cr.relic && S.cr.relic.id === id && S.cr.relic.iso === E.iso(S) ? S.cr.relic.step : 0;
+        return `${st + 1}/${R.steps}단계: ${R.exam[st]}`;
+      },
+      run: (S) => {
+        const id = Cr.relicTarget(S), R = Cr.LIC[id], iso = E.iso(S);
+        if (!S.cr.relic || S.cr.relic.id !== id || S.cr.relic.iso !== iso) S.cr.relic = { id, iso, step: 0 };
+        const rl = S.cr.relic, exam = R.exam[rl.step];
+        const lastM = Math.max(0, ...S.work.history.filter((h) => h.id === id).map((h) => h.to || 0));
+        const yrsOff = (S.ageM - lastM) / 12;
+        const p = U.clamp(0.42 + (S.st.smarts - 50) / 90 + (Cr.localLevel(S) - R.lang) * 0.2 - Math.max(0, E.age(S) - 40) * 0.01 - Math.min(0.2, yrsOff * 0.02), 0.08, 0.88);
+        if (!U.chance(p)) { E.stat(S, 'happy', -3); return `${exam}에서 떨어졌습니다. 1년 뒤 다시 도전할 수 있습니다. (합격 가능성 약 ${Math.round(p * 100)}%)`; }
+        rl.step++;
+        E.stat(S, 'smarts', 1);
+        if (rl.step < R.steps) { E.stat(S, 'happy', 3); return `${exam}에 합격했습니다! ${R.ko}까지 ${R.steps - rl.step}단계 남았습니다(다음: ${R.exam[rl.step]}).`; }
+        S.cr.lic[id] = S.cr.lic[id] || [];
+        if (!S.cr.lic[id].includes(iso)) S.cr.lic[id].push(iso);
+        delete S.cr.relic;
+        E.stat(S, 'happy', 10);
+        const f = Cr.fieldOf(id);
+        const r = f ? Cr.postings(S, f) : { offers: [] };
+        if (!r.offers.some((o) => o.id === id) && hireable(C.JOB[id])) r.offers.unshift(C.makeJob(S, C.JOB[id]));
+        if (r.offers.length && !S.work.job) E.ask(S, 'cr_jobApply', { f, offers: r.offers.slice(0, 4), blocked: [] });
+        return `${exam}까지 마치고 ${Wd.name(iso)}의 ${U.j(R.ko, '을')} 땄습니다! 이제 이 나라에서도 ${U.j(C.jobTitle(S, C.JOB[id]), '으로')} 일할 수 있습니다.`;
+      },
+    };
+    const i = C.ACTIONS.findIndex((x) => x.id === 'license');
+    C.ACTIONS.splice(i >= 0 ? i + 1 : C.ACTIONS.length, 0, ra);
+    C.ACTION.relicense = ra;
+  }
+  /** 이주 안내용: 면허 직업·운동선수가 그 나라에서 어떻게 되는지 */
+  Cr.moveJobNote = (S, dest) => {
+    const j = S.work.job;
+    const lic = Object.keys(Cr.LIC).filter((id) => (licOf(S)[id] || []).length && Cr.expY(S, 'j', id) >= 1);
+    const out = [];
+    if (j && j.id === 'athlete') out.push(Cr.hasLeague(dest) ? `${Wd.name(dest)} 리그 팀으로 옮겨 선수 생활을 이어 갑니다.` : `${Wd.name(dest)}에는 뛸 만한 프로 리그가 없어 선수 생활을 접어야 합니다.`);
+    for (const id of lic) out.push(Cr.licOK(S, id, dest) ? `${Cr.LIC[id].ko}는 그곳에서도 인정됩니다.` : `${Cr.LIC[id].ko}는 그곳에서 인정되지 않아, 그 일을 다시 하려면 그 나라 말을 익히고 시험을 다시 봐야 합니다.`);
+    return out.join(' ');
+  };
 
   /* ================================================================ 화면용 자료 */
   Cr.view = (S) => {
@@ -22750,7 +22862,7 @@ const Cm = {};
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.3.17';
+E.VERSION = '0.3.18';
 E.BUILD_DATE = '26.10.12';
 
 /* ================================================================ 기본 도구 */
