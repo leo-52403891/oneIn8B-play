@@ -2400,7 +2400,7 @@ C.DEC.buy = {
   choices: (S, ctx) => {
     const it = C.ITEMS[ctx.item], price = C.itemPrice(S, ctx.item);
     const got = (S) => { E.stat(S, 'happy', it.happy || 0); if (it.social) E.stat(S, 'social', it.social); if (it.flag) S.flags[it.flag] = true; if (ctx.item === 'phone') S.flags.phone = true; };
-    const out = [{ label: '산다', sub: S.money < price ? '돈이 모자랍니다' : null, disabled: S.money < price, run: (S) => { S.money -= price; got(S); return C.t(S, `{N은} ${U.j(it.ko, '을')} 장만했습니다.`); } }];
+    const out = [{ label: '산다', sub: S.money < price ? Ec.shortTxt(S, price, S.money) : null, disabled: S.money < price, run: (S) => { S.money -= price; got(S); return C.t(S, `{N은} ${U.j(it.ko, '을')} 장만했습니다.`); } }];
     if (ctx.item === 'car' && Wd.dev(E.iso(S)) >= 2 && S.indep && !Ec.creditBan(S)) { // 파산 뒤 7년 동안은 할부를 받을 수 없다
       const rate = Ec.mortRate(E.iso(S)) + 0.03, pay = Ec.annuity(price * 0.8, rate, 5);
       out.push({ label: '할부로 산다', sub: `먼저 ${Wd.money(E.iso(S), price * 0.2)}, 5년 동안 매달 ${Wd.money(E.iso(S), pay)}`, disabled: S.money < price * 0.2,
@@ -3050,6 +3050,7 @@ C.addEvents = (list) => {
             if (ch.cost) sub = (sub ? sub + ' · ' : '') + '비용 약 ' + H.amt(S, val(ch.cost, S, ctx));
             if (p !== null && !/가능성/.test(sub)) sub = (sub ? sub + ' · ' : '') + `가능성 약 ${Math.round(p * 100)}%`;
             const affordable = !ch.cost || !S.indep || S.money + H.pay(S, 6) >= H.pay(S, val(ch.cost, S, ctx));
+            if (!affordable) sub += ` · ${Wd.money(E.iso(S), H.pay(S, val(ch.cost, S, ctx)) - S.money - H.pay(S, 6))} 모자람`;
             return {
               label: C.t(S, val(ch.l, S, ctx), ctx), sub, typ: ch.typ, disabled: !affordable,
               run: (S2, ctx2) => {
@@ -3674,6 +3675,9 @@ Ec.remLife = (iso, sex, a) => {
   for (let i = x + 1; i < l.length; i++) t += l[i] / Math.max(1e-12, l[x]);
   return (Ec._rem[k] = t + 0.5);
 };
+/** 돈이 모자랄 때의 안내(피드백 131번: 얼마나 모자란지 알려 줘야 모을 수 있음).
+ *  need: 필요한 돈, have: 지금 쓸 수 있는 돈, what: 무엇이(기본 '돈') */
+Ec.shortTxt = (S, need, have, what = '돈') => `${U.j(what, '이')} ${Ec.fmt(S, Math.max(0, need - have))} 모자랍니다(필요 ${Ec.fmt(S, need)} · 지금 쓸 수 있는 돈 ${Ec.fmt(S, Math.max(0, have))})`;
 /** 바로 쓸 수 있는 돈(현금 + 예금) */
 Ec.liquid = (S) => S.money + Ec.assetsValue(S, (a) => a.type === 'bank');
 
@@ -4213,7 +4217,7 @@ C.DEC.house = {
         const loan = price * (1 - dp), pay = Ec.annuity(loan, Ec.mortRate(iso), Ec.mortYears(iso));
         const cash = price * dp + price * 0.03;
         const dsr = pay / monthInc;
-        const why = Ec.creditBan(S) ? `파산 뒤 7년 동안은 대출을 받을 수 없습니다(${Math.ceil((Ec.BAN_M - (S.ageM - S.flags.bankruptM)) / 12)}년 남음)` : Ec.raisable(S) < cash ? '계약금이 모자랍니다' : dsr > 0.45 ? '소득에 비해 갚을 돈이 너무 많아 은행이 거절합니다' : null;
+        const why = Ec.creditBan(S) ? `파산 뒤 7년 동안은 대출을 받을 수 없습니다(${Math.ceil((Ec.BAN_M - (S.ageM - S.flags.bankruptM)) / 12)}년 남음)` : Ec.raisable(S) < cash ? `계약금이 ${Ec.fmt(S, cash - Ec.raisable(S))} 모자랍니다(계약금 ${Ec.fmt(S, cash)} · 재산을 팔아 마련할 수 있는 돈 ${Ec.fmt(S, Math.max(0, Ec.raisable(S)))})` : dsr > 0.45 ? '소득에 비해 갚을 돈이 너무 많아 은행이 거절합니다' : null;
         const sellNote = !why && Ec.liquid(S) < cash ? ' · 모자란 계약금은 다른 재산을 팔아 마련' : '';
         out.push({ label: `${ko}을 대출 끼고 산다`, sub: why || `계약금 ${Ec.fmt(S, cash)} · 대출 ${Ec.fmt(S, loan)} · 매달 ${Ec.fmt(S, pay)}${sellNote}`, disabled: !!why,
           run: (S) => { const sold = Ec.raise(S, cash); Ec.buyHouse(S, size, true); E.stat(S, 'happy', 12); return C.t(S, `{N은} ${U.j(ko, '을')} 장만했습니다. 매달 ${Ec.fmt(S, pay)}씩 ${Ec.mortYears(iso)}년 동안 갚아 나갑니다.${soldTxt(sold)}`); } });
@@ -4369,7 +4373,7 @@ C.DEC.asset = {
     } else {
       for (const f of [0.1, 0.25, 0.5]) {
         const amt = Math.max(0, S.money) * f;
-        out.push({ label: `현금의 ${pctE(f)}%를 넣는다`, sub: can !== true ? can : amt < H.pay(S, 0.2) ? '넣을 현금이 모자랍니다' : Ec.fmt(S, amt), disabled: can !== true || amt < H.pay(S, 0.2),
+        out.push({ label: `현금의 ${pctE(f)}%를 넣는다`, sub: can !== true ? can : amt < H.pay(S, 0.2) ? `넣을 현금이 모자랍니다(지금 현금 ${Ec.fmt(S, Math.max(0, S.money))})` : Ec.fmt(S, amt), disabled: can !== true || amt < H.pay(S, 0.2),
           run: (S) => { S.money -= amt; let a = S.assets.find((x) => x.type === type && x.iso === iso && !x.home); if (!a) a = Ec.add(S, type, 0); a.value += amt * (1 - (t.fee || 0)); a.cost += amt; return C.t(S, `${t.ko}에 ${Ec.fmtJ(S, amt, '을')} 넣었습니다.`); } });
       }
     }
@@ -4746,7 +4750,7 @@ C.ACTIONS = [
   { id: 'raise', ko: '연봉 협상', cat: 'work', age: [18, 75], cd: 12, need: (S) => reason(H.ladder(S), S.work.job && (C.JOB[S.work.job.id] || {}).self || (S.work.job && S.work.job.id === 'entrepreneur') ? '내 일이라 연봉을 협상할 상대가 없습니다' : '회사에 정식으로 고용된 일자리에서만 할 수 있습니다'),
     run: (S) => A.raise(S) },
   { id: 'startup', ko: '창업하기', cat: 'work', age: [20, 70], cd: 24,
-    need: (S) => (!S.indep ? '독립한 뒤에 할 수 있습니다' : Ec.stakeOf(S) < Ec.stakeMin(S) ? `밑천(쓸 수 있는 돈의 70%)이 적어도 보통 월급 6달 치(${H.amt(S, 6)})는 되어야 합니다` : true),
+    need: (S) => (!S.indep ? '독립한 뒤에 할 수 있습니다' : Ec.stakeOf(S) < Ec.stakeMin(S) ? `밑천(쓸 수 있는 돈의 70%)이 적어도 보통 월급 6달 치(${H.amt(S, 6)})는 되어야 합니다 — 지금 밑천 ${Ec.fmt(S, Ec.stakeOf(S))}, ${Ec.fmt(S, Ec.stakeMin(S) - Ec.stakeOf(S))} 모자람` : true),
     hint: () => '직원을 두는 사업, 성공하면 사장', moneyNote: () => '현금·예금·금융 자산의 70%를 밑천으로 걺',
     run: (S) => { E.ask(S, 'startup', {}); return null; } },
   { id: 'invest', ko: '투자·재산 관리', cat: 'work', age: [18, 120], cd: 0, free: true, need: (S) => reason(S.indep, '독립한 뒤에 할 수 있습니다'),
@@ -4996,9 +5000,9 @@ A.state = (S, a) => {
   if (last !== undefined && a.cd && S.ageM - last < a.cd) return `${a.cd - (S.ageM - last)}달 뒤에 다시 할 수 있습니다`;
   if (a.need) { const r = a.need(S); if (r !== true) return r || '지금은 할 수 없습니다'; }
   const cost = A.cost(S, a);
-  if (cost > 0 && S.indep && S.money < H.pay(S, cost)) return '돈이 모자랍니다';
+  if (cost > 0 && S.indep && Ec.liquid(S) < H.pay(S, cost)) return Ec.shortTxt(S, H.pay(S, cost), Ec.liquid(S));
   // 독립 전: 내 돈으로 내거나, 부모님 1년 살림의 4% 안쪽이면 부모님이 내 준다(피드백 26번)
-  if (cost > 0 && !S.indep && S.money < H.pay(S, cost) && H.pay(S, cost) > S.fam.cons * S.fam.size * 0.04) return E.age(S) >= 15 ? '용돈이 모자라고, 집안 형편으로도 어렵습니다' : '집안 형편으로는 어렵습니다';
+  if (cost > 0 && !S.indep && S.money < H.pay(S, cost) && H.pay(S, cost) > S.fam.cons * S.fam.size * 0.04) return E.age(S) >= 15 ? `용돈이 모자라고, 집안 형편으로도 어렵습니다(필요 ${H.amt(S, cost)} · 내 돈 ${Ec.fmt(S, Math.max(0, S.money))})` : `집안 형편으로는 어렵습니다(필요 ${H.amt(S, cost)})`;
   const w = C.actAP(S, a), ap = S.ap || 0;
   if (w > ap) return ap <= 0 ? `기회를 모두 썼습니다 · 다음 기회까지 ${C.apNext(S)}달` : `기회가 ${w}번 필요합니다(지금 ${ap}번)`;
   return true;
@@ -5014,8 +5018,9 @@ E.doAction = (S, id) => {
   const st = A.state(S, a);
   if (st !== true) return { ok: false, msg: st };
   const cost = A.cost(S, a);
+  const snap = { id, ap0: S.ap || 0, cd0: S.actCd[id], paid: cost > 0 ? H.pay(S, cost) : 0, own: !!S.indep || S.money >= H.pay(S, cost) }, q0 = S.queue.length;
   if (cost > 0) {
-    if (S.indep) S.money -= H.pay(S, cost);
+    if (S.indep) { Ec.withdrawBank(S, H.pay(S, cost)); S.money -= H.pay(S, cost); } // 현금이 모자라면 예금에서 꺼낸다
     else if (S.money >= H.pay(S, cost)) S.money -= H.pay(S, cost);
     else E.addMoney(S, -H.pay(S, cost));
   }
@@ -5023,6 +5028,8 @@ E.doAction = (S, id) => {
   S.actCd[id] = S.ageM;
   S.stats.actions = (S.stats.actions || 0) + 1;
   const t = a.run(S);
+  // 결정 창을 열었으면: '다음에 한다'처럼 하지 않기로 하면 쓴 기회·쿨다운·돈을 돌려준다(engine.js E.choose, 피드백 133번)
+  if (S.queue.length > q0) { const q = S.queue[S.queue.length - 1]; q.ctx = q.ctx || {}; q.ctx._act = snap; }
   if (t) E.log(S, C.t(S, t), 'act');
   return { ok: true, msg: t ? C.t(S, t) : null };
 };
@@ -11638,6 +11645,8 @@ const Lg = {};
     const main = Object.keys(w).filter((c) => w[c] >= 1);
     return (ccache[iso] = { nat, school, second, w, main });
   };
+  /** 지금 사는 나라의 공용어(주로 쓰는 말·학교 언어)인지 — 피드백 135번: 공용어가 둘 이상인 나라에서 다른 공용어는 날마다 듣고 보므로 빨리 는다 */
+  Lg.offHere = (S, code) => { const c = Lg.country(E.iso(S)); return !isX(code) && (c.main.includes(code) || c.school.includes(code)); };
   /** 그 나라의 대표 언어(이름 표시용) */
   Lg.mainOf = (iso) => {
     const c = Lg.country(iso);
@@ -11841,6 +11850,12 @@ const Lg = {};
     } else if (a >= 16) {
       // 어른: 그 나라에서 널리 쓰는 제2언어는 쓰면서 조금씩 는다(영어 같은 매체 언어)
       for (const [code, p] of c.second) if (p >= 30 && Lg.level(S, code) >= 0.8 && Lg.level(S, code) < 3) grow(S, code, 0.06 * p / 100);
+      // 사는 나라의 공용어(주로 쓰는 말·학교 언어)는 조금이라도 알면 날마다 쓰며 는다 — 배운 만큼·일할수록 빠르게, '능숙'까지(피드백 135번)
+      for (const code of new Set(c.main.concat(c.school))) {
+        if (isX(code) || Lg.isNative(S, code) || code === S.langHere) continue;
+        const v = Lg.level(S, code);
+        if (v >= 0.5 && v < 3.2) grow(S, code, 0.07 * (0.7 + 0.1 * (S.edu.level || 0)) * (S.work.job ? 1.25 : 1) * ap, 3.2);
+      }
     }
     // 외국 생활: 그 나라 말이 해마다 는다(어릴수록·배울수록·일할수록 빠르게)
     if (S.langHere && iso !== undefined) {
@@ -11947,13 +11962,14 @@ const Lg = {};
     const ageF = a < 13 ? 1.2 : a < 25 ? 1.1 : a < 45 ? 1 : a < 65 ? 0.85 : 0.7;
     // 외국에 살며 그 나라 말을 배우면 날마다 쓰므로 빠르다. 내 나라에서 널리 쓰이는 다른 말(미국의 스페인어 등)은 조금만 빠르다
     const local = S.langHere === code;
-    const here = local ? 1.4 : (Lg.country(E.iso(S)).w[code] || 0) >= 0.5 ? 1.15 : 1;
+    const off = !local && Lg.offHere(S, code);
+    const here = local || off ? 1.4 : (Lg.country(E.iso(S)).w[code] || 0) >= 0.5 ? 1.2 : 1;
     // 점검(피드백 81번): 한국인이 해마다 영어를 배우면 1년 만에 '생활', 3년 만에 '능통'이었음 →
     // 모국어 기준 어려움(Lg.hardFor), 높은 단계일수록 더 더디게(사는 나라 말이 아닐 때). 1년 강좌 기준 같은 어족이면 생활까지 4~5년·능통까지 10년 안팎
     const hf = Lg.hardFor(S, code);
     // 높은 단계일수록 더딘 것은 grow 가 이미 반영한다(피드백 93번 점검: 여기서 한 번 더 곱해 '능통'이 거의 닿지 않았음). 사는 나라 말이 아닐 때만 조금 더 더디게
-    const slow = local ? 1 : Math.max(0.5, 1 - before / 8);
-    const g = 0.55 * (apt(S) / Math.pow(hf, 1.3)) * ageF * here * (1 + Lg.relBonus(S, code)) * (opt.k || 1) * slow;
+    const slow = local || off ? 1 : Math.max(0.5, 1 - before / 8);
+    const g = 0.8 * (apt(S) / Math.pow(hf, 1.3)) * ageF * here * (1 + Lg.relBonus(S, code)) * (opt.k || 1) * slow;
     grow(S, code, g);
     S.langStudyM = S.langStudyM || {};
     S.langStudyM[code] = S.ageM;
@@ -11965,7 +11981,7 @@ const Lg = {};
     const b0 = Math.floor(before + 1e-6), b1 = Math.floor(after + 1e-6);
     // 공부한 방법은 지금 처지에 맞게(교도소 안에서는 학원·시장·온라인이 아니다)
     const how = opt.how ? opt.how : S.prison ? U.pick(['교도소 도서실에서 빌린 책으로 독학했습니다.', '그 말을 하는 수감자에게 날마다 조금씩 배웠습니다.', '밤마다 감방에서 단어장을 붙들었습니다.'])
-      : here > 1 ? U.pick(['이웃과 일부러 그 말로 이야기했습니다.', '시장에서 그 말로 흥정을 해 보았습니다.', '동네 어학 강좌에 다녔습니다.'])
+      : local || off ? U.pick(['이웃과 일부러 그 말로 이야기했습니다.', '시장에서 그 말로 흥정을 해 보았습니다.', '동네 어학 강좌에 다녔습니다.', '관공서 서류와 방송을 그 말로 보며 익혔습니다.'])
       : U.pick(['저녁마다 단어장을 붙들었습니다.', '그 말로 된 영화와 노래를 찾아 들었습니다.'].concat(H.internet(S) >= 0.3 ? ['온라인으로 원어민과 대화 연습을 했습니다.'] : [], H.dev(S) >= 1 || H.urban(S) ? ['학원에 다니며 문법을 익혔습니다.'] : []));
     const rel = Lg.relBonus(S, code) >= 0.3 ? ' 이미 아는 말과 닮아 배우기가 수월했습니다.' : '';
     const left = Math.max(1, Math.round((1 - (after - b1)) * 100));
@@ -11984,7 +12000,7 @@ const Lg = {};
    * 한 철(석 달) 공부의 양(피드백 93번: 예전에는 '1년짜리 강좌'라 1년에 한 번만 할 수 있었고, 언어가 여럿이면 하나만 이어 갈 수 있었음).
    * 한 번에 예전 1년 강좌의 절반, 같은 언어를 1년에 여러 번 하면 조금씩 덜 는다(두 번째 0.77배, 세 번째 0.63배, 네 번째 0.53배 — 1년 네 번이면 예전 1년 강좌의 약 1.5배).
    */
-  const sessK = (S, code) => 0.5 / (1 + 0.3 * sess12(S, code));
+  const sessK = (S, code) => 0.5 / (1 + 0.15 * sess12(S, code)); // 피드백 135번: 꾸준히 해도 3년에 반 단계 남짓 → 한 철 공부 효과를 키우고 몰아서 하는 감쇠를 줄임
   const studySess = (S, code) => {
     const k = sessK(S, code);
     S.langSess = S.langSess || {};
@@ -12013,7 +12029,7 @@ const Lg = {};
       if (!list.length) return [{ label: '하던 공부를 복습한다', typ: true, run: (S2) => { E.stat(S2, 'smarts', 2); return '아는 말들을 다시 복습했습니다.'; } }];
       return list.map((c, i) => ({
         label: Lg.name(c.code),
-        sub: `${c.why} · ${Lg.hardKo(c.code, S)}${Lg.relBonus(S, c.code) >= 0.3 ? ' · 아는 말과 닮음' : ''}`,
+        sub: `${c.why} · ${Lg.hardKo(c.code, S)}${Lg.offHere(S, c.code) ? ' · 이 나라 공용어라 날마다 들어 빨리 늚' : ''}${Lg.relBonus(S, c.code) >= 0.3 ? ' · 아는 말과 닮음' : ''}`,
         typ: i === 0,
         run: (S2) => studySess(S2, c.code),
       }));
@@ -12440,27 +12456,57 @@ const Mg = {};
   Mg.REFUSE_WAIT = 36;
   Mg.refusedLeft = (S, dest) => { const m = S.mgRef && S.mgRef[dest]; return m === undefined ? 0 : Math.max(0, Mg.REFUSE_WAIT - (S.ageM - m)); };
   /** 취업 비자 가능성: 도착국 난이도 × 학력·경력·언어·재산·나이(+ 협정·예전 거주) */
-  Mg.visaP = (S, dest, fb) => {
-    if (Mg.isCitizen(S, dest)) return 1;
+  /** 취업 비자 가능성과 그 까닭(피드백 138번: 가능성이 어떻게 나오는지 알아야 준비하거나 포기할 수 있음).
+   *  돌려주는 값 { p, base, parts: [[이름, 배수, 설명]], add: [[이름, 더하는 값]], cap, tips: [] } */
+  const EDU_KO = ['학교를 다니지 않음', '초등학교', '중학교', '고등학교', '대학교', '대학원'];
+  Mg.visaWhy = (S, dest, fb) => {
+    if (Mg.isCitizen(S, dest)) return { p: 1, base: 1, parts: [], add: [], cap: 1, tips: [] };
     if (fb === undefined) fb = Mg.freeBloc(S, dest, false);
-    if (fb && fb.work === true) return 1;
+    if (fb && fb.work === true) return { p: 1, base: 1, parts: [], add: [], cap: 1, tips: [] };
     const a = E.age(S), loc = Lg.local(S, dest), edu = S.edu.level || 0;
     const dd = Wd.dev(dest), gulf = GULF.has(dest);
-    let f = (gulf ? [0.75, 0.85, 0.95, 1, 1.1, 1.2] : [0.35, 0.45, 0.6, 0.85, 1.25, 1.6])[Math.min(5, edu)];
+    const parts = [], add = [], tips = [];
+    const eduF = (gulf ? [0.75, 0.85, 0.95, 1, 1.1, 1.2] : [0.35, 0.45, 0.6, 0.85, 1.25, 1.6])[Math.min(5, edu)];
+    parts.push(['학력', eduF, EDU_KO[Math.min(5, edu)]]);
+    if (!gulf && edu < 4) tips.push('대학 졸업(학력이 가장 크게 작용합니다)');
     // 걸프 계약 노동은 송출 경로(남아시아·동남아시아 등 그 나라 사람들이 실제로 많이 가는 길)가 있는 나라 사람에게 열려 있다
-    if (gulf && !(Wd.social('migration', E.iso(S), []) || []).some(([d]) => d === dest)) f *= 0.5;
-    f *= 0.8 + S.st.skill / 250;
-    f *= gulf ? 1 : loc >= 3 ? 1.2 : loc >= 2 ? 1.05 : loc >= 1 ? 0.9 : 0.7;
-    f *= 0.85 + 0.3 * E.wealthP(S);
-    if (a > 40) f *= Math.max(0.3, 1 - (a - 40) * 0.04);
+    if (gulf && !(Wd.social('migration', E.iso(S), []) || []).some(([d]) => d === dest)) parts.push(['송출 경로', 0.5, '이 나라 사람들이 흔히 가는 길이 아님']);
+    const skF = 0.8 + S.st.skill / 250;
+    parts.push(['경력', skF, `경력 ${Math.round(S.st.skill)}`]);
+    if (S.st.skill < 60) tips.push('경력 쌓기');
+    const lF = gulf ? 1 : loc >= 3 ? 1.2 : loc >= 2 ? 1.05 : loc >= 1 ? 0.9 : 0.7;
+    if (!gulf) parts.push(['그 나라 말', lF, loc >= 3 ? '능숙' : loc >= 2 ? '생활' : loc >= 1 ? '기초' : '거의 못 함']);
+    if (!gulf && loc < 3) tips.push(`그 나라 말을 '능숙'까지(지금 ${loc >= 2 ? '생활' : loc >= 1 ? '기초' : '거의 못 함'})`);
+    const wF = 0.85 + 0.3 * E.wealthP(S);
+    parts.push(['형편', wF, `재산·소득 증명 — 생활수준 국내 ${U.rankText(E.wealthP(S))}`]);
+    if (a > 40) { const aF = Math.max(0.3, 1 - (a - 40) * 0.04); parts.push(['나이', aF, `${Math.floor(a)}세 — 40세부터 해마다 4%씩 어려워짐`]); }
+    else if (a >= 34) tips.push('나이(40세가 넘으면 해마다 조금씩 어려워집니다)');
     const code = Mg.entry(S, dest).code;
-    if (code === 'f' || code === 'e') f *= 1.25; // 비자 없이 드나드는 여권(워킹홀리데이·이동 협정이 흔하다)
-    if (livedIn(S, dest)) f *= 1.4;
-    if (S.flags.exCon) f *= 0.5;
-    let p = Mg.visaBase(dest) * f;
-    if (fb && fb.work === 'partial') p += 0.3;
-    if (S.res && S.res.status === 'pr' && EUEEA.has(E.iso(S)) && EUEEA.has(dest)) p += 0.2; // EU 장기 거주자
-    return U.clamp(p, 0.01, dd === 3 ? 0.6 : 0.85);
+    if (code === 'f' || code === 'e') parts.push(['여권', 1.25, '비자 없이 드나드는 여권 — 워킹홀리데이·이동 협정이 흔함']);
+    if (livedIn(S, dest)) parts.push(['예전에 살았던 곳', 1.4, '체류 기록이 있음']);
+    if (S.flags.exCon) parts.push(['전과', 0.5, '범죄 기록 심사']);
+    let p = Mg.visaBase(dest);
+    for (const [, f] of parts) p *= f;
+    if (fb && fb.work === 'partial') { p += 0.3; add.push([`${fb.ko}`, 0.3]); }
+    if (S.res && S.res.status === 'pr' && EUEEA.has(E.iso(S)) && EUEEA.has(dest)) { p += 0.2; add.push(['EU 장기 거주자', 0.2]); } // EU 장기 거주자
+    const cap = dd === 3 ? 0.6 : 0.85;
+    p = U.clamp(p, 0.01, cap);
+    return { p, base: Mg.visaBase(dest), parts, add, cap, tips };
+  };
+  /** 취업 비자 가능성: 도착국 난이도 × 학력·경력·언어·재산·나이(+ 협정·예전 거주) */
+  Mg.visaP = (S, dest, fb) => Mg.visaWhy(S, dest, fb).p; // 은퇴 배수(×0.4)는 Mg.route 에서 곱한다
+  /** 가능성 설명 문장 */
+  Mg.whyTxt = (S, dest) => {
+    const r = Mg.route(S, dest);
+    if (r.p >= 1) return '';
+    if (r.route === 'retire') return `은퇴 비자는 요건(소득·나이)을 채우면 대부분 나옵니다(약 ${pct(r.p)}%).`;
+    if (r.route === 'family') return `가족 초청 비자 가능성 약 ${pct(r.p)}% = 기본 45% + 형편(생활수준 국내 ${U.rankText(E.wealthP(S))})에 따라 최대 30%p.`;
+    const w = Mg.visaWhy(S, dest);
+    const f = (x) => (x >= 1 ? '×' + x.toFixed(2) : '×' + x.toFixed(2));
+    const parts = w.parts.map(([k, x, d]) => `${k}(${d}) ${f(x)}`);
+    const ret = S.work.retired ? ' × 은퇴함(일할 사람으로 보지 않음) ×0.40' : '';
+    const add = w.add.map(([k, x]) => `${k} +${pct(x)}%p`);
+    return `비자 가능성 약 ${pct(r.p)}%가 나온 까닭: ${nm(dest)} 취업 비자의 기본 난이도 ${pct(w.base)}% × ${parts.join(' × ')}${add.length ? ` · ${add.join(' · ')}` : ''}${w.p >= w.cap - 0.001 ? ` → 이 나라는 최대 ${pct(w.cap)}%까지` : ''}${ret}.${w.tips.length ? ` 높이려면: ${w.tips.join(', ')}.` : ''} 거절되면 3년 뒤에 다시 신청할 수 있습니다.`;
   };
 
   /** 그 나라로 가는 길: { route, p, why, ent, rv } */
@@ -12674,7 +12720,7 @@ const Mg = {};
 
   C.DEC.mg_go = {
     title: (S, ctx) => (Mg.isCitizen(S, ctx.dest) && ctx.dest === S.born.iso ? '고향으로 돌아갈까요?' : `${U.j(nm(ctx.dest), '으로')} 떠날까요?`),
-    text: (S, ctx) => C.t(S, Mg.goText(S, ctx.dest)),
+    text: (S, ctx) => C.t(S, `${Mg.goText(S, ctx.dest)}${Mg.whyTxt(S, ctx.dest) ? ' ' + Mg.whyTxt(S, ctx.dest) : ''}`),
     choices: (S, ctx) => {
       const dest = ctx.dest, r = Mg.route(S, dest), fam = Mg.family(S);
       const out = [];
@@ -13630,10 +13676,10 @@ const Cr = {};
       need: (S) => (S.edu.level < 3 ? '고등학교 졸업 이상 학력이 필요합니다' : S.st.smarts < 50 ? '가르칠 만큼 공부가 되어 있어야 합니다(지식 50)' : true),
       fit: (S) => U.clamp(S.st.smarts / 110 + (S.edu.level >= 4 ? 0.2 : 0), 0.1, 1) },
     { k: 'vendor', ko: '노점', id: 'vendor', mult: 0.6, lvl0: 0.6,
-      need: (S) => (Ec.liquid(S) < H.pay(S, 0.5) && S.indep ? '밑천(보통 월급 보름 치)이 조금 있어야 합니다' : true),
+      need: (S) => (Ec.liquid(S) < H.pay(S, 0.5) && S.indep ? `밑천(보통 월급 보름 치, ${H.amt(S, 0.5)})이 조금 있어야 합니다 — 지금 쓸 수 있는 돈 ${Ec.fmt(S, Math.max(0, Ec.liquid(S)))}` : true),
       fit: (S) => talentFit(H.talent(S, 'biz')) },
     { k: 'shop', ko: '작은 가게', id: 'shop', mult: 1.05, lvl0: 0.35, cost: 6,
-      need: (S) => (!S.indep ? '독립한 뒤에 할 수 있습니다' : Ec.liquid(S) < H.pay(S, 8) ? `가게를 열 밑천(약 ${H.amt(S, 8)})이 필요합니다` : true),
+      need: (S) => (!S.indep ? '독립한 뒤에 할 수 있습니다' : Ec.liquid(S) < H.pay(S, 8) ? `가게를 열 밑천(약 ${H.amt(S, 8)})이 필요합니다 — 지금 쓸 수 있는 돈 ${Ec.fmt(S, Math.max(0, Ec.liquid(S)))}, ${Ec.fmt(S, H.pay(S, 8) - Ec.liquid(S))} 모자람` : true),
       fit: (S) => talentFit(H.talent(S, 'biz')) },
     { k: 'farm', ko: '농사', lvl0: 0.7,
       need: (S) => (H.rural(S) || hasLand(S) ? true : '땅이 없고 도시에 삽니다'),
@@ -13996,6 +14042,39 @@ const Cr = {};
       return out;
     },
   };
+  /* 공고로 뽑지 않는 일(피드백 134번: 일자리 알아보기에 운동선수·예술가 같은 자리가 아예 없었음)
+   * 운동선수·연예인·예술가·작가·방송인·정치인·내 사업은 채용 공고가 아니라 입단 테스트·오디션·작품·선거·창업으로 들어간다.
+   * 일자리 알아보기 창 아래에 그 길을 보여 주고, 고르면 그 할 일로 바로 이어 준다(일자리 알아보기에 이미 기회를 썼으므로 더 쓰지 않음). */
+  const ROUTES = [
+    ['tryout', (S) => (H.jobIs(S, 'athlete') ? '운동선수 — 상위 리그로' : '운동선수 — 입단 테스트로')],
+    ['audition', () => '가수·배우·모델 등 — 오디션으로'],
+    ['artwork', () => '화가·사진가·작곡가 등 — 작품을 만들어 팔기'],
+    ['novel', () => '작가 — 글을 써서 출판하기'],
+    ['stream', () => '방송인·영상 제작자 — 개인 방송으로'],
+    ['selfstart', () => '내 일 — 장사·가게·프리랜서로 시작하기'],
+    ['startup', () => '사업가 — 창업하기'],
+    ['election', () => '정치인 — 선거에 나가기'],
+  ];
+  const routeState = (S, a) => { const ap = S.ap; S.ap = 99; try { return C.actionState(S, a); } finally { S.ap = ap; } };
+  {
+    const c0 = C.DEC.cr_jobField.choices;
+    C.DEC.cr_jobField.choices = (S, ctx) => {
+      const out = c0(S, ctx);
+      const end = out.findIndex((c) => c.label === '그만둔다');
+      const add = [];
+      for (const [id, lab] of ROUTES) {
+        const a = C.ACTION[id];
+        if (!a || E.age(S) < a.age[0] || E.age(S) > a.age[1] || (a.where && !a.where(S))) continue;
+        const st = routeState(S, a);
+        if (st !== true && (id === 'election' || id === 'startup')) continue; // 조건이 먼 길은 숨긴다
+        const hint = st === true && a.hint && (id === 'tryout' || id === 'audition') ? a.hint(S) : ''; // 가능성만 붙인다(다른 설명은 처지와 안 맞는 낱말이 섞일 수 있음)
+        add.push({ label: lab(S), sub: st !== true ? st : `공고로 뽑지 않는 일입니다 · '${a.koS ? a.koS(S) : a.ko}'로 이어집니다${hint ? ` · ${hint}` : ''}`, disabled: st !== true,
+          run: (S2) => { S2.actCd[id] = S2.ageM; const r = a.run(S2); return r || null; } });
+      }
+      out.splice(end >= 0 ? end : out.length, 0, ...add);
+      return out;
+    };
+  }
   C.DEC.cr_jobApply = {
     title: (S, ctx) => `${Cr.fieldKo(ctx.f)} 채용 공고`,
     text: (S, ctx) => C.t(S, `지금 사람을 뽑는 자리입니다. 합격 가능성에는 학력·전공·지식·같은 분야 경력·자격증·언어·인맥·건강·나이·전과가 반영됩니다.${S.work.job ? ` 지금은 ${U.j(S.work.job.title, '으로')} 일하고 있습니다.` : ''}`),
@@ -14297,7 +14376,7 @@ const Cr = {};
     const w = Cr.whyText(why);
     const stake0 = Ec.stakeOf(S), short = stake0 < Ec.stakeMin(S);
     return [
-      { label: '모은 돈을 걸어 본다', disabled: short, sub: short ? `밑천이 모자랍니다(적어도 ${H.amt(S, 6)} 필요)` : `밑천 약 ${fmt(S, stake0)} · 성공 가능성 약 ${P(p)}%${w ? ` (${w})` : ''}`,
+      { label: '모은 돈을 걸어 본다', disabled: short, sub: short ? `밑천이 모자랍니다(적어도 ${H.amt(S, 6)} 필요 · 지금 밑천 ${fmt(S, Math.max(0, stake0))})` : `밑천 약 ${fmt(S, stake0)} · 성공 가능성 약 ${P(p)}%${w ? ` (${w})` : ''}`,
         run: (S2) => {
           // 밑천: 현금·예금·금융 자산의 70%(모자란 현금은 예금·채권·주식 등을 팔아 마련)
           const stake = Ec.stakeOf(S2);
@@ -25629,7 +25708,7 @@ const Ar = {};
     const d = AK[k];
     if (E.age(S) < d.age) return `${d.age}세부터 할 수 있습니다`;
     if (d.can) { const r = d.can(S); if (r !== true) return r; }
-    if (!canAfford(S, d.cost)) return '재료비가 모자랍니다';
+    if (!canAfford(S, d.cost)) return S.indep ? Ec.shortTxt(S, H.pay(S, d.cost), S.money, '재료비') : `재료비가 모자랍니다(필요 ${H.amt(S, d.cost)} · 내 돈 ${Ec.fmt(S, Math.max(0, S.money))})`;
     return true;
   };
 
@@ -26694,6 +26773,21 @@ const Sp = {};
     return { iso: pick, lv: pick ? Sp.league(sp, pick) : 0, abroad: !!pick };
   };
 
+  /** 해외 팀과 계약하면 그 나라로 실제로 옮겨 산다(피드백 137번: 스페인 리그로 이적했는데 케냐에 그대로 살았음).
+   *  선수 계약은 그대로 두고(E.moveCountry 가 일을 잃게 하므로 잠시 떼어 둠), 취업 비자, 배우자·미성년 자녀는 함께 간다. 돌려주는 값: 문장 꼬리 */
+  Sp.relocate = (S, iso) => {
+    if (!iso || iso === E.iso(S) || !DATA.c[iso]) return '';
+    const j = S.work.job;
+    S.work.job = null;
+    let t = '';
+    try {
+      if (typeof Mg !== 'undefined' && Mg.go) t = Mg.go(S, iso, 'work', { fam: true }) || '';
+      else E.moveCountry(S, iso, 'visa');
+    } finally {
+      if (j) { S.work.job = j; j.lg = iso; S.work.seeking = false; }
+    }
+    return t ? ` ${t}` : '';
+  };
   /* ---------------- 이름·상태 */
   Sp.ko = (S, sp) => {
     const d = SP[sp];
@@ -26971,7 +27065,7 @@ const Sp = {};
         const j = S2.work.job;
         if (!j) return null;
         j.pay *= 2.2; H.fameUp(S2, 8); E.addMoney(S2, H.pay(S2, 12));
-        if (c2.dest && DATA.c[c2.dest] && c2.dest !== E.iso(S2)) { H.travel(S2, c2.dest); j.lg = c2.dest; return C.t(S2, `{N은} ${Wd.name(c2.dest)} 리그로 이적했습니다.`); }
+        if (c2.dest && DATA.c[c2.dest] && c2.dest !== E.iso(S2)) { const lgLv = Sp.league(j.sp || Sp.mainOrNat(S2), c2.dest); if (lgLv) { j.lv = lgLv; j.title = Sp.title(S2, j.sp || Sp.mainOrNat(S2), lgLv); } const mv = Sp.relocate(S2, c2.dest); return C.t(S2, `{N은} ${Wd.name(c2.dest)} 리그로 이적했습니다.`) + mv; }
         return C.t(S2, '{N은} 더 큰 팀으로 이적했습니다.');
       } },
       { label: '고향 팀에 남는다', typ: true, run: (S2) => { H.fameUp(S2, 4); E.stat(S2, 'social', 5); E.stat(S2, 'happy', 4); return '의리를 지켜 고향 팀에 남았습니다. 팬들이 환호했습니다.'; } },
@@ -27068,7 +27162,7 @@ const Sp = {};
     }
     // 프로 선수 직함: 다른 사건이 나라 인기 종목으로 적어도 내 종목으로 맞춘다
     if (j && j.id === 'athlete' && j.sp) {
-      const want = Sp.title(S, j.sp, j.lg && j.lg !== E.iso(S) ? Sp.league(j.sp, j.lg) : Sp.league(j.sp, E.iso(S)));
+      const want = Sp.title(S, j.sp, Sp.curLv(S));
       if (j.title !== want && /^프로 .+ 선수$|^세미프로 |^프로게이머$/.test(j.title)) j.title = want;
     }
   });
@@ -27202,12 +27296,13 @@ const Sp = {};
       if (r.lg.abroad && lgIso !== E.iso(S)) months *= U.clamp(Math.pow(Wd.workerMedian(lgIso) / Wd.workerMedian(E.iso(S)), 0.75), 0.3, 6);
       H.setJob(S, 'athlete', months);
       const j = S.work.job;
-      j.sp = sp; j.lg = lgIso; j.ret = Sp.retAge(sp);
+      j.sp = sp; j.lg = lgIso; j.ret = Sp.retAge(sp); j.lv = lv;
       j.title = Sp.title(S, sp, lv);
-      if (r.lg.abroad && lgIso !== E.iso(S)) H.travel(S, lgIso);
+      const movedT = r.lg.abroad && lgIso !== E.iso(S) ? Sp.relocate(S, lgIso) : '';
       H.fameUp(S, lv >= 2 ? 12 : 6); E.stat(S, 'happy', 15); H.ach(S, 'pro_athlete');
       const where = r.lg.abroad ? `${Wd.name(lgIso)}의 ${ko} 팀과 계약했습니다! 해외 리그(${Sp.tierKo(S, sp, lv)})에서 뛰게 되었습니다.` : `${Sp.tierKo(S, sp, lv)} ${ko} 팀과 계약했습니다!`;
-      return C.t(S, `{N은} ${d.k === 'team' || d.k === 'e' ? where : `${U.j(Sp.tryKo(sp), '을')} 통과해 ${U.j(j.title, '이')} 되었습니다!`} 땀 흘린 시간이 결과로 돌아왔습니다. 연봉은 ${Wd.money(E.iso(S), j.pay)}입니다. (${why(S, sp)})`);
+      const outT = C.t(S, `{N은} ${d.k === 'team' || d.k === 'e' ? where : `${U.j(Sp.tryKo(sp), '을')} 통과해 ${U.j(j.title, '이')} 되었습니다!`} 땀 흘린 시간이 결과로 돌아왔습니다. 연봉은 ${Wd.money(E.iso(S), j.pay)}입니다. (${why(S, sp)})`);
+      return outT + movedT;
     }
     E.stat(S, 'happy', -6);
     // 무엇이 모자랐고 무엇을 하면 되는지(피드백 104번)
@@ -27249,15 +27344,17 @@ const Sp = {};
     t.koS = (S) => (Sp.main(S) ? `${Sp.ko(S, Sp.main(S))} ${Sp.tryKo(Sp.main(S))}` : '프로 입단 테스트');
     const n0 = t.need;
     t.need = (S) => {
-      if (H.jobIs(S, 'athlete')) return '이미 프로 선수입니다';
+      if (H.jobIs(S, 'athlete')) { const up = Sp.upTargets(S); return up.length ? true : '이미 오를 수 있는 가장 높은 무대에서 뛰고 있습니다'; }
       const sp = Sp.main(S);
       if (sp && E.age(S) > Sp.tryMaxLv(sp, 1) && !Object.keys(S.sp.lv || {}).some((k) => Sp.lvl(S, k) >= 15 && E.age(S) <= Sp.tryMaxLv(k, 1))) return `${Sp.tryMaxLv(sp, 1)}세가 넘으면 ${U.j(Sp.ko(S, sp), '은')} 실업팀에도 들어가기 어렵습니다(동호인 리그·대회·코치는 할 수 있습니다)`;
       if (!sp && E.age(S) > 24) return '24세가 넘으면 프로가 되기 어렵습니다';
       if (sp && Sp.lvl(S, sp) >= 20) return true;
       return n0 ? n0(S) : true;
     };
-    t.hint = (S) => { const sp = Sp.mainOrNat(S), r = Sp.tryP(S, sp); return `${Sp.ko(S, sp)}${r.lg.abroad ? '(해외 리그)' : ''} · 합격 가능성 약 ${Math.max(1, Math.round(r.p * 100))}%`; };
-    t.run = (S) => { if (!Sp.main(S)) E.ask(S, 'sp_pick', { tryout: true }); else E.ask(S, 'sp_tryout', {}); return null; };
+    t.hint = (S) => { if (H.jobIs(S, 'athlete')) { const b = Sp.upTargets(S).map((x) => Sp.upP(S, x)).sort((a, b) => b - a)[0]; return `상위 리그 도전 · 가장 가능성 높은 곳 약 ${Math.max(1, Math.round((b || 0) * 100))}%`; } const sp = Sp.mainOrNat(S), r = Sp.tryP(S, sp); return `${Sp.ko(S, sp)}${r.lg.abroad ? '(해외 리그)' : ''} · 합격 가능성 약 ${Math.max(1, Math.round(r.p * 100))}%`; };
+    t.run = (S) => { if (H.jobIs(S, 'athlete')) E.ask(S, 'sp_up', { act: true }); else if (!Sp.main(S)) E.ask(S, 'sp_pick', { tryout: true }); else E.ask(S, 'sp_tryout', {}); return null; };
+    const k0 = t.koS;
+    t.koS = (S) => (H.jobIs(S, 'athlete') && S.work.job.sp ? `상위 리그 도전(${Sp.ko(S, S.work.job.sp)})` : k0(S));
   }
   // 운동하기: 내 종목이 있으면 그 종목으로
   // 운동하기: 내 종목이 있으면 그 종목으로(피드백 107번: 좋아하는 종목이 있는데도 '새벽에 걸었다' 같은 문장이 나옴)
@@ -27393,6 +27490,149 @@ const Sp = {};
     const j = S.work.job;
     return { ko: Sp.ko(S, sp), lv: Math.round(Sp.lvl(S, sp)), league: Sp.leagueKo(S, sp), pro: !!(j && j.id === 'athlete'), ret: j && j.id === 'athlete' && j.ret ? j.ret : null };
   };
+  /* ================================================================ 승급(피드백 132번)
+   * 예전: 세미프로·프로 2부 선수가 위로 올라갈 길이 없었다(입단 테스트는 '이미 프로 선수입니다'로 막힘).
+   * 지금: ① 할 일 '상위 리그 도전' — 이 나라의 더 높은 리그, 이 나라 리그가 끝이면 해외의 더 높은 리그 입단 테스트.
+   *       ② 해마다 잘 뛰는 선수에게 상위 리그 팀의 영입 제안(스카우트). 실제로도 하위 리그에서 뛰며 눈에 띄어 이적하는 길이 가장 흔하다.
+   * 이미 선수로 뛰고 있어 경기가 눈에 띄므로 같은 단계의 입단 테스트보다 조금 쉽다(문턱 −3). */
+  /** 지금 뛰는 리그 단계 */
+  Sp.curLv = (S) => {
+    const j = S.work.job;
+    if (!j || j.id !== 'athlete' || !j.sp) return 0;
+    return j.lv || Sp.league(j.sp, j.lg || E.iso(S)) || 1;
+  };
+  const lvCache = {};
+  /** 그 종목에서 단계가 lv 인 해외 리그 나라(가까운 지역·리그 규모가 큰 곳 먼저) */
+  const abroadAt = (S, sp, lv) => {
+    const key = sp + ':' + lv;
+    if (!lvCache[key]) lvCache[key] = Object.keys(DATA.c).filter((x) => Sp.league(sp, x) === lv);
+    const home = E.iso(S), rk = rkOf(home);
+    const list = lvCache[key].filter((x) => x !== home);
+    const near = list.filter((x) => rkOf(x) === rk);
+    const by = (a, b) => Wd.workerMedian(b) * Math.pow(popOf(b), 0.25) - Wd.workerMedian(a) * Math.pow(popOf(a), 0.25); // 리그 규모(인구×형편)가 큰 곳 먼저
+    return (near.length ? near.sort(by) : list.sort(by))[0] || null;
+  };
+  /** 올라갈 수 있는 곳: [{ iso, lv, abroad }] */
+  Sp.upTargets = (S) => {
+    const j = S.work.job;
+    if (!j || j.id !== 'athlete' || !j.sp || !SP[j.sp] || SP[j.sp].amateur) return [];
+    const sp = j.sp, cur = Sp.curLv(S), cap = Sp.femCap(S, sp), home = E.iso(S);
+    const out = [];
+    const dom = Math.min(Sp.league(sp, home), cap);
+    for (let lv = cur + 1; lv <= dom; lv++) out.push({ iso: home, lv, abroad: false });
+    if (dom <= cur) for (let lv = cur + 1; lv <= Math.min(3, cap); lv++) { const x = abroadAt(S, sp, lv); if (x) out.push({ iso: x, lv, abroad: true }); }
+    return out.filter((t) => E.age(S) <= Sp.tryMaxLv(sp, t.lv) + 4);
+  };
+  /** 상위 리그로 옮길 가능성 */
+  Sp.upP = (S, t) => {
+    const sp = S.work.job.sp, eff = Sp.eff(S, sp);
+    const T = 73 + (LV_T[t.lv] || 0) + (t.abroad ? 4 : 0) - 3;
+    const p1 = U.clamp((sig((eff - T) / 5) * 0.85 + luck(S)) * (t.abroad ? 0.7 : 1), 0.002, 0.9);
+    const t2 = 0.55 * Sp.talent(S, sp) + 0.45 * Sp.skillMix(S, sp);
+    const p2 = U.clamp(0.08 + 0.85 * sig((t2 - (64 + (LV_T[t.lv] || 0))) / 6), 0.03, 0.92);
+    return p1 * p2;
+  };
+  const tierWhere = (S, sp, t) => (t.abroad ? `${Wd.name(t.iso)}의 ${Sp.tierKo(S, sp, t.lv)}` : `이 나라 ${Sp.tierKo(S, sp, t.lv)}`);
+  /** 새 계약: 연봉·리그·직함을 바꾼다 */
+  const moveUp = (S, t, how) => {
+    const j = S.work.job, sp = j.sp, d = SP[sp], ko = Sp.ko(S, sp);
+    let months = 12 * Math.exp(U.normal(Sp.payMu(sp, t.iso, t.lv, S) - (t.abroad ? 0.2 : 0), d.sig * 0.7));
+    if (t.abroad && t.iso !== E.iso(S)) months *= U.clamp(Math.pow(Wd.workerMedian(t.iso) / Wd.workerMedian(E.iso(S)), 0.75), 0.3, 6);
+    const pay = Math.max(j.pay * 1.15, (Wd.workerMedian(E.iso(S)) * months) / 12);
+    const before = j.pay;
+    j.pay = pay; j.lg = t.iso; j.lv = t.lv;
+    j.title = Sp.title(S, sp, t.lv);
+    const movedT = t.abroad ? Sp.relocate(S, t.iso) : '';
+    H.fameUp(S, t.lv >= 3 ? 10 : 5); E.stat(S, 'happy', 12);
+    if (t.lv >= 3) H.ach(S, 'pro_athlete');
+    return C.t(S, `${how} ${t.abroad ? `${Wd.name(t.iso)}의 ${Sp.tierKo(S, sp, t.lv)}` : `이 나라 ${Sp.tierKo(S, sp, t.lv)}`} ${ko} 팀으로 옮겼습니다! 연봉은 ${Wd.money(E.iso(S), before)}에서 ${U.j(Wd.money(E.iso(S), pay), '으로')} 올랐습니다.`) + movedT;
+  };
+  // ① 할 일 '상위 리그 도전'
+  C.DEC.sp_up = {
+    title: () => '상위 리그 도전',
+    text: (S) => {
+      const j = S.work.job, sp = j.sp;
+      return C.t(S, `지금은 ${tierWhere(S, sp, { iso: j.lg || E.iso(S), lv: Sp.curLv(S), abroad: !!(j.lg && j.lg !== E.iso(S)) })}에서 뛰고 있습니다. 더 높은 리그의 입단 테스트를 볼 수 있습니다. 이미 경기를 뛰고 있어 같은 단계의 처음 도전보다 조금 유리하고, 해외 리그는 더 어렵습니다. (지금 ${Sp.ko(S, sp)} 기술 ${Math.round(Sp.lvl(S, sp))} · 타고난 재능 ${Math.round(Sp.talent(S, sp))} · 건강 ${Math.round(S.st.health)})`);
+    },
+    choices: (S, ctx) => {
+      const out = Sp.upTargets(S).map((t) => {
+        const p = Sp.upP(S, t);
+        return { label: `${tierWhere(S, S.work.job.sp, t)} 입단 테스트`, sub: `합격 가능성 약 ${Math.max(1, Math.round(p * 100))}%${t.abroad ? ' · 해외 이적' : ''}`,
+          run: (S2) => {
+            Sp.gain(S2, S2.work.job.sp, 2);
+            if (U.chance(p)) return moveUp(S2, t, '테스트를 통과해');
+            E.stat(S2, 'happy', -5);
+            const tips = [];
+            if (Sp.lvl(S2, S2.work.job.sp) < 80) tips.push('기술 연습·레슨');
+            if (S2.st.health < 75) tips.push('체력(건강) 끌어올리기');
+            tips.push('지금 리그에서 뛰며 스카우트의 눈에 띄기(해마다 영입 제안이 올 수 있음)');
+            return C.t(S2, `${tierWhere(S2, S2.work.job.sp, t)} 입단 테스트에서 떨어졌습니다. 지금 팀에서 계속 뜁니다. 다음에는: ${tips.join(', ')}.`);
+          } };
+      });
+      out.push({ label: '지금 팀에 남는다', typ: true, run: (S2) => { if (ctx && ctx.act) { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.tryout); delete S2.actCd.tryout; } return null; } });
+      return out;
+    },
+  };
+  // ② 해마다 스카우트 제안: 잘 뛸수록(합격 가능성이 높을수록) 자주
+  C.DEC.sp_scout = {
+    title: () => '상위 리그의 영입 제안',
+    text: (S, ctx) => {
+      const j = S.work.job, t = ctx.t, sp = j.sp;
+      return C.t(S, `지난 시즌 {N}의 경기를 지켜본 ${tierWhere(S, sp, t)} 팀이 영입을 제안했습니다. 지금 연봉은 ${Wd.money(E.iso(S), j.pay)}입니다.${t.abroad ? ' 해외 리그라 말도 생활도 낯설겠지만, 더 큰 무대입니다.' : ''}`);
+    },
+    choices: (S, ctx) => [
+      { label: '이적한다', sub: ctx.t.abroad ? '해외 이적' : '더 높은 리그로', run: (S2) => moveUp(S2, ctx.t, '영입 제안을 받아들여') },
+      { label: '지금 팀에 남는다', typ: true, run: (S2) => { E.stat(S2, 'happy', -1); return C.t(S2, '정든 팀에 남기로 했습니다. 동료들이 반겨 주었습니다.'); } },
+    ],
+  };
+  E.hook('year', (S) => {
+    const jj = S.work.job;
+    if (S.alive && !S.prison && jj && jj.id === 'athlete' && jj.lg && jj.lg !== E.iso(S) && DATA.c[jj.lg] && Sp.league(jj.sp, jj.lg) > 0) {
+      const mv = Sp.relocate(S, jj.lg);
+      if (mv) E.log(S, C.t(S, `팀이 있는 ${U.j(Wd.name(jj.lg), '으로')} 거처를 옮겼습니다.`) + mv, 'ev');
+    }
+  });
+  E.hook('year', (S) => {
+    if (!S.alive || S.queue.length || S.prison || !H.jobIs(S, 'athlete')) return;
+    const ts = Sp.upTargets(S);
+    if (!ts.length) return;
+    const best = ts.map((t) => [t, Sp.upP(S, t)]).sort((a, b) => b[1] - a[1])[0];
+    if (U.chance(Math.min(0.5, best[1] * 1.3))) E.ask(S, 'sp_scout', { t: best[0] });
+  });
+
+  /* 올림픽 예선 문장을 종목에 맞게(피드백 132번: 축구 선수가 '0.02초 차이로 출전권을 놓쳤습니다') */
+  {
+    const od = C.DEC.x_w_olympic;
+    if (od) {
+      const spOf = (S) => (S.work.job && S.work.job.sp) || Sp.main(S) || Sp.mainOrNat(S);
+      const MISS = {
+        team: '훈련 캠프 마지막 날, 최종 명단에서 이름이 빠졌습니다. 감독은 다음 소집 때 다시 보자고 했습니다.',
+        e: '대표 선발전 마지막 경기에서 져 국가대표 명단에 들지 못했습니다.',
+        race: '0.02초 차이로 출전권을 놓쳤습니다.',
+        gym: '0.15점 차이로 출전권을 놓쳤습니다.',
+        fight: '최종 예선 결승에서 판정으로 져 출전권을 놓쳤습니다.',
+        solo: '최종 예선 결승에서 마지막 세트를 내줘 출전권을 놓쳤습니다.',
+        aim: (sp) => (sp === 'golf' ? '세계 랭킹 몇 계단 차이로 출전권을 놓쳤습니다.' : '마지막 한 발에서 1점 차이로 출전권을 놓쳤습니다.'),
+      };
+      const x0 = od.text, t0 = od.title, c0 = od.choices;
+      od.title = (S, ctx) => { const sp = spOf(S); return SP[sp] && SP[sp].k === 'team' ? '국가대표 소집' : t0(S, ctx); };
+      od.text = (S, ctx) => {
+        const sp = spOf(S), d = SP[sp];
+        if (d && d.k === 'team') return C.t(S, `{N}이(가) ${Sp.ko(S, sp)} 국가대표 예비 명단에 들었습니다. 올림픽${sp === 'soccer' ? '(축구는 23세 이하 대표팀)' : ''}에 나갈 최종 명단은 훈련 캠프 뒤에 정해집니다.`.replace('{N}이(가)', '{N이}'), ctx);
+        return x0(S, ctx);
+      };
+      od.choices = (S, ctx) => c0(S, ctx).map((c) => ({ ...c, run: (S2, c2) => {
+        const r = c.run(S2, c2), sp = spOf(S2), d = SP[sp];
+        if (!d) return r;
+        const m = typeof MISS[d.k] === 'function' ? MISS[d.k](sp) : MISS[d.k];
+        const fix = (t) => (typeof t === 'string' ? t.replace('0.02초 차이로 출전권을 놓쳤습니다.', m).replace('예선을 통과해 올림픽 무대에 섰습니다!', d.k === 'team' ? '최종 명단에 들어 국가대표로 올림픽 무대에 섰습니다!' : '예선을 통과해 올림픽 무대에 섰습니다!') : t);
+        if (typeof r === 'string') return fix(r);
+        if (r && typeof r.text === 'string') r.text = fix(r.text);
+        return r;
+      } }));
+    }
+  }
+
 })();
 
 if (typeof module !== 'undefined') module.exports = Sp;
@@ -27404,7 +27644,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.4.2';
+E.VERSION = '0.4.3';
 E.BUILD_DATE = '26.10.14';
 
 /* ================================================================ 기본 도구 */
@@ -28686,6 +28926,8 @@ E.currentChoices = (S) => {
   return q._ch;
 };
 
+/** 하지 않기로 하는 선택지(할 일이 연 결정에서 고르면 쓴 기회·쿨다운·돈을 돌려준다 — 피드백 133번) */
+E.CANCEL_RE = /^(다음에|나중에|그만둔다|그냥 넘어간다|하지 않는다|안 한다|지금은 |이번에는 .*(않는다|둔다)|지금처럼 둔다|그대로 둔다|취소)/;
 E.choose = (S, idx) => {
   const q = S.queue[0];
   if (!q) return null;
@@ -28694,7 +28936,14 @@ E.choose = (S, idx) => {
   if (!ch || ch.disabled) return null;
   S.queue.shift();
   S.stats.choices = (S.stats.choices || 0) + 1;
+  const A0 = q.ctx && q.ctx._act;
   const res = ch.run(S, q.ctx);
+  // 결정 안에서 따로 돌려주지 않았으면(기회가 아직 줄어 있으면) 여기서 돌려준다
+  if (A0 && E.CANCEL_RE.test(String(ch.label || '')) && (S.ap || 0) < A0.ap0) {
+    S.ap = A0.ap0;
+    if (A0.cd0 === undefined) delete S.actCd[A0.id]; else S.actCd[A0.id] = A0.cd0;
+    if (A0.paid > 0) { if (A0.own) S.money += A0.paid; else E.addMoney(S, A0.paid); }
+  }
   const text = typeof res === 'string' ? res : res && res.text;
   if (text) E.log(S, text, (res && res.k) || 'choice');
   E.pruneQueue(S);
@@ -30720,6 +30969,11 @@ const Dv = {};
   H.pc = (S) => !!S.flags.pc;
   /** 인터넷에 붙을 기기(스마트폰이나 컴퓨터)가 있는가 */
   H.device = (S) => !!(S.flags.phone || S.flags.pc);
+  /** 내 기기로 인터넷에 닿는지(피드백 136번: 스마트폰이 있어도 나라 인터넷 보급률이 낮으면(우간다 약 9%) 개인 방송이 막혔음 —
+   *  스마트폰이 있으면 모바일 데이터로 쓴다. 도시이거나 보급률 5% 이상이면 닿는다고 본다) */
+  H.online = (S) => H.device(S) && (S.place.urban || H.internet(S) >= 0.05);
+  /** 기기·인터넷이 없어 못 할 때의 이유(없으면 true) */
+  H.onlineWhy = (S) => (H.online(S) ? true : !H.device(S) ? '스마트폰이나 컴퓨터가 있어야 합니다' : '사는 마을까지 인터넷이 닿지 않습니다');
   // 형편이 좋을수록 먼저 장만한다(평균은 나라 보유율 그대로: 0.7 + 0.6 × 형편 순위의 평균 = 1)
   const wpF = (S) => 0.7 + 0.6 * U.clamp(E.wealthP(S), 0, 1);
 
@@ -30792,7 +31046,9 @@ const Dv = {};
   /* ---------------------------------------------------------------- 쓰임 */
   // 온라인 강의: 스마트폰이나 컴퓨터(예전: 스마트폰이나 부유함)
   const on = C.ACTION.online;
-  if (on) on.need = (S) => (H.internet(S) > 0.35 && (H.device(S) || H.rich(S)) ? true : H.internet(S) <= 0.35 ? '인터넷을 쓰기 어렵습니다' : '스마트폰이나 컴퓨터가 있어야 합니다');
+  if (on) on.need = (S) => H.onlineWhy(S);
+  // 개인 방송·영상 올리기도 내 기기로(피드백 136번)
+  if (C.ACTION.stream) C.ACTION.stream.need = (S) => H.onlineWhy(S);
   // 공부하기: 컴퓨터와 인터넷이 있으면 자료를 찾아 조금 더 는다
   const st = C.ACTION.study;
   if (st && st.run) {
@@ -42881,6 +43137,7 @@ if (typeof module !== 'undefined') module.exports = Tb;
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.4.3', d: '26.10.14', t: '모자란 돈·선수 승급과 해외 이적·외국어', items: ['돈이 모자라면 얼마나 모자란지와 지금 쓸 수 있는 돈(현금+예금) 표시', '세미프로·2부 선수의 상위 리그 도전과 스카우트 제안(해외 이적 포함), 종목에 맞는 국가대표 선발 문장', '할 일 창에서 "다음에 한다"를 고르면 쓴 기회·쿨다운·돈을 돌려줌', '일자리 알아보기에 운동선수·연예인·예술가·작가·방송인·사업가·정치인으로 가는 길', '외국어 공부 효과를 키우고, 사는 나라의 공용어는 빨리 늚', '스마트폰이 있으면 인터넷 보급률이 낮은 나라에서도 개인 방송', '해외 팀과 계약·이적하면 그 나라로 옮겨 삶(가족 동반)', '이주 창에 비자 가능성의 계산(기본 난이도 × 학력·경력·언어·형편·나이 …)과 높이는 방법'] },
   { v: '0.4.2', d: '26.10.14', t: '선택지가 사라지던 결정 창', items: ['결정 창을 그리는 중에 그 결정이 정리되어 선택지 없이 제목과 본문만 남던 문제(예: 아이는 누가 돌볼까요?)'] },
   { v: '0.4.1', d: '26.10.14', t: '유소년 팀 다시 도전·기회 안내', items: ['유소년 팀 선발에 떨어지면 1년 뒤 다시 도전(15세까지, 연습한 실력 반영)', '할 일 기회를 다 썼을 때의 안내를 "기회를 모두 썼습니다 · 다음 기회까지 n달"로 — 그 할 일의 쿨다운과 구별'] },
   { v: '0.4.0', d: '26.10.14', t: '새 이름 「지구 어딘가에서」·픽셀 아바타',
@@ -43329,7 +43586,7 @@ UI.render = (full) => {
   $('#p-place').textContent = `${UI.flag(iso)} ${S.place.urban ? S.place.city + ', ' : '시골 마을, '}${Wd.name(iso)}`;
   const wp = E.wealthP(S);
   $('#p-money').textContent = S.indep
-    ? `${S.assets.length || S.loans.length ? '순자산 ' + Wd.money(iso, Ec.netWorth(S)) : '가진 돈 ' + Wd.money(iso, S.money)} · 생활수준 국내 ${U.rankText(wp)}`
+    ? `${S.assets.length || S.loans.length ? `쓸 수 있는 돈 ${Wd.money(iso, Ec.liquid(S))} · 순자산 ${Wd.money(iso, Ec.netWorth(S))}` : '가진 돈 ' + Wd.money(iso, S.money)} · 생활수준 국내 ${U.rankText(wp)}`
     : `부모님 집 · 생활수준 국내 ${U.rankText(wp)}`;
   const tl = Object.keys(S.talentSeen || {}).filter((k) => S.talentSeen[k]).map((k) => `${C.TALENT_KO[k]} 재능`);
   if (S.dream && C.DREAM[S.dream]) tl.push(S.dreamDone ? `꿈(${C.DREAM[S.dream].ko})을 이룸` : `꿈: ${C.DREAM[S.dream].ko}`);
@@ -43563,7 +43820,8 @@ UI.moneyHTML = (S) => {
   html += `<div class="card"><h3>재산</h3><table class="tbl">
     <tr><td>현금${S.money < 0 ? '<small>마이너스는 갚아야 할 빚입니다</small>' : ''}</td><td class="${S.money < 0 ? 'down' : ''}">${M(S.money)}</td></tr>
     ${rowsA}${rowsL}
-    <tr class="sum"><td>순자산</td><td>${M(Ec.netWorth(S))}</td></tr></table>
+    <tr class="sum"><td>순자산</td><td>${M(Ec.netWorth(S))}</td></tr>
+    <tr><td>바로 쓸 수 있는 돈<small>현금 + 예금 · 할 일·물건값은 여기서 나갑니다</small></td><td class="${Ec.liquid(S) < 0 ? 'down' : ''}">${M(Ec.liquid(S))}</td></tr></table>
     <div class="mini-btns"><button class="btn" data-act="invest">재산 관리</button>${!Ec.home(S) ? '<button class="btn" data-act="buyhouse">집 알아보기</button>' : ''}</div>
     <p class="src">넣고 빼는 데에는 할 일 기회가 들지 않습니다. 수익은 ${esc(Wd.name(iso))}의 금리·물가(세계은행)를 따르고 해마다 오르내립니다. 가진 물건: ${own.join(', ') || '특별한 것 없음'}.</p></div>`;
   // 연금
