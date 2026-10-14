@@ -5000,7 +5000,7 @@ A.state = (S, a) => {
   // 독립 전: 내 돈으로 내거나, 부모님 1년 살림의 4% 안쪽이면 부모님이 내 준다(피드백 26번)
   if (cost > 0 && !S.indep && S.money < H.pay(S, cost) && H.pay(S, cost) > S.fam.cons * S.fam.size * 0.04) return E.age(S) >= 15 ? '용돈이 모자라고, 집안 형편으로도 어렵습니다' : '집안 형편으로는 어렵습니다';
   const w = C.actAP(S, a), ap = S.ap || 0;
-  if (w > ap) return ap <= 0 ? `${C.apNext(S)}달 뒤에 기회가 생깁니다` : `기회가 ${w}번 필요합니다(지금 ${ap}번)`;
+  if (w > ap) return ap <= 0 ? `기회를 모두 썼습니다 · 다음 기회까지 ${C.apNext(S)}달` : `기회가 ${w}번 필요합니다(지금 ${ap}번)`;
   return true;
 };
 A.cost = (S, a) => (a.cost ? (typeof a.cost === 'function' ? a.cost(S) : a.cost) : 0);
@@ -5474,6 +5474,9 @@ C.metaAch = (lives) => {
   const labour = (S) => Wd.social('childLabour', H.iso(S), 0) || 0;
   const sig = (x) => 1 / (1 + Math.exp(-x));
   const tal = (S, k) => H.talent(S, k);
+  /** 유소년 팀 선발에서 보는 실력: 내 종목 기술(sports.js), 없으면 운동 실력(practice.js) */
+  const tryoutSkill = (S) => (typeof Sp !== 'undefined' && Sp.main && Sp.main(S) ? Sp.lvl(S, Sp.main(S)) : typeof Pr !== 'undefined' && Pr.lvl ? Pr.lvl(S, 'sport') : tal(S, 'sport'));
+  const tryoutSkillNote = (S) => (typeof Sp !== 'undefined' && Sp.main && Sp.main(S) ? ` (지금 ${Sp.ko(S, Sp.main(S))} 기술 ${Math.round(Sp.lvl(S, Sp.main(S)))})` : typeof Pr !== 'undefined' && Pr.lvl ? ` (지금 운동 실력 ${Math.round(Pr.lvl(S, 'sport'))})` : '');
   const hasFriend = (S) => (S.friends || []).some((f) => f.alive && !f.lost);
   const twoParents = (S) => H.parentsAlive(S) === 2 && !S.flags.parentsDivorced;
   // 곁에 계신 어른: 어머니 → 아버지 → 할머니 순으로 살아 계신 분(j 를 주면 조사를 붙인다)
@@ -6240,14 +6243,21 @@ C.metaAch = (lives) => {
       ],
     },
     {
-      id: 'c_tryout', age: [8, 12.9], rate: 0.1, once: true, who: 'newfriend',
-      title: '유소년 팀 선발',
-      text: '동네 {sport} 유소년 팀이 새 선수를 뽑습니다. 친구들이 같이 테스트를 보자고 합니다.',
+      // 피드백 129번: 떨어지면 '내년에 다시 도전'인데 once 라 다시 나오지 않았음 → 떨어지면 1년 뒤 다시 선발(15세까지), 그동안의 연습도 반영
+      id: 'c_tryout', age: [8, 15.9], cd: 1, who: 'newfriend',
+      rate: (S) => { if (S.flags.youthTeam || S.flags.c_tryoutQuit) return 0; if (S.flags.c_tryoutNext === undefined && S.cool.c_tryout !== undefined) S.flags.c_tryoutNext = S.cool.c_tryout + 12; /* 예전 저장: 이미 한 번 본 사람은 1년 뒤 다시 */ return S.flags.c_tryoutNext !== undefined ? (S.ageM >= S.flags.c_tryoutNext ? 6 : 0) : E.age(S) < 13 ? 0.1 : 0; },
+      title: (S) => (S.flags.c_tryoutNext !== undefined ? '유소년 팀 선발 — 다시 도전' : '유소년 팀 선발'),
+      text: (S) => (S.flags.c_tryoutNext !== undefined ? `작년에 떨어졌던 동네 {sport} 유소년 팀이 다시 새 선수를 뽑습니다. 그동안 연습한 만큼 보여 줄 차례입니다.${tryoutSkillNote(S)}` : '동네 {sport} 유소년 팀이 새 선수를 뽑습니다. 친구들이 같이 테스트를 보자고 합니다.'),
       choices: [
-        { l: '테스트를 본다', p: (S) => U.clamp(sig((tal(S, 'sport') - 60) / 8) + (S.st.health - 70) / 300, 0.05, 0.9),
+        { l: '테스트를 본다', p: (S) => {
+            // 타고난 재능과 연습으로 쌓은 실력(종목 기술·운동 실력)을 함께 본다
+            const sk = tryoutSkill(S);
+            return U.clamp(sig((0.55 * tal(S, 'sport') + 0.45 * Math.max(sk, tal(S, 'sport') * 0.6) - 58) / 8) + (S.st.health - 70) / 300, 0.05, 0.9);
+          },
           ok: { t: (S) => (H.poor(S) ? '운동화가 없어 맨발로 뛰었지만 코치의 눈에 들었습니다. 팀에 뽑혔습니다!' : '코치의 눈에 들어 팀에 뽑혔습니다! 새 유니폼을 입고 잠들었습니다.'), fx: { happy: 6, health: 3, social: 2, hobby: 'sport' }, then: 'c_bigGame', run: (S, ctx) => { H.reveal(S, 'sport'); befriend(S, ctx); } },
-          no: { t: '아쉽게 떨어졌습니다. 내년에 다시 도전하기로 했습니다.', fx: { happy: -4, health: 1 } } },
-        { l: '동네에서 즐기는 걸로 충분하다', typ: true, t: '팀에 들어가지 않아도 공은 매일 찰 수 있습니다.', fx: { happy: 2, health: 1 } },
+          no: { t: (S) => (E.age(S) < 15 ? '아쉽게 떨어졌습니다. 내년에 다시 도전하기로 했습니다. 그동안 연습을 꾸준히 해 두면 도움이 됩니다.' : '이번에도 떨어졌습니다. 유소년 팀에 들어갈 나이는 이제 지났지만, 학교 운동부에서 계속 뛸 수 있습니다.'), fx: { happy: -4, health: 1 },
+            run: (S) => { if (E.age(S) < 15) S.flags.c_tryoutNext = S.ageM + 12; else S.flags.c_tryoutQuit = true; } } },
+        { l: (S) => (S.flags.c_tryoutNext !== undefined ? '이번에는 보지 않는다' : '동네에서 즐기는 걸로 충분하다'), typ: true, t: '팀에 들어가지 않아도 공은 매일 찰 수 있습니다.', fx: { happy: 2, health: 1 }, run: (S) => { S.flags.c_tryoutQuit = true; } },
       ],
     },
     {
@@ -27394,7 +27404,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.4.0';
+E.VERSION = '0.4.1';
 E.BUILD_DATE = '26.10.14';
 
 /* ================================================================ 기본 도구 */
@@ -42296,7 +42306,7 @@ const Tb = {};
     if (E.age(S) < a.age[0] - 0.01 || E.age(S) > a.age[1]) return '지금 나이에는 하지 않습니다';
     if (a.hurt && S.tb.injured > 0) return '다친 몸으로는 어렵습니다';
     const ap = S.ap || 0;
-    if (a.ap > ap) return ap <= 0 ? `${Tb.apNext(S)}달 뒤에 기회가 생깁니다` : `기회가 ${a.ap}번 필요합니다(지금 ${ap}번)`;
+    if (a.ap > ap) return ap <= 0 ? `기회를 모두 썼습니다 · 다음 기회까지 ${Tb.apNext(S)}달` : `기회가 ${a.ap}번 필요합니다(지금 ${ap}번)`;
     return true;
   };
   Tb.doAction = (S, id) => {
@@ -42871,6 +42881,7 @@ if (typeof module !== 'undefined') module.exports = Tb;
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.4.1', d: '26.10.14', t: '유소년 팀 다시 도전·기회 안내', items: ['유소년 팀 선발에 떨어지면 1년 뒤 다시 도전(15세까지, 연습한 실력 반영)', '할 일 기회를 다 썼을 때의 안내를 "기회를 모두 썼습니다 · 다음 기회까지 n달"로 — 그 할 일의 쿨다운과 구별'] },
   { v: '0.4.0', d: '26.10.14', t: '새 이름 「지구 어딘가에서」·픽셀 아바타',
     items: ['게임 이름을 「지구 어딘가에서」로 바꿈(옛 이름 80억분의 1), 24×24 픽셀 아바타(나이·머리 모양·표정·병·군복·수감복)', '결혼과 재산: 나라별 이혼 재산 분할·위자료·연금 분할, 양육권·양육비, 혼전 계약, 트로피 파트너, 난임·시험관 시술, 일부다처·사촌혼·국제결혼·과부의 삶', '특수한 체제의 나라: 북한(출신 성분·장마당·정보와 이동 통제·탈북·수용소), 아프가니스탄·에리트레아·중국 호구·쿠바 등', '병역: 판정 검사·병과·휴학 입대·봉급과 적금·대체 복무·운동선수 특례·기피, 뜻하지 않은 동원과 강제 징집', '종교와 신념: 교파·전통, 무신론·불가지론·스토아 같은 신념, 스스로 고르는 종교와 그 까닭, 사이비 종교 피해와 모임 만들기', '나쁜 선택의 실제 이득: 밤새우기·각성제(할 일 기회), 시험 부정행위, 도핑, 탈세·횡령, 인맥, 연봉 부풀리기, 사치', '유언장이 떠날 때 실제로 재산을 나눔(상속세·법정 상속·유산 다툼, 부고의 남긴 재산)', '교도소 안의 자격증·검정고시는 무료, 수감 중 빚 독촉 없음·작업 장려금, 범죄 조직 안의 자리', '꾸준한 노력이 재능의 벽을 높임, 결혼한 뒤 뒤늦게 깨달은 성적 지향의 맥락'] },
   { v: '0.3.26', d: '26.10.14', t: '성적 지향·장애·미접촉 부족',
