@@ -1551,6 +1551,10 @@ C.hobbyName = (S, id) => {
   return typeof h.ko === 'function' ? h.ko(S) : h.ko;
 };
 C.availableHobbies = (S) => Object.keys(C.HOBBY).filter((id) => !C.HOBBY[id].need || C.HOBBY[id].need(S));
+/** 지금 처지(복무·수감·투병)에서 이어 갈 수 있는 취미인가 — situ.js 가 덮어씀(피드백 181번) */
+C.hobbyOK = () => true;
+/** 효과가 나는 취미: 가진 취미 가운데 지금 처지에서 할 수 있는 것만(못 하는 것은 쉬는 중) */
+C.activeHobbies = (S) => S.hobbies.filter((h) => C.hobbyOK(S, h));
 
 /* ================================================================ 직업 */
 // sec: 농업 agr / 공업 ind / 서비스 srv. edu: 최소 학력(0 없음 1 초등 2 중 3 고 4 대 5 대학원)
@@ -1771,7 +1775,7 @@ C.yearLine = (S) => `${E.year(S)}년 · 만 ${E.ageY(S)}세 · ${C.statusText(S)
 /* ================================================================ 생일마다 확인하는 이정표 */
 C.milestones = (S, ay) => {
   if (ay === 4) E.ask(S, 'temperament', {});
-  if (!S.prison && (ay === 8 || ay === 17 || ay === 32 || ay === 58)) E.ask(S, 'hobbyPick', { opts: U.deepCopy(C.hobbyOffer(S)) });
+  if (ay === 8 || ay === 17 || ay === 32 || ay === 58) { const o = C.hobbyOffer(S); if (o.length) E.ask(S, 'hobbyPick', { opts: U.deepCopy(o) }); }
   if (ay === 12) E.ask(S, 'dream', {});
   // 흡연·음주 권유: 다른 사건과 경쟁하지 않도록 나라·성별 통계로 '언제 권유받을지'를 미리 정한다
   if (ay === 12) {
@@ -1788,7 +1792,7 @@ C.milestones = (S, ay) => {
 };
 
 C.hobbyOffer = (S) => {
-  const av = C.availableHobbies(S).filter((h) => !S.hobbies.includes(h));
+  const av = C.availableHobbies(S).filter((h) => !S.hobbies.includes(h) && C.hobbyOK(S, h));
   const out = [];
   while (out.length < 3 && av.length) out.push(av.splice(Math.floor(Math.random() * av.length), 1)[0]);
   return out;
@@ -2249,7 +2253,11 @@ C.DEC.dream = {
 
 C.DEC.hobbyPick = {
   title: () => '새 취미',
-  text: (S) => C.t(S, S.hobbies.length >= 2 ? '요즘 새로 끌리는 것이 생겼습니다. 취미는 두 개까지 가질 수 있어, 새로 시작하면 오래된 취미 하나를 내려놓습니다.' : '여유 시간에 무엇을 할까요?'),
+  text: (S) => {
+    const w = C.hobbyWhere ? C.hobbyWhere(S) : '';
+    const lead = w ? `${w} 할 수 있는 것은 많지 않습니다. ` : '';
+    return C.t(S, lead + (S.hobbies.length >= 2 ? '요즘 새로 끌리는 것이 생겼습니다. 취미는 두 개까지 가질 수 있어, 새로 시작하면 오래된 취미 하나를 내려놓습니다.' : '여유 시간에 무엇을 할까요?'));
+  },
   choices: (S, ctx) => {
     const opts = (ctx.opts || []).filter((h) => C.HOBBY[h]);
     const out = opts.map((h) => ({
@@ -4957,9 +4965,9 @@ C.ACTIONS = [
       if (U.chance(1 / 30000)) { S.flags.extremeDeath = true; E.die(S, 'other'); return null; }
       E.stat(S, 'happy', 8); return `${U.pick(['번지점프', '스카이다이빙', '패러글라이딩', '암벽 등반', '급류 래프팅'])}에 도전했습니다. 심장이 터질 것 같았습니다!`;
     } },
-  { id: 'contest', ko: '취미 대회 나가기', cat: 'fun', age: [8, 100], cd: 12, need: (S) => reason(S.hobbies.length > 0, '취미가 없습니다'),
+  { id: 'contest', ko: '취미 대회 나가기', cat: 'fun', age: [8, 100], cd: 12, need: (S) => reason(C.activeHobbies(S).length > 0, S.hobbies.length ? '지금은 취미를 쉬고 있습니다' : '취미가 없습니다'),
     run: (S) => {
-      const h = U.pick(S.hobbies);
+      const h = U.pick(C.activeHobbies(S));
       const tk = { sport: 'sport', running: 'sport', dance: 'charm', music: 'music', drawing: 'art', reading: 'study', chess: 'study', cooking: 'art', crafts: 'art', games: 'study' }[h] || 'charm';
       const p = sig((S.talent[tk] - 70) / 8);
       if (U.chance(p)) { H.fameUp(S, 2); H.reveal(S, tk); E.stat(S, 'happy', 8); return `${C.hobbyName(S, h)} 대회에서 상을 받았습니다!`; }
@@ -5120,6 +5128,20 @@ A.raise = (S) => {
 const NO_WORK_VISA = ['jobhunt', 'selfstart', 'startup', 'rework', 'sidejob', 'cafejob', 'seek', 'election'];
 
 /** 행동 상태: true 면 가능, 문자열이면 잠긴 이유 */
+/* 복무 중에 할 수 있는 일(피드백 177·180번): 예전에는 운동·쉬기·공부·글쓰기·외국어·친구 만나기 6가지뿐이었다.
+ *  부대 안 병사: 기본 6가지 + 휴대전화를 쓸 수 있는 나라(중상위 소득 이상, 북한 제외)는 투자·자격증·온라인 강의·종교·기부·보험·검진 등.
+ *  출퇴근 대체 복무(사회복무요원·상근예비역·민간 대체복무): 겸직·영리 활동·출국만 막고 나머지는 할 수 있다. */
+const MIL_BASE = ['exercise', 'rest', 'study', 'novel', 'language', 'meetfriend'];
+const MIL_PHONE = ['invest', 'license', 'online', 'worship', 'donate', 'insure', 'lottery', 'checkup', 'therapy', 'groom', 'quitsmoke', 'lessdrink', 'diet', 'memoir', 'will'];
+const MIL_MIN = ['checkup', 'quitsmoke', 'lessdrink'];
+const MIL_PROFIT = ['sidejob', 'startup', 'selfstart', 'election', 'jobhunt', 'rework', 'cafejob', 'stream', 'audition', 'tryout', 'emigrate', 'abroad', 'pilgrim', 'gamble'];
+A.milBlock = (S, a) => {
+  const m = S.mil;
+  if (m.k === 'alt') return MIL_PROFIT.includes(a.id) ? '대체 복무 중에는 겸직·영리 활동·출국을 할 수 없습니다' : '';
+  const iso = E.iso(S), ok = MIL_BASE.concat(iso !== 'PRK' && Wd.dev(iso) >= 2 ? MIL_PHONE : MIL_MIN);
+  if (ok.includes(a.id)) return '';
+  return MIL_PROFIT.includes(a.id) ? '군인은 영리 활동·출국을 할 수 없습니다' : '부대 안에서 복무하는 동안에는 할 수 없습니다';
+};
 A.state = (S, a) => {
   const age = E.age(S);
   if (age < a.age[0]) return `${a.age[0]}세부터 할 수 있습니다`;
@@ -5127,7 +5149,7 @@ A.state = (S, a) => {
   if (H.incap(S)) return H.incapMsg(S); // 납치 등 스스로 결정할 수 없는 상태(dsl.js)
   if (H.limit) { const lim = H.limit(S, a); if (lim !== true) return lim; } // 병의 단계 때문에 못 하는 일(health.js)
   if (S.prison && !['study', 'exercise', 'rest', 'novel', 'license', 'language', 'ged', 'worship'].includes(a.id)) return '교도소 안에서는 할 수 없습니다';
-  if (S.mil && !['exercise', 'rest', 'study', 'novel', 'language', 'meetfriend'].includes(a.id)) return '군 복무 중에는 할 수 없습니다';
+  if (S.mil) { const why = A.milBlock(S, a); if (why) return why; } // 복무 형태에 따라(피드백 177·180번)
   if (S.ill && ['extreme', 'abroad', 'tryout', 'audition', 'election'].includes(a.id)) return '투병 중입니다';
   // 걸프 등 해외 계약 노동 중에는 고향에서 하는 일을 할 수 없다(점검: 사우디 계약 중 카라치 지방의원 당선)
   if (S.flags.a_gulf && ['jobhunt', 'selfstart', 'startup', 'election', 'rework', 'sidejob', 'cafejob', 'farmhelp', 'livestock', 'fishing', 'move'].includes(a.id)) return '해외에서 계약 노동 중입니다';
@@ -12868,7 +12890,7 @@ const Mg = {};
     S.place.city = t.city;
     S.place.urban = t.urban;
     if (t.lang !== undefined) S.langHere = t.lang;
-    if (!quiet && S.alive) E.log(S, C.t(S, `${nm(t.iso)}에서의 ${Mg.KIND_KO[t.kind] || '생활'}을 마치고 ${U.j(nm(t.back), '으로')} 돌아왔습니다.`), 'ev');
+    if (!quiet && S.alive) E.log(S, C.t(S, `${nm(t.iso)}에서의 ${U.j(Mg.KIND_KO[t.kind] || '생활', '을')} 마치고 ${U.j(nm(t.back), '으로')} 돌아왔습니다.`), 'ev');
   };
   E.hook('month', (S) => { if (S.tmp && S.alive && S.ageM >= S.tmp.endM) Mg.tempEnd(S); });
   /** 나라 안에서 잠시 다른 곳에 가서 일하기(공무원 순환 근무·지방 발령 — 피드백 171번). o: { urban: false(시골로) , alone: 가족은 두고 혼자 } */
@@ -15565,6 +15587,7 @@ const Pp = {};
     const to = ks.map((k) => S.fam[k].close);
     return ` (부모님과의 가까움 ${from.map(R).join('·')} → ${to.map(R).join('·')})`;
   };
+  Pp.dPar = dPar;
 
   /* ================================================================ 기준선 */
   const TRAIT_B = { '다정한': 4, '유머가 많은': 3, '성실한': 1, '야무진': 1, '부지런한': 1, '수줍음이 많은': 0, '무뚝뚝하지만 믿음직한': -2, '고집이 센': -4 };
@@ -19237,7 +19260,7 @@ const Pr = {};
   E.hook('month', (S) => {
     const a = E.age(S);
     if (a < 4) return;
-    const on = new Set((S.hobbies || []).map((h) => HOBBY_KIND[h]).filter(Boolean));
+    const on = new Set(C.activeHobbies(S).map((h) => HOBBY_KIND[h]).filter(Boolean));
     for (const k of Object.keys(Pr.KINDS)) {
       if (on.has(k)) Pr.gain(S, k, a < 10 ? 0.18 : 0.25);
       else if (Pr.lvl(S, k) > 0) S.prac[k] = Math.max(0, S.prac[k] - (k === 'sport' && a > 30 ? 0.12 : 0.04));
@@ -28005,7 +28028,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.6.1';
+E.VERSION = '0.6.2';
 E.BUILD_DATE = '26.10.16';
 
 /* ================================================================ 기본 도구 */
@@ -28382,7 +28405,7 @@ E.sysStats = (S) => {
   // 건강: 목표값으로 서서히
   // 생활 습관에서 오는 건강 편차: 사망 위험에 쓰는 값(급성 병치레·가난·흡연은 다른 곳에서 반영)
   let life = (f.health || 0) * 8;
-  for (const h of S.hobbies) life += (C.HOBBY[h] && C.HOBBY[h].health) || 0;
+  for (const h of C.activeHobbies(S)) life += (C.HOBBY[h] && C.HOBBY[h].health) || 0;
   if (S.trait === 'active') life += 3;
   else if (S.trait === 'mischief') life += 1.5; // 밖에서 뛰어노는 장난꾸러기
   if (S.work.job && C.JOB[S.work.job.id] && C.JOB[S.work.job.id].stress) life -= C.JOB[S.work.job.id].stress * 2;
@@ -28400,7 +28423,7 @@ E.sysStats = (S) => {
   // 지식
   let ds = (f.smarts || 0) * 0.3;
   if (S.edu.stage !== null) ds += 0.12;
-  for (const h of S.hobbies) ds += ((C.HOBBY[h] && C.HOBBY[h].smarts) || 0) * 0.08;
+  for (const h of C.activeHobbies(S)) ds += ((C.HOBBY[h] && C.HOBBY[h].smarts) || 0) * 0.08;
   if (S.trait === 'curious') ds *= 1.25;
   else if (S.trait === 'bookworm' || S.trait === 'tidy' || S.trait === 'quiet') ds *= 1.12;
   if (a > 70) ds -= 0.06;
@@ -28417,7 +28440,7 @@ E.sysStats = (S) => {
   let so = 45 + (f.social || 0) * 10;
   if (S.fam.married) so += 8;
   so += Math.min(10, S.fam.kids.filter((k) => k.alive).length * 2);
-  for (const h of S.hobbies) so += ((C.HOBBY[h] && C.HOBBY[h].social) || 0) * 3;
+  for (const h of C.activeHobbies(S)) so += ((C.HOBBY[h] && C.HOBBY[h].social) || 0) * 3;
   if (S.trait === 'kind') so += 5;
   if (S.flags.migrantM !== undefined && S.ageM - S.flags.migrantM < 60) so -= 10;
   if (a > 80) so -= 6;
@@ -28436,7 +28459,7 @@ E.sysStats = (S) => {
   if (S.fam.married) hp += 3;
   if (S.lifestyle === 'comfort') hp += 4;
   if (S.lifestyle === 'frugal') hp -= 3;
-  for (const h of S.hobbies) hp += ((C.HOBBY[h] && C.HOBBY[h].happy) || 0) * 2.5;
+  for (const h of C.activeHobbies(S)) hp += ((C.HOBBY[h] && C.HOBBY[h].happy) || 0) * 2.5;
   if (S.trait === 'cheerful') hp += 6;
   if (S.work.seeking && a >= 18) hp -= 7;
   if (S.ill) hp -= 12;
@@ -31486,11 +31509,16 @@ const Dv = {};
       if (k === 3 && LICX[mj] && !Ct.licensed(S, mj)) E.ask(S, 'licExam', { mj });
     };
   }
+  /** 부대 안에서 복무 중인가(의무 복무 병사·동원) — 이때는 면허 시험·첫 일자리를 전역 뒤로 미룬다(피드백 173번) */
+  const inBarracks = (S) => !!(S.mil && (S.mil.k === 'act' || S.mil.k === 'mob' || S.mil.k === 'forced'));
+  /** 아직 병역을 마치지 않은 한국 남성 의사(의무사관후보생 포함): 면허를 따면 첫 일자리보다 군의관·공중보건의사 복무를 먼저 */
+  const korMedDue = (S, mj) => mj === 'med' && E.iso(S) === 'KOR' && S.sex === 'm' && !S.flags.served && typeof E.needsService === 'function' && (E.needsService(S) || (S.ml && S.ml.medDefer));
   C.DEC.licExam = {
     title: (S, ctx) => LICX[ctx.mj].ko,
     text: (S, ctx) => C.t(S, `${ctx.retry ? '다시 ' : ''}${LICX[ctx.mj].ko}을 볼 때가 되었습니다. 붙으면 ${C.JOB[LICX[ctx.mj].job].ko}로 일할 수 있습니다. ({country} 합격률 약 ${Math.round(LICX[ctx.mj].base[Wd.dev(E.iso(S))] * 100)}% · 근삿값)`),
     choices: (S, ctx) => {
       const p = Ct.licExamP(S, ctx.mj), d = LICX[ctx.mj];
+      if (inBarracks(S)) return [{ label: '전역한 뒤에 시험을 보기로 한다', typ: true, sub: '복무 중에는 시험 준비를 할 수 없습니다', run: (S2) => { S2.flags.licExamPend = ctx.mj; return C.t(S2, `${d.ko}은 전역한 뒤에 보기로 했습니다.`); } }];
       return [
         { label: '시험을 본다', typ: true, sub: `합격 가능성 약 ${Math.round(p * 100)}% · 지식 ${Math.round(S.st.smarts)}`, run: (S2) => {
           if (U.chance(p)) {
@@ -31498,7 +31526,10 @@ const Dv = {};
             S2.cr = S2.cr || {}; S2.cr.lic = S2.cr.lic || {}; (S2.cr.lic[d.job] = S2.cr.lic[d.job] || []).includes(E.iso(S2)) || S2.cr.lic[d.job].push(E.iso(S2));
             E.stat(S2, 'happy', 10);
             if (typeof Cr !== 'undefined' && Cr.honor) Cr.honor(S2, 'cert', `${d.ko} 합격`);
-            E.ask(S2, 'licStart', { mj: ctx.mj });
+            // 한국 남성 의사는 병역(군의관·공중보건의사)을 먼저 정하고, 첫 일자리 결정은 복무를 마친 뒤로
+            if (korMedDue(S2, ctx.mj)) { S2.flags.licStartPend = ctx.mj; E.ask(S2, 'military', {}); }
+            else if (inBarracks(S2)) S2.flags.licStartPend = ctx.mj;
+            else E.ask(S2, 'licStart', { mj: ctx.mj });
             return C.t(S2, `${d.ko}에 합격했습니다! 면허증을 받았습니다.`);
           }
           E.stat(S2, 'happy', -8);
@@ -31527,6 +31558,17 @@ const Dv = {};
       return out;
     },
   };
+  // 전역하거나 대체 복무(군의관·공중보건의사)를 마치면 미뤄 둔 면허 시험·첫 일자리 결정을 다시 묻는다(피드백 173번)
+  E.hook('month', (S) => {
+    if (!S.alive || inBarracks(S) || S.queue.length) return;
+    const sv = S.ml && S.ml.sv && !S.ml.sv.done;
+    if (S.flags.licExamPend && !sv) { const mj = S.flags.licExamPend; delete S.flags.licExamPend; if (!Ct.licensed(S, mj)) E.ask(S, 'licExam', { mj }); return; }
+    if (S.flags.licStartPend && !sv && !(korMedDue(S, S.flags.licStartPend) && E.needsService(S))) {
+      const mj = S.flags.licStartPend; delete S.flags.licStartPend;
+      // 이미 군의관·공중보건의사로 의사 일을 하고 있으면(전역하며 일반의·전문의가 됨) 따로 묻지 않는다
+      if (!(S.work.job && S.work.job.id === LICX[mj].job)) E.ask(S, 'licStart', { mj });
+    }
+  });
   // 전공의 수련이 끝나면 전문의가 된다, 떨어진 면허 시험은 해마다 다시 묻는다
   E.hook('month', (S) => {
     const j = S.work && S.work.job;
@@ -40477,7 +40519,7 @@ const Ml = {};
   // 한국 병과: 복무 개월(2021년 이후), 보통 지원하는 비율(w), 뽑힐 가능성(p) — 연간 입영 약 75%가 육군
   const KBR = {
     army: { ko: '육군', mo: 18, w: 0.62 },
-    air: { ko: '공군', mo: 21, w: 0.22, p: 0.45, sub: '지원자가 많아 성적·면접으로 뽑습니다' },
+    air: { ko: '공군', mo: 21, w: 0.22, p: 0.2, sub: '지원자가 많아 추첨으로 뽑습니다(2026년부터)' },
     navy: { ko: '해군', mo: 20, w: 0.09, p: 0.75, sub: '배를 타고 복무하기도 합니다' },
     marine: { ko: '해병대', mo: 18, w: 0.08, p: 0.8, sub: '훈련이 혹독하기로 이름난 곳입니다' },
     katusa: { ko: '카투사', mo: 18, w: 0.05, p: 0.15, sub: '주한 미군 부대 · 영어 성적이 있어야 하고 추첨으로 뽑습니다' },
@@ -40506,8 +40548,8 @@ const Ml = {};
     NOR: [12, 0.02, '민간 대체복무', ['요양원', '복지관']],
     SWE: [11, 0.02, '민간 대체복무', ['구조대', '요양원']],
   };
-  const ALT_KO = { social: '사회복무요원', objector: '대체복무요원', civil: '민간 대체복무', natl: '국가봉사' };
-  const SV_KO = { industry: '산업기능요원', research: '전문연구요원', doctor: '공중보건의사', sport: '예술·체육요원' };
+  const ALT_KO = { social: '사회복무요원', objector: '대체복무요원', civil: '민간 대체복무', natl: '국가봉사', sangkeun: '상근예비역' };
+  const SV_KO = { industry: '산업기능요원', research: '전문연구요원', doctor: '공중보건의사', sport: '예술·체육요원', medofc: '군의관' };
   // 전역 뒤 예비군: [햇수, 해마다 훈련 소식이 남을 가능성, 문장들]
   const RESERVE = {
     KOR: [8, 0.75, ['예비군 동원 훈련 통지서가 날아왔습니다. 2박 3일 동안 오랜만에 군복을 입었습니다.', '예비군 훈련장에서 하루 종일 사격과 교육을 받았습니다.', '예비군 훈련에 다녀왔습니다. 같은 동네 사람들과 어색하게 웃었습니다.']],
@@ -40551,7 +40593,7 @@ const Ml = {};
   // 병역 기피자가 들어갈 수 없는 공공 일자리(한국 병역법 제76조: 국가기관·공공기관 임용 제한)
   const PUBLIC = new Set(['civil', 'police', 'firefighter', 'soldier']);
   const GRADE_KO = { 1: '1급(현역)', 2: '2급(현역)', 3: '3급(현역)', 4: '4급(보충역 — 사회복무요원)', 5: '5급(전시근로역 — 평시 면제)', 6: '6급(병역 면제)', 7: '7급(재신체검사)' };
-  const EX_KO = { grade: '병역판정검사 결과로 면제', lottery: '징병 추첨에서 뽑히지 않음', quota: '소집 대상에 들지 않음', prison: '복역으로 병역 의무가 끝남', wait: '사회복무요원 소집을 오래 기다려 면제', dis: '장애로 면제', age: '병역 의무 나이가 지남' };
+  const EX_KO = { hardship: '생계곤란으로 면제', grade: '병역판정검사 결과로 면제', lottery: '징병 추첨에서 뽑히지 않음', quota: '소집 대상에 들지 않음', prison: '복역으로 병역 의무가 끝남', wait: '사회복무요원 소집을 오래 기다려 면제', dis: '장애로 면제', age: '병역 의무 나이가 지남' };
   Ml.LIAB = LIAB; Ml.MOB = MOB; Ml.FORCED = FORCED; Ml.CIVIL = CIVIL; Ml.KBR = KBR; Ml.RESERVE = RESERVE;
 
   /* ================================================================ 상태와 의무 */
@@ -40568,6 +40610,7 @@ const Ml = {};
     if (m.ex || (m.g >= 5 && m.g <= 6)) return false;
     if (m.g === 7 && m.waitM !== undefined && S.ageM < m.waitM) return false;
     if (m.ev && m.ev.iso === c && !m.ev.done) return false; // 기피하고 떠났던 사람은 Ml.caught 가 다룬다
+    if (m.medDefer && ageOf(S) < 33 && !(typeof Ct !== 'undefined' && Ct.licensed && Ct.licensed(S, 'med'))) return false; // 의무사관후보생(피드백 173번)
     const [lo, hi] = Ml.window(c), a = ageOf(S);
     return a >= lo && a < hi + 1;
   };
@@ -40603,7 +40646,10 @@ const Ml = {};
     return r;
   };
   const RANKS = ['이병', '일병', '상병', '병장', '하사', '중사'];
-  Ml.rankName = (m, rk) => RANKS[Math.min(RANKS.length - 1, rk || 0)];
+  // 북한 인민군 하전사 계급(전사·초급병사·중급병사·상급병사 → 하사관 하사·중사·상사·특무상사), 그 밖의 나라는 일반 이름
+  const RANKS_C = { KOR: RANKS, PRK: ['전사', '초급병사', '중급병사', '상급병사', '하사', '중사', '상사', '특무상사'] };
+  const RANKS_G = ['이등병', '일등병', '상등병', '병장', '하사', '중사'];
+  Ml.rankName = (m, rk) => { const R = (m && RANKS_C[m.iso]) || RANKS_G; return R[Math.min(R.length - 1, rk || 0)]; };
   Ml.brKo = (m) => (m && m.br && BR_KO[m.br]) || '';
 
   /* ================================================================ 한국 병역판정검사 */
@@ -40719,6 +40765,7 @@ const Ml = {};
     if (m.k === 'alt') {
       if (m.alt === 'social') return `{N은} 사회복무요원으로 소집되었습니다. 4주 기초 군사 훈련을 마치고 ${U.pick(['주민센터', '노인 복지관', '장애인 복지 시설', '구청', '지하철역'])}에서 ${mo}개월 동안 출퇴근하며 복무합니다.${tail}`;
       if (m.alt === 'objector') return `{N은} 양심적 병역거부자로 인정받아 교정시설에서 ${mo}개월 동안 합숙하며 대체복무를 시작했습니다.${tail}`;
+      if (m.alt === 'sangkeun') return `{N은} 상근예비역으로 입영했습니다. 5주 훈련을 마치고 ${mo}개월 동안 집 근처 부대로 출퇴근하며 복무합니다.${tail}`;
       if (m.alt === 'natl') return `{N은} 국가봉사(셰루트 레우미)를 시작했습니다. ${mo}개월 동안 ${U.pick(['병원', '복지관', '이민자 지원 센터'])}에서 봉사합니다.`;
       const cv = CIVIL[c];
       return `{N은} ${U.j(cv ? cv[2] : '대체 복무', '을')} 시작했습니다. ${mo}개월 동안 ${cv ? U.pick(cv[3]) : '공공 기관'}에서 일합니다.`;
@@ -40890,18 +40937,20 @@ const Ml = {};
     S.flags.served = true;
     ml.sv = { k, start: S.ageM, endM: S.ageM + mo, iso: isoOf(S) };
     if (k !== 'sport' && C.makeJob) {
-      const id = k === 'research' ? 'researcher' : k === 'doctor' ? 'doctor' : S.edu.level >= 4 ? 'engineer' : U.pick(['factory', 'mechanic', 'welder', 'electrician']);
+      const id = k === 'research' ? 'researcher' : k === 'doctor' || k === 'medofc' ? 'doctor' : S.edu.level >= 4 ? 'engineer' : U.pick(['factory', 'mechanic', 'welder', 'electrician']);
       const cur = S.work.job;
       const keep = cur && (k === 'industry' ? (C.JOB[cur.id] || {}).sec === 'ind' : cur.id === id);
       if (!keep && C.JOB[id]) {
-        const o = C.makeJob(S, C.JOB[id], k === 'doctor' ? 0.8 : k === 'research' ? 0.85 : 0.9);
+        const o = C.makeJob(S, C.JOB[id], k === 'doctor' ? 0.8 : k === 'medofc' ? 0.7 : k === 'research' ? 0.85 : 0.9);
         if (k === 'doctor') o.title = '공중보건의사';
+        if (k === 'medofc') o.title = '군의관';
         E.takeJob(S, o);
         if (k === 'doctor' && S.work.job) S.work.job.title = '공중보건의사';
-      }
+        if (k === 'medofc' && S.work.job) S.work.job.title = isoOf(S) === 'KOR' ? '군의관(중위)' : '군의관';
+      } else if (keep && k === 'medofc' && S.work.job) { S.work.job.title = isoOf(S) === 'KOR' ? '군의관(대위)' : '군의관'; S.work.job.medPay = S.work.job.pay; S.work.job.pay *= 0.6; }
     }
     const job = S.work.job ? S.work.job.title : '';
-    const where = k === 'doctor' ? '농어촌 보건소에서 진료하며' : k === 'research' ? '연구소에서 연구하며' : k === 'sport' ? '선수로 뛰며 봉사 활동 544시간을 채우면서' : `${job ? U.j(job, '으로') + ' ' : ''}지정 업체에서 일하며`;
+    const where = k === 'medofc' ? '군 병원과 부대 의무대에서 장교로 진료하며' : k === 'doctor' ? '농어촌 보건소에서 진료하며' : k === 'research' ? '연구소에서 연구하며' : k === 'sport' ? '선수로 뛰며 봉사 활동 544시간을 채우면서' : `${job ? U.j(job, '으로') + ' ' : ''}지정 업체에서 일하며`;
     log(S, `{N은} ${U.j(SV_KO[k], '으로')} 편입되었습니다. 4주 기초 군사 훈련을 받은 뒤 ${mo}개월 동안 ${where} 병역을 대신합니다.`, 'milestone');
     return null;
   };
@@ -40910,6 +40959,7 @@ const Ml = {};
     sv.done = 1;
     ml.hist.push({ k: 'sv', sv: sv.k, iso: sv.iso, from: sv.start, to: S.ageM, why: 'done' });
     if (sv.k === 'doctor' && H.jobIs(S, 'doctor') && S.work.job.title === '공중보건의사') { S.work.job.title = '일반의'; S.work.job.pay *= 1.15; }
+    if (sv.k === 'medofc' && H.jobIs(S, 'doctor') && /^군의관/.test(S.work.job.title)) { const j = S.work.job; if (j.medPay) { j.pay = j.medPay; delete j.medPay; j.title = '전문의'; } else { j.title = '일반의'; j.pay *= 1.3; } }
     log(S, `{N은} ${SV_KO[sv.k]} 복무 기간을 마쳤습니다. 병역 의무를 다했습니다.`, 'milestone');
   };
   /** 양심적 병역거부: 대체역 심사위원회 심사(인정률 높음, 근삿값) → 교정시설 36개월 합숙 */
@@ -40974,7 +41024,7 @@ const Ml = {};
   /* ================================================================ 결정: 병역 의무 */
   const brChoice = (S, br, typ, leave) => {
     const b = KBR[br];
-    const p = b.p !== undefined ? clamp(b.p + (br === 'air' ? (S.st.smarts - 55) / 200 : br === 'marine' ? (S.st.health - 60) / 200 : br === 'sangmu' ? (H.talent(S, 'sport') - 80) / 60 : 0), 0.05, 0.95) : null;
+    const p = b.p !== undefined ? clamp(b.p + (br === 'air' ? 0 : br === 'marine' ? (S.st.health - 60) / 200 : br === 'sangmu' ? (H.talent(S, 'sport') - 80) / 60 : 0), 0.05, 0.95) : null;
     return {
       label: br === 'army' ? '육군으로 입대한다' : `${b.ko}에 지원한다`, typ,
       sub: `${b.mo}개월${b.sub ? ` · ${b.sub}` : ''}${p !== null ? ` · 뽑힐 가능성 약 ${pct(p)}%` : ''}`,
@@ -41007,7 +41057,24 @@ const Ml = {};
       if (ath) out.push(brChoice(S, 'sangmu', typ === 'sangmu', leave));
       if (vocOk && !leave) out.push({ label: '산업기능요원으로 일한다', sub: '34개월 · 지정 업체에서 일하며 복무 · 자리를 얻을 가능성 약 60%', typ: typ === 'industry', run: (S2) => (U.chance(0.6 + luck(S2)) ? Ml.svStart(S2, 'industry', 34) : Ml.enlistTxt(S2, { br: 'army', note: '산업기능요원 자리를 얻지 못해 육군으로 입대했습니다.' })) });
       if (resOk) out.push({ label: '전문연구요원으로 복무한다', sub: '36개월 · 연구소에서 연구하며 복무 · 자리를 얻을 가능성 약 65%', typ: typ === 'research', run: (S2) => (U.chance(0.65 + luck(S2)) ? Ml.svStart(S2, 'research', 36) : Ml.enlistTxt(S2, { br: 'army', note: '전문연구요원 자리를 얻지 못해 육군으로 입대했습니다.' })) });
-      if (docOk) out.push({ label: '공중보건의사로 복무한다', sub: '36개월 · 농어촌 보건소에서 진료', typ: typ === 'doctor', run: (S2) => Ml.svStart(S2, 'doctor', 36) });
+      if (docOk) out.push({ label: '공중보건의사로 복무한다', sub: '36개월 · 농어촌 보건소에서 진료', typ: typ === 'doctor' && h01(S, 'medofc') >= 0.55, run: (S2) => Ml.svStart(S2, 'doctor', 36) });
+      // 피드백 173번: 의사 면허가 있으면 군의관(의무 장교, 훈련 포함 약 38개월)으로 — 의사 일을 하며 관사·출퇴근으로 산다
+      if (docOk) out.push({ label: '군의관으로 복무한다', sub: '약 38개월 · 장교(중위·전문의는 대위)로 군 병원·부대 의무대에서 진료', typ: typ === 'doctor' && h01(S, 'medofc') < 0.55, run: (S2) => Ml.svStart(S2, 'medofc', 38) });
+      // 면허를 따기 전의 의대 졸업생: 의무사관후보생으로 입영을 미루고 면허를 딴 뒤 군의관·공중보건의사로(33세까지)
+      const medGrad = S.edu.major === 'med' && S.edu.level >= 4 && !docOk && ageOf(S) < 32 && !ml.medDefer;
+      if (medGrad) out.push({ label: '의무사관후보생으로 입영을 미룬다', sub: '면허를 먼저 따고 군의관이나 공중보건의사로 복무합니다', typ: true, run: (S2) => { Ml.ensure(S2).medDefer = S2.ageM; return T(S2, '{N은} 의무사관후보생으로 입영을 미뤘습니다. 의사 면허를 딴 뒤 군의관이나 공중보건의사로 복무합니다.'); } });
+      // 상근예비역: 현역으로 입영해 집 근처 부대로 출퇴근(자리가 있을 때 — 결혼했거나 아이가 있으면 더 쉬움, 근삿값)
+      if (!leave) {
+        const fam = S.fam.married || H.kids(S) > 0;
+        const ps = clamp(0.2 + (fam ? 0.4 : 0), 0.05, 0.8);
+        out.push({ label: '상근예비역을 신청한다', sub: `18개월 · 집에서 출퇴근하며 복무 · 될 가능성 약 ${pct(ps)}%${fam ? '(가족이 있어 우선)' : ''}`, run: (S2) => (U.chance(ps) ? Ml.enlistTxt(S2, { k: 'alt', alt: 'sangkeun', mo: 18 }) : Ml.enlistTxt(S2, { br: 'army', note: '상근예비역 자리가 없어 육군으로 입대했습니다.' })) });
+      }
+      // 생계곤란 병역감면: 나 말고 가족을 부양할 사람이 없을 때(2026 기준 재산·소득 요건, 신청자의 약 9할 인정 — 근삿값)
+      const poor = E.wealthP(S) < 0.15 || ((S.fam.married || H.kids(S) > 0) && E.wealthP(S) < 0.35) || ((!S.fam.father.alive && !S.fam.mother.alive) && E.wealthP(S) < 0.3);
+      if (poor) out.push({ label: '생계곤란 병역감면을 신청한다', sub: '가족을 부양할 사람이 나뿐이면 면제 · 받아들여질 가능성 약 85%', run: (S2) => {
+        if (U.chance(0.85)) { const m2 = Ml.ensure(S2); m2.ex = 'hardship'; S2.flags.served = true; Ml.afterSvc(S2); return T(S2, '{N은} 생계곤란 사유로 병역이 면제되었습니다(전시근로역). 가족의 생계를 이어 갑니다.'); }
+        return Ml.enlistTxt(S2, { br: 'army', note: '감면 신청이 받아들여지지 않아 육군으로 입대했습니다.' });
+      } });
     }
     if (!ml.objFail) out.push({ label: '양심에 따라 대체복무를 신청한다', sub: '교정시설에서 36개월 합숙 · 심사를 거칩니다', run: (S2) => Ml.objector(S2, ctx) });
     out.push({ label: '나라를 떠나 병역을 피한다', sub: '돌아오면 처벌 · 국적을 바꾸면 입국 금지 · 공무원이 될 수 없음', run: (S2) => Ml.evade(S2, ctx) });
@@ -41049,6 +41116,11 @@ const Ml = {};
       out.push({ label: c === 'ERI' ? '사와 훈련 캠프로 간다' : '입대한다', sub: c === 'ERI' ? '끝나는 날이 정해져 있지 않습니다' : `${moKo(mo)}`, typ: typ === 'act', run: (S2) => Ml.enlistTxt(S2, {}) });
     }
     if (cv) out.push({ label: `${U.j(cv[2], '을')} 신청한다`, sub: `${cv[0]}개월 · ${cv[3].join('·')} 같은 곳에서 일합니다`, typ: typ === 'civ', run: (S2) => Ml.enlistTxt(S2, { k: 'alt', alt: 'civil', mo: cv[0] }) });
+    // 피드백 173번: 의사 면허가 있으면 군의관(의무 장교)으로 — 대부분의 징병제 나라에서 의사는 의무 장교로 복무한다(북한은 milprk.js 가 따로)
+    if (c !== 'PRK' && c !== 'ERI' && S.edu.major === 'med' && typeof Ct !== 'undefined' && Ct.licensed && Ct.licensed(S, 'med')) {
+      out.forEach((o) => { o.typ = false; });
+      out.unshift({ label: '군의관(의무 장교)으로 복무한다', sub: `${moKo(mo)} · 군 병원과 부대 의무대에서 진료`, typ: true, run: (S2) => Ml.svStart(S2, 'medofc', mo) });
+    }
     if (c === 'ISR' && S.sex === 'f') out.push({ label: '종교적 이유로 면제받고 국가봉사를 한다', sub: '셰루트 레우미 · 1~2년 동안 병원·복지관에서 봉사', typ: typ === 'natl', run: (S2) => Ml.enlistTxt(S2, { k: 'alt', alt: 'natl', mo: U.pick([12, 24]) }) });
     if (c === 'TUR') out.push({ label: '돈을 내고 짧게 복무한다', sub: `유료 복무(바델리) · 한 달 남짓 기초 훈련 · 비용 약 ${H.amt(S, 6)}`, disabled: !affordable(S, 6), run: (S2) => { payCost(S2, 6); return Ml.enlistTxt(S2, { mo: 1, paid: true }); } });
     if (c !== 'PRK') {
@@ -41337,6 +41409,44 @@ const Ml = {};
     {
       id: 'ml_k_lastmonths', age: [16, 40], once: true, rate: (S) => (svc(S) && kor(S) && (S.mil.rk || 0) >= 3 ? 1 : 0), fx: { happy: 3 },
       text: '병장이 되어 전역 날짜를 손꼽아 세었습니다. 낙엽도 조심하라는 농담을 들었습니다.',
+    },
+    // 포상휴가(피드백 175·176번): 사격·훈련 우수·제보·경연 — 집에 다녀오며 가족·연인과 가까워진다
+    {
+      id: 'ml_k_award', age: [16, 40], cd: 1, rate: (S) => (svc(S) && kor(S) && S.ageM - S.mil.start >= 4 ? 0.45 : 0), fx: { happy: 5 },
+      run: (S) => {
+        const why = U.pick(['사격 훈련에서 만발을 맞혀', '부대 경연에서 상을 받아', '헌혈 봉사에 꾸준히 참여해', '훈련 평가에서 분대가 1등을 해']);
+        const near = typeof Si !== 'undefined' && Si.parentNear ? Si.parentNear(S) : S.fam.mother.alive || S.fam.father.alive;
+        const t = near && typeof Pp !== 'undefined' && Pp.dPar ? Pp.dPar(S, 3) : '';
+        if (S.romance) S.romance.love = clamp((S.romance.love || 50) + 6, 0, 100);
+        const home = near ? (S.fam.mother.alive ? '어머니가 차려 준 밥을 배불리 먹었습니다' : '아버지와 오랜만에 밥을 먹었습니다') : '보고 싶던 사람들을 만나고 늦잠을 실컷 잤습니다';
+        const sp = S.fam.married && S.fam.partner && S.fam.partner.alive && !S.fam.partner.left ? S.fam.partner : null;
+        const with_ = sp ? `${U.j(sp.name, '과')} 오랜만에 함께 지내고 ` : S.romance ? `${U.j(S.romance.name, '과')} 데이트도 하고 ` : '';
+        return `${why} 포상휴가를 받았습니다. ${with_}${home}.${t}`;
+      },
+    },
+    // 해외 파병(피드백 175번): 한국 병사는 동명부대(레바논)·한빛부대(남수단)·청해부대(아덴만)에 지원할 수 있음. 경쟁이 세고, 해외 파병 수당이 따로 나옴(근삿값)
+    {
+      id: 'ml_k_pko', age: [18, 32], once: true, rate: (S) => (svc(S) && kor(S) && S.mil.k === 'act' && S.ageM - S.mil.start >= 3 && S.ageM - S.mil.start <= 8 ? 0.6 : 0),
+      title: '해외 파병 지원',
+      text: '레바논 동명부대·남수단 한빛부대·아덴만 청해부대가 병사를 뽑습니다. 8개월쯤 나라 밖에서 복무하고, 해외 파병 수당이 따로 나옵니다. 지원자가 많아 뽑히기 쉽지 않습니다.',
+      choices: [
+        {
+          l: '지원한다', p: (S) => U.clamp(0.2 + (S.st.health - 60) / 200 + (S.st.smarts - 50) / 300, 0.08, 0.45),
+          ok: { run: (S) => { const u = U.pick(['레바논 동명부대', '남수단 한빛부대', '아덴만 청해부대']); give(S, 9000000 / ppp('KOR')); S.flags.pko = 1; E.stat(S, 'happy', 4); return `${u} 장병으로 뽑혀 8개월 동안 파병을 다녀왔습니다. 해외 파병 수당으로 약 ${won(9000000)}을 모았습니다.`; } },
+          no: { t: '지원했지만 뽑히지 않았습니다. 경쟁이 셌습니다.', fx: { happy: -1 } },
+        },
+        { l: '지원하지 않는다', typ: true, t: '남은 복무를 국내에서 마치기로 했습니다.' },
+      ],
+    },
+    // 분대장(피드백 175번): 상병 이상 — 맡으면 사람을 이끄는 일을 배우지만 마음고생도 크다
+    {
+      id: 'ml_k_squad', age: [16, 40], once: true, rate: (S) => (svc(S) && kor(S) && (S.mil.rk || 0) >= 2 ? 0.8 : 0),
+      title: '분대장',
+      text: '중대장이 {N}에게 분대장을 맡아 달라고 합니다. 분대장 수당이 붙지만, 분대원들 사이의 일까지 챙겨야 합니다.',
+      choices: [
+        { l: '맡는다', typ: true, t: '분대장 견장을 달았습니다. 신병들의 고민을 들어 주느라 밤이 짧았습니다.', fx: { social: 4, skill: 3, happy: -1 } },
+        { l: '사양한다', t: '조용히 남은 복무를 마치기로 했습니다.', fx: { happy: 1 } },
+      ],
     },
     {
       id: 'ml_alt_day', age: [16, 45], cd: 1, rate: (S) => (S.mil && S.mil.k === 'alt' ? 1 : 0), fx: { happy: 1, social: 1 },
@@ -46216,9 +46326,11 @@ const Si = {};
   /** 부모님이 가까이 계심(같은 나라·연락 가능) */
   Si.parentNear = (S) => (S.fam.father.alive || S.fam.mother.alive) && !H.parAway(S) && !(hasRg() && Rg.cutOff(S) && H.parIso(S) === 'PRK');
 
+  /** 지금 처지 이름만(가벼운 판정) */
+  Si.kind = (S) => (S.hosp ? 'hosp' : S.prison ? 'prison' : Si.barracks(S) ? 'barracks' : Si.bed(S) ? 'bed' : Si.away(S) ? 'away' : 'home');
   /** 지금 처지와 태그별 가능 여부 */
   Si.of = (S) => {
-    const k = S.hosp ? 'hosp' : S.prison ? 'prison' : Si.barracks(S) ? 'barracks' : Si.bed(S) ? 'bed' : Si.away(S) ? 'away' : 'home';
+    const k = Si.kind(S);
     const closed = k === 'hosp' || k === 'prison' || k === 'barracks'; // 바깥 사회와 떨어진 곳
     const still = closed || k === 'bed';
     const cut = hasRg() && Rg.cutOff(S);
@@ -46299,6 +46411,40 @@ const Si = {};
     };
   }
 
+  /* ---------------------------------------------------------------- 처지에 맞는 취미(피드백 181번 3안) */
+  // 정해진 나이(8·17·32·58세)에 뜨는 '새 취미'는 그대로 두되, 복무·수감·투병 중이면 그곳에서 할 수 있는 취미만 내놓는다.
+  // 이미 가진 취미 가운데 못 하는 것은 '쉬는 중' — 효과·연습이 멈췄다가 처지가 풀리면 다시 이어진다.
+  const HOB_OK = {
+    barracks: ['sport', 'reading', 'music', 'chess', 'running', 'drawing', 'faith', 'gym', 'crafts'],
+    prison: ['sport', 'reading', 'drawing', 'chess', 'faith', 'crafts', 'music'],
+    hosp: ['reading', 'music', 'drama', 'games', 'sns', 'crafts', 'chess', 'drawing', 'faith'],
+  };
+  HOB_OK.bed = HOB_OK.hosp;
+  const HOB_KOR = ['games', 'sns', 'drama']; // 한국(2020년부터)·이스라엘처럼 잘사는 나라 병사는 일과 뒤 휴대폰·생활관 TV를 쓸 수 있음
+  const WHERE = { barracks: '복무하는 동안', prison: '수감된 동안', hosp: '입원한 동안', bed: '몸을 회복하는 동안' };
+  C.hobbyOK = (S, h) => {
+    const k = Si.kind(S), ok = HOB_OK[k];
+    if (!ok) return true;
+    if (k === 'barracks' && HOB_KOR.includes(h) && (E.iso(S) === 'KOR' || Wd.dev(E.iso(S)) >= 3)) return true;
+    return ok.includes(h);
+  };
+  C.hobbyWhere = (S) => WHERE[Si.kind(S)] || '';
+  // 쉬게 된 때·다시 이어 간 때를 기록에 한 줄(입원처럼 짧은 것은 조용히)
+  const LOUD = ['barracks', 'prison', 'bed'];
+  const hobNames = (S, hs) => hs.map((h) => C.hobbyName(S, h)).join('·');
+  E.hook('month', (S) => {
+    if (!S.hobbies || !S.hobbies.length) { if (S.hobPause) S.hobPause = undefined; return; }
+    const k = Si.kind(S);
+    const off = S.hobbies.filter((h) => !C.hobbyOK(S, h));
+    const prev = S.hobPause || { hs: [], k: 'home' };
+    if (off.join() === prev.hs.join()) return;
+    const newly = off.filter((h) => !prev.hs.includes(h));
+    const back = prev.hs.filter((h) => !off.includes(h) && S.hobbies.includes(h));
+    S.hobPause = off.length ? { hs: off, k } : undefined;
+    if (newly.length && LOUD.includes(k)) E.log(S, `${WHERE[k]} ${U.j(hobNames(S, newly), '은')} 쉬게 되었습니다.`);
+    else if (back.length && LOUD.includes(prev.k)) E.log(S, `다시 ${U.j(hobNames(S, back), '을')} 이어 가게 되었습니다.`);
+  });
+
   /* ---------------------------------------------------------------- 군 복무 중 가족(피드백 176번) */
   // 면회·집에 거는 전화가 부모님·배우자와의 가까움을 조금씩 올린다(예전에는 행복만 올랐음)
   const evById = (id) => C.EVENTS.find((e) => e.id === id);
@@ -46323,11 +46469,2146 @@ const Si = {};
   }
 })();
 
+/* 지구 어딘가에서 — 직업군인: 병·부사관·장교의 경로·계급·정년·연금·입문 (v0.6.2, 피드백 175번)
+ *
+ * 175번 "군복무 및 직업군인으로서 할 수 있는 옵션을 검색해서 적용. 특수국가의 경우는 별도 처리"
+ * 근거(숫자는 모두 공개 자료의 근삿값, '확인 필요'는 보수적으로 잡음):
+ *   docs/점검_군복무_일반나라_결과_20261015_1523.md — 4-1 공통 설계안(트랙·계급·병과·진급·정년·연금), 4-2 한국(군인사법 제8조 연령·근속·계급정년,
+ *     군인연금 19년 6개월·평균 기준소득월액 × 1.9% × 연수·상한 62.7%, 퇴직일시금, 부사관 장기복무 2028년부터 사실상 전원, 비사관 장교 장기 선발 30% 미만,
+ *     사관학교 의무 10년·학군 28개월·학사 36개월·부사관 4년), K11 전문하사, 4-3 다른 나라(미국 20년 2% 연금·up or out·GI Bill·입대 나이 42세,
+ *     영국 20년 + 40세 조기퇴직급, 프랑스 비장교 17년·장교 27년 즉시 연금과 외인부대 5년 계약·3년 뒤 귀화, 인도네시아 2025년 정년, 이스라엘 40대 초반 퇴역,
+ *     일본 50대 중반 정년, 브라질 35년, 평화유지 파견국), 6장 데이터 표.
+ *   docs/점검_군복무_특수국가_결과_20261015_1537.md — 5장 (나) 직업군인·특수 경로: 북한 군관·하전사(milprk.js 의 군관 추천이 So.commission 을 부름),
+ *     러시아 계약병(입대금·월급 약 2.4배·빚 탕감·전쟁 중 사실상 무기한 계약, 전역 신청 막음), 걸프 국민 군인(급여 높음 — 확인 필요라 1.5배),
+ *     파키스탄 장교 택지(15·25·28년), 이집트·파키스탄 등 장교의 퇴역 뒤 요직, 북한에는 유엔 평화유지 파병 없음.
+ *
+ * 상태: 직업 'soldier' 의 S.work.job.so = { track: 'enl' 병 | 'nco' 부사관 | 'off' 장교, rk(계급 번호), since(군 경력 시작 달), rkM(지금 계급이 된 달),
+ *       oblig(의무 복무가 끝나는 달), long(장기 복무·재계약 여부), br(병과), iso(복무하는 나라), path(들어온 길), m·sum(복무 달 수·연봉 합 — 연금 계산),
+ *       pm·ps(일반 연금 가입 기록에 함께 쌓인 몫), fail(지금 계급에서 진급 누락 횟수) }
+ *       사람에게는 S.sol = { pen(받는 군인연금), penAt·penLater(늦게 받는 연금), hist(복무 기록), cadet(사관생도), legion, gi(GI Bill), plots, res }
+ *       예전 저장(job.so 없음)은 처음 볼 때 학력·근속으로 채운다.
+ * 하는 일
+ *  (가) 계급과 직함: 회사 직급(C.LEVELS — 선임·팀장·부장·임원) 대신 계급. 한국·다른 나라는 이병~원사·소위~대장, 북한은 하전사(전사~특무상사)·군관(소위~대장).
+ *       H.jobTitle → '직업군인 (중사)'·'군관 (상위)'. 진급은 근속 + 심사(j_sol_promo 결정을 감쌈), 낮은 계급은 저절로. 미국만 대위 이하 두 번 누락 시 전역.
+ *  (나) 정년: 한국 계급별 연령·근속·계급 정년, 미국 근속 상한(HYT·장교 20/28/30년)과 62세, 인도네시아·이스라엘·일본, 그 밖 근삿값 → 전역 결정(강제).
+ *  (다) 군인연금: 전역할 때 복무 연수가 조건을 넘으면 바로(영국은 40세부터) S.work.pension 에 더하고 S.sol.pen 에 따로 적어 둔다. 못 채우면 일시금.
+ *       군인연금이 따로인 나라는 그 기간을 일반 연금 가입 기록(S.work.pr)에서 뺀다. 나중에 일반 은퇴(Ec.retire)할 때 군인연금이 지워지지 않게 감싼다.
+ *  (라) 입문: 한국 병장 전역 2~3달 전 전문하사·부사관(so_kstay), 대학을 마친 사람의 장교 모집(so_off, 한국 미필 남성은 병역 결정에 학군·학사장교),
+ *       지원제 나라의 사병·부사관 모집(so_enl, 러시아는 계약병), 대학 입학 때 사관학교(so_acad → 졸업하면 소위), 프랑스 외인부대(so_legion → 3년 뒤 귀화),
+ *       미국 GI Bill(so_gi). 일자리 제안의 직업군인은 나라별 입대 나이까지만.
+ *  (마) 직업군인 사건 손질: j_sol_drill 문장(장교 '부하들'·부사관 '분대원'), j_sol_deploy(파견지 갱신·저소득 기여국 ↑·북한 제외·전방 배치 동안 분쟁 위험),
+ *       j_sol_promo(계급 진급), j_sol_pay(북한은 배급), j_sol_exit(의무 기간 뒤에만·러시아 전쟁 중 막음·한국은 제대군인 지원센터).
+ *  (바) 직업군인은 영내 병사(S.mil)가 아니라 관사·출퇴근으로 산다 — 결혼·가족 생활은 그대로. 동원·강제 징집·의무 복무 소집에서는 뺀다.
+ * API: So.commission(S, { track, rk, title, note, br, path, oblig, long, why }) — 의무 복무 중이면 조용히 전역시키고 직업군인 일자리를 준다.
+ *      So.title(S) — 지금 계급 이름('중사'), So.fullTitle(S) — '직업군인 (중사)'. So.leave(S, why) — 전역(연금 정산 포함).
+ * 사망: 새 원인 없음. 병과에 따라 엔진의 직업 위험 배수를 조금 바꾸고(특수전 ↑, 행정·통신 ↓), 전쟁 중 전방 배치 동안만 분쟁 지역에 있는 것으로 본다.
+ */
+'use strict';
+
+const So = {};
+(() => {
+  /* ================================================================ 도구 */
+  const clamp = U.clamp;
+  const T = (S, s, x) => C.t(S, s, x);
+  const log = (S, s, k = 'ev') => E.log(S, C.t(S, s), k);
+  const pct = (p) => Math.round(p * 100);
+  const nm = (c) => Wd.name(c);
+  const isoOf = (S) => E.iso(S);
+  const ageOf = (S) => E.age(S);
+  const hasMl = () => typeof Ml !== 'undefined' && !!Ml && typeof Ml.discharge === 'function';
+  const hasMg = () => typeof Mg !== 'undefined' && !!Mg && typeof Mg.isCitizen === 'function';
+  const hasCr = () => typeof Cr !== 'undefined' && !!Cr && typeof Cr.honor === 'function';
+  const hasDs = () => typeof Ds !== 'undefined' && !!Ds && typeof Ds.milExempt === 'function';
+  const hasPp = () => typeof Pp !== 'undefined' && !!Pp && typeof Pp.bump === 'function';
+  const hasEc = () => typeof Ec !== 'undefined' && !!Ec && typeof Ec.earn === 'function';
+  const citizen = (S, c) => (hasMg() ? Mg.isCitizen(S, c) : S.born.iso === c);
+  const warLv = (c) => Wd.social('conflict', c, 0) || 0;
+  const consc = (c) => Wd.social('conscription', c, null);
+  const luck = (S) => (E.luckP ? E.luckP(S) : 0);
+  const money = (S, x) => Wd.money(isoOf(S), x);
+  const conv = (x, a, b) => (hasEc() && Ec.conv ? Ec.conv(x, a, b) : x);
+  const earn = (S, x) => { if (!(x > 0)) return; if (hasEc()) Ec.earn(S, 'other', x); else E.addMoney(S, x); };
+  /** 같은 사람은 늘 같은 값이 나오는 0~1 사이 값(보통 선택을 사람마다 나누는 데 쓴다) */
+  const h01 = (S, key) => { const str = `${S.id}|so|${key}`; let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % 1000003) / 1000003; };
+  /** 연수를 '19년 6개월'처럼 */
+  const yrsKo = (y) => { const t = Math.max(0, Math.round(y * 12)), n = Math.floor(t / 12), m = t % 12; return n ? `${n}년${m ? ` ${m}개월` : ''}` : `${m}개월`; };
+  const moKo = (n) => yrsKo(n / 12);
+  const retireAge = (S) => Wd.social('retire', isoOf(S), [62, 60])[Wd.si(S.sex)] || 62;
+  const partnerOn = (S) => !!(S.fam.married && S.fam.partner && S.fam.partner.alive && !S.fam.partner.left);
+  const kidsHome = (S) => S.fam.kids.filter((k) => k.alive && (S.ageM - k.bornM) / 12 < 18 && !k.left);
+  /** 배우자·집에 있는 아이와의 가까움(사람 모듈)을 조금 바꾼다 */
+  const fam = (S, d) => {
+    if (!hasPp() || !d) return '';
+    let tail = '';
+    if (partnerOn(S) && S.fam.partner.close !== undefined) tail = Pp.bump(S, S.fam.partner, 'partner', d) || '';
+    for (const k of kidsHome(S)) if (k.close !== undefined) Pp.bump(S, k, 'kid', d);
+    return tail;
+  };
+  /** 직함에서 괄호 설명(예전 '군관(소위)')을 뺀 이름. 일반 이름('직업군인')이면 undefined(나라·트랙에 맞는 이름을 새로 붙임) */
+  const baseOf = (j) => { const t = String((j && j.title) || '').replace(/\s*\(.*\)\s*$/, ''); return t && t !== C.JOB.soldier.ko ? t : undefined; };
+  const soJob = (S) => (S && S.work && S.work.job && S.work.job.id === 'soldier' ? S.work.job : null);
+  /** 계급이 있는 직업군인인가 */
+  const soOn = (S) => { const j = soJob(S); return !!(j && j.so); };
+  So.on = soOn;
+  So.sol = (S) => (S.sol = S.sol || {});
+
+  /* ================================================================ 표: 계급 */
+  // 병(0~3)·부사관(4~7) 한 줄, 장교 한 줄. 북한은 하전사(전사~특무상사, 2023년 이후 이름)·군관(소위~대장).
+  // eq: 정년·직급 단계 계산용으로 일반 계급 번호에 맞춘 값
+  const LAD = {
+    gen: { enl: ['이병', '일병', '상병', '병장', '하사', '중사', '상사', '원사'], off: ['소위', '중위', '대위', '소령', '중령', '대령', '준장', '소장', '중장', '대장'], nco: 4, eqO: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] },
+    prk: { enl: ['전사', '초급병사', '중급병사', '상급병사', '하사', '중사', '상사', '특무상사'], off: ['소위', '중위', '상위', '대위', '소좌', '중좌', '상좌', '대좌', '소장', '중장', '상장', '대장'], nco: 4, eqO: [0, 1, 1, 2, 3, 4, 5, 5, 6, 7, 8, 9] },
+  };
+  const ladKey = (iso) => (iso === 'PRK' ? 'prk' : 'gen');
+  const ranksOf = (iso, track) => LAD[ladKey(iso)][track === 'off' ? 'off' : 'enl'];
+  const ncoAt = (iso) => LAD[ladKey(iso)].nco;
+  /** 일반 계급 번호(정년·직급 단계용) */
+  const eqOf = (so) => (so.track === 'off' ? LAD[ladKey(so.iso)].eqO[so.rk] : so.rk);
+  So.rankName = (so) => (so ? ranksOf(so.iso, so.track)[so.rk] || '' : '');
+  So.title = (S) => { const j = soJob(S); return j && j.so ? So.rankName(j.so) : ''; };
+  So.fullTitle = (S) => { const j = soJob(S); return j && j.so ? `${j.title} (${So.rankName(j.so)})` : j ? j.title : ''; };
+  /** 회사 직급 단계(j.lv, 권력·뇌물 사건이 씀)에 맞춘 값: 장교 대위 1·영관 2·대령 3·장성 4, 부사관 중사 1·상사 이상 2 */
+  So.tier = (so) => { const e = eqOf(so); return so.track === 'off' ? (e <= 1 ? 0 : e === 2 ? 1 : e <= 4 ? 2 : e === 5 ? 3 : 4) : (e <= 4 ? 0 : e === 5 ? 1 : 2); };
+  const BR_KO = { inf: '보병', art: '포병', armor: '기갑', eng: '공병', sig: '통신', intel: '정보', cyber: '사이버', med: '의무', law: '법무', avi: '항공', sf: '특수전', log: '군수', adm: '행정', legion: '외인부대' };
+  So.brKo = (so) => (so && BR_KO[so.br]) || '';
+  // 병과별 직업 위험 배수 [기타 사고, 분쟁]: 엔진의 직업군인 배수(분쟁 ×6·사고 ×1.5)에 곱한다
+  const BR_RISK = { sf: [1.3, 1.3], inf: [1.1, 1.2], armor: [1.05, 1.1], eng: [1.05, 1], avi: [1.2, 1], legion: [1.2, 1.3], sig: [0.75, 0.5], intel: [0.75, 0.5], cyber: [0.7, 0.4], log: [0.8, 0.6], adm: [0.7, 0.4], med: [0.75, 0.6], law: [0.7, 0.4] };
+
+  /* ---------------------------------------------------------------- 진급: [최소 근속(년), 진급 가능성, 심사 결정(1)] — 계급 i 에서 i+1 로 */
+  const PR = {
+    enl: [[0.5, 1], [1, 1], [1.5, 0.92], [2, 0.5], [3, 0.65], [6, 0.5, 1], [7, 0.35, 1]],
+    off: [[1.5, 0.97], [2, 0.92], [6, 0.6, 1], [5, 0.5, 1], [5, 0.35, 1], [4, 0.05, 1], [3, 0.35, 1], [3, 0.25, 1], [3, 0.15, 1]],
+    prkOff: [[2, 0.95], [2, 0.9], [3, 0.8], [4, 0.55, 1], [4, 0.5, 1], [4, 0.4, 1], [4, 0.25, 1], [4, 0.05, 1], [3, 0.35, 1], [3, 0.25, 1], [3, 0.15, 1]],
+  };
+  // 한국: 하사→중사 약 2~3년, 상사·원사는 장기 복무자 위주 / 미국: DOPMA 기준 소령 약 80%·중령 70%·대령 50% 안팎(근삿값)
+  const PR_ISO = {
+    KOR: { enl: { 4: [2.5, 0.75], 5: [7, 0.5, 1], 6: [8, 0.35, 1] }, off: { 2: [6, 0.55, 1], 3: [5, 0.45, 1], 4: [5, 0.3, 1], 5: [4, 0.05, 1] } },
+    USA: { off: { 2: [5, 0.8, 1], 3: [5, 0.7, 1], 4: [5, 0.5, 1], 5: [4, 0.04, 1] } },
+  };
+  So.nextRule = (so) => {
+    const off = so.track === 'off';
+    const L = ranksOf(so.iso, so.track);
+    if (so.rk >= L.length - 1) return null;
+    const base = off ? (so.iso === 'PRK' ? PR.prkOff : PR.off) : PR.enl;
+    const o = PR_ISO[so.iso] && PR_ISO[so.iso][off ? 'off' : 'enl'];
+    const r = (o && o[so.rk]) || base[so.rk];
+    if (!r) return null;
+    return { tg: r[0], p: r[1], rev: !!r[2], to: so.rk + 1, toKo: L[so.rk + 1] };
+  };
+  /** 진급 가능성: 기본값에 능력치·사관학교 출신·장기 복무 여부를 곱하고, 같은 계급에서 떨어질수록 낮아진다(해마다 다시 보더라도 누적이 실제 비율과 비슷하게) */
+  So.promoP = (S, so, nx) => {
+    if (nx.p >= 0.99) return 1;
+    let f = 1 + (S.st.smarts - 50) / 120 + (S.st.skill - 30) / 200;
+    if (S.st.health < 35) f -= 0.3;
+    if (so.track === 'off' && so.path === 'acad' && eqOf(so) >= 2) f += 0.25;
+    if (nx.rev && !so.long) f -= 0.3;
+    let p = nx.p * clamp(f, 0.3, 1.8);
+    if (nx.rev && so.fail) p *= Math.pow(0.6, so.fail);
+    return clamp(p, 0.01, 0.97);
+  };
+
+  /* ---------------------------------------------------------------- 정년 */
+  // 연령정년(세): 일반 계급 번호별. 한국 군인사법 제8조(2024년 소령 50세 개정 반영) · 미국 장교 62세(장성 64세) · 인도네시아 2025년 TNI법 ·
+  // 이스라엘 장교 42~43세·부사관 53세 퇴역 · 일본 50대 중반(확인 필요) · 그 밖 근삿값
+  const LIM = {
+    KOR: { enl: [40, 40, 40, 40, 40, 45, 53, 55], off: [43, 43, 43, 50, 53, 56, 58, 59, 61, 63], svcO: [15, 15, 15, 24, 32, 35], tigO: { 6: 6, 7: 6, 8: 4 } },
+    USA: { enl: [62, 62, 62, 62, 62, 62, 62, 62], off: [62, 62, 62, 62, 62, 62, 64, 64, 64, 64], svcE: [5, 5, 5, 8, 13, 20, 24, 30], svcO: [0, 0, 0, 20, 28, 30, 35, 35, 38, 40] },
+    IDN: { enl: [55, 55, 55, 55, 55, 55, 55, 55], off: [58, 58, 58, 58, 58, 58, 60, 61, 62, 63] },
+    ISR: { enl: [40, 40, 40, 40, 53, 53, 53, 53], off: [42, 42, 42, 43, 45, 47, 50, 52, 55, 55] },
+    JPN: { enl: [50, 50, 50, 53, 54, 55, 56, 56], off: [55, 55, 56, 56, 56, 57, 60, 60, 60, 62] },
+    _: { enl: [35, 35, 38, 40, 45, 50, 54, 56], off: [45, 45, 45, 50, 54, 56, 58, 59, 60, 62], svcE: [8, 8, 10, 12, 22, 26, 30, 32] },
+  };
+  /** 지금 정년에 걸리는가: { why: 'age'|'svc'|'tig'|'upout', lim } 또는 null */
+  So.limit = (S) => {
+    const j = soJob(S);
+    if (!j || !j.so) return null;
+    const so = j.so, L = LIM[so.iso] || LIM._, e = eqOf(so), off = so.track === 'off', ay = E.ageY(S);
+    if (so.upout) return { why: 'upout', lim: 2 };
+    const al = (off ? L.off : L.enl)[e];
+    if (al && ay >= al) return { why: 'age', lim: al };
+    const sv = off ? L.svcO : L.svcE;
+    const svc = (S.ageM - so.since) / 12;
+    if (sv && sv[e] > 0 && svc >= sv[e]) return { why: 'svc', lim: sv[e] };
+    const tg = off && L.tigO && L.tigO[e];
+    if (tg && (S.ageM - so.rkM) / 12 >= tg) return { why: 'tig', lim: tg };
+    return null;
+  };
+
+  /* ---------------------------------------------------------------- 연금 */
+  // yrs: 즉시 연금 조건(복무 연수), rate·cap: 연수당 지급률·상한, base: avg 평균 보수 · hi3 마지막 3년(≈ 마지막 보수) · last85 마지막 보수의 85%(수당 제외),
+  // lumpF: 못 채우면 받는 일시금(평균 월 보수 × 연수 × lumpF), sep: 일반 연금과 따로인 제도(그 기간을 일반 연금 가입 기록에서 뺌)
+  So.penRule = (iso, so) => {
+    if (iso === 'PRK') return null; // 국가가 정한 명목 수준이라 따로 두지 않는다(일반 연금 그대로)
+    if (iso === 'KOR') return { yrs: 19.5, rate: 0.019, cap: 0.627, base: 'avg', lumpF: 1, sep: true, ko: '군인연금', lumpKo: '퇴직일시금' };
+    if (iso === 'USA') return { yrs: 20, rate: 0.02, cap: 0.6, base: 'hi3', lumpF: 0.6, sep: false, ko: '군 퇴직연금', lumpKo: '저축 계정(TSP) 적립금' };
+    if (iso === 'GBR') return { yrs: 20, age: 40, rate: 0.02, cap: 0.6, base: 'avg', lumpF: 0.5, lumpX: 2.25, sep: false, ko: '군인연금(조기퇴직급)', lumpKo: '퇴직 일시금' };
+    if (iso === 'FRA') return { yrs: so && so.track === 'off' ? 27 : 17, rate: 0.02, cap: 0.75, base: 'last85', lumpF: 0.5, sep: true, ko: '군인연금', lumpKo: '퇴직 일시금' };
+    if (iso === 'BRA') return { yrs: 35, rate: 0.02, cap: 0.7, base: 'avg', lumpF: 0.5, sep: true, ko: '군인연금', lumpKo: '퇴직 일시금' };
+    const dev = Wd.dev(iso);
+    return { yrs: 20, rate: 0.02, cap: dev >= 2 ? 0.7 : 0.6, base: 'avg', lumpF: 0.5, sep: true, ko: '군인연금', lumpKo: '퇴직 일시금' };
+  };
+  /** 지금 전역하면 연금이 어떻게 되는지 한 문장 */
+  So.penPreview = (S) => {
+    const j = soJob(S);
+    if (!j || !j.so) return '';
+    const so = j.so, R = So.penRule(so.iso, so), yrs = (so.m || 0) / 12;
+    if (!R) return '';
+    if (yrs >= R.yrs) return `복무 ${U.j(yrsKo(yrs), '으로')} ${R.ko} 조건(${yrsKo(R.yrs)})을 채웠습니다.${R.age && ageOf(S) < R.age ? ` 연금은 ${R.age}세부터 나옵니다.` : ''}`;
+    return `${U.j(R.ko, '은')} ${U.j(yrsKo(R.yrs), '을')} 채워야 나오고, 지금 전역하면 ${R.lumpKo}만 받습니다.`;
+  };
+
+  /* ---------------------------------------------------------------- 입대 나이·의무 기간·병과 */
+  // 입대 나이 상한: 미국 육군 42(2026년 3월)·영국 36·한국 부사관·장교 27(군필은 복무 기간만큼 연장)·인도 아그니파트 21·러시아 계약병 50(근삿값)
+  const ENTRY = { KOR: { enl: 27, off: 27 }, USA: { enl: 42, off: 39 }, GBR: { enl: 36, off: 29 }, FRA: { enl: 32, off: 30 }, RUS: { enl: 50, off: 30 }, IND: { enl: 21, off: 25 }, _: { enl: 30, off: 30 } };
+  So.entryMax = (S, iso, tr) => ((ENTRY[iso] || ENTRY._)[tr === 'off' ? 'off' : 'enl']) + (iso === 'KOR' && S.flags.served ? 2 : 0);
+  /** 일반 일자리 제안으로 직업군인이 될 수 있는가(나이·건강·장애·북한은 군 경로로만) */
+  So.canJoin = (S) => {
+    const iso = isoOf(S), a = ageOf(S);
+    if (iso === 'PRK' || S.mil || a < 17) return false;
+    if (S.st.health < 35 || (hasDs() && Ds.milExempt(S))) return false;
+    return a <= Math.max(So.entryMax(S, iso, 'enl'), S.edu.level >= 4 ? So.entryMax(S, iso, 'off') : 0) + 0.99;
+  };
+  /** 의무 복무(달): 한국 부사관 4년·학사장교 36개월·학군 28개월·사관학교 10년, 미국 입대 계약 4년·사관학교 5년, 외인부대 5년 */
+  So.obligDef = (iso, track, path) => {
+    if (path === 'legion') return 60;
+    if (path === 'acad') return iso === 'KOR' ? 120 : iso === 'USA' ? 60 : 96;
+    if (path === 'rotc') return 28;
+    if (path === 'kstay') return 12;
+    if (path === 'contract') return 12;
+    if (iso === 'KOR') return track === 'off' ? 36 : 48;
+    if (iso === 'USA' || iso === 'GBR') return 48;
+    return track === 'off' ? 60 : 48;
+  };
+  /** 병과: 전공·지식·건강으로 나누고 나머지는 보통 비율로 */
+  So.pickBr = (S, track) => {
+    const mj = S.edu.major, off = track === 'off';
+    if (mj === 'med' && off) return 'med';
+    if (mj === 'law' && off) return 'law';
+    if (mj === 'nurse') return 'med';
+    if (mj === 'cs' && S.st.smarts >= 55) return 'cyber';
+    if (mj === 'eng' && U.chance(0.6)) return U.chance(0.5) ? 'eng' : 'sig';
+    if (S.st.smarts >= 72 && U.chance(0.3)) return 'intel';
+    if (S.sex === 'm' && S.st.health >= 75 && U.chance(0.2)) return 'sf';
+    const w = [['inf', 0.34], ['art', 0.12], ['armor', 0.08], ['eng', 0.08], ['sig', 0.1], ['log', 0.14], ['adm', 0.08]];
+    if (off) w.push(['avi', 0.06]);
+    return U.weighted(w);
+  };
+  const GULF = new Set(['SAU', 'ARE', 'QAT', 'KWT', 'BHR', 'OMN']);
+  /** 직업군인이 되면 병역 의무도 마친 것으로 본다 */
+  const served = (S) => { S.flags.served = true; };
+  So.baseTitle = (iso, track, S) => (iso === 'PRK' ? (track === 'off' ? '군관' : '하전사') : C.JOB.soldier.ko);
+
+  /* ================================================================ 상태 만들기 */
+  /** job 에 계급 상태(so)를 붙인다. o: { track, rk(번호·계급 이름), br, path, oblig(달), long, title, old(예전 저장) } */
+  So.init = (S, j, o = {}) => {
+    const iso = o.iso || isoOf(S), a = ageOf(S), edu = S.edu.level;
+    let track = o.track;
+    if (!track) {
+      if (iso === 'PRK' || iso === 'KOR') track = edu >= 4 && a <= So.entryMax(S, iso, 'off') + 3 ? 'off' : 'nco';
+      else track = edu >= 4 && a <= So.entryMax(S, iso, 'off') + 1 && h01(S, `trk${S.ageM}`) < 0.7 ? 'off' : 'enl';
+    }
+    const L = ranksOf(iso, track), nco = ncoAt(iso);
+    let rk = typeof o.rk === 'number' ? o.rk : typeof o.rk === 'string' ? L.indexOf(o.rk) : -1;
+    if (rk < 0) rk = track === 'off' ? 0 : track === 'nco' ? nco : edu >= 4 ? 3 : 0;
+    if (iso === 'KOR' && track !== 'off' && rk < nco) rk = nco; // 한국에는 직업 병사가 없다(전문하사·부사관 하사부터)
+    rk = clamp(Math.round(rk), 0, L.length - 1);
+    if (track !== 'off') track = rk >= nco ? 'nco' : 'enl';
+    const so = { track, rk, since: S.ageM, rkM: S.ageM, iso, br: o.br || So.pickBr(S, track), path: o.path || 'offer', m: 0, sum: 0, pm: {}, ps: {}, fail: 0 };
+    so.oblig = S.ageM + (o.oblig !== undefined ? o.oblig : So.obligDef(iso, track, so.path));
+    so.long = !!o.long || iso === 'PRK' || so.path === 'acad' || (so.path === 'contract' && warLv(iso) >= 2);
+    if (o.old) {
+      // 예전 저장: 근속으로 계급을 짐작하고, 그동안의 복무 달 수·보수·일반 연금 가입 몫을 채운다
+      const since = j.since !== undefined ? j.since : S.ageM;
+      const mo = Math.max(0, S.ageM - since);
+      so.since = since; so.m = mo; so.sum = j.pay * mo * 0.85;
+      const r = S.work.pr && S.work.pr[iso];
+      if (r && r.m) { const k = Math.min(1, mo / r.m); so.pm[iso] = Math.round(r.m * k); so.ps[iso] = r.sum * k; }
+      let left = mo / 12;
+      for (let g = 0; g < 12; g++) {
+        const nx = So.nextRule(so);
+        if (!nx || left < nx.tg || (nx.p < 0.5 && !U.chance(nx.p * 1.3))) break;
+        left -= nx.tg; so.rk = nx.to;
+        if (so.track !== 'off' && so.rk >= nco) so.track = 'nco';
+      }
+      so.rkM = S.ageM - Math.round(left * 12);
+      so.oblig = since + So.obligDef(iso, so.track, so.path);
+      so.long = so.long || mo >= 60;
+    }
+    j.so = so;
+    j.formal = true;
+    j.lv = So.tier(so);
+    if (o.title !== false) j.title = o.title || So.baseTitle(iso, so.track, S);
+    served(S);
+    return so;
+  };
+  /** 보수(연, 그 나라 국제달러): 일반 일자리 보수 계산(C.makeJob)에 트랙·계급을 곱한다. 군 봉급은 계급·호봉으로 정해져 남녀 차이가 없다 */
+  So.payFor = (S, so) => {
+    // 봉급표가 정해져 있어 사람마다 차이가 작다: 일반 일자리 보수의 무작위 폭을 세 번 평균으로 줄인다
+    let pay = (C.makeJob(S, C.JOB.soldier, 1).pay + C.makeJob(S, C.JOB.soldier, 1).pay + C.makeJob(S, C.JOB.soldier, 1).pay) / 3;
+    if (S.sex === 'f') pay /= 0.86;
+    pay *= so.track === 'off' ? 1.1 : so.track === 'nco' ? 1 : 0.85;
+    const base = so.track === 'off' ? 0 : so.track === 'nco' ? ncoAt(so.iso) : 0;
+    pay *= Math.pow(1.08, Math.max(0, so.rk - base));
+    if (GULF.has(so.iso) && citizen(S, so.iso)) pay *= 1.5; // 걸프 국민 군인: 급여가 높음(확인 필요 — 보수적으로)
+    if (so.path === 'contract') pay *= 2.2; // 러시아 계약병: 월 약 21만 루블, 보통 일꾼의 2배 남짓
+    return pay;
+  };
+
+  /* ================================================================ 임관·입대 API */
+  const joinLine = (S, so) => {
+    const r = So.rankName(so), br = So.brKo(so), brT = br ? `${br} 병과` : '';
+    const obl = moKo(so.oblig - S.ageM);
+    if (so.path === 'acad') return `{N은} 사관학교를 졸업하고 ${U.j(r, '으로')} 임관했습니다. ${brT ? `${U.j(brT, '이')} 정해졌고, ` : ''}의무 복무는 ${obl}입니다.`;
+    if (so.track === 'off') return `{N은} 장교 후보생 교육을 마치고 ${U.j(r, '으로')} 임관했습니다.${brT ? ` ${brT}입니다.` : ''} 의무 복무는 ${obl}입니다.`;
+    if (so.track === 'nco') return `{N은} ${U.j(r, '으로')} 임관했습니다.${brT ? ` ${brT}입니다.` : ''} 의무 복무는 ${obl}입니다.`;
+    return `{N은} ${obl} 계약으로 입대해 직업군인이 되었습니다.${brT ? ` ${brT} ${r}입니다.` : ` 계급은 ${r}입니다.`}`;
+  };
+  /**
+   * 직업군인으로 임관·입대시킨다. 의무 복무 중이면 조용히 전역시키고(Ml.discharge quiet), 직업군인 일자리를 주고, 기록 한 줄을 남긴다.
+   * o: { track('enl'|'nco'|'off'), rk(번호 또는 계급 이름), title(직함 또는 계급 이름), note(기록 문장 — '{N은}' 없으면 붙임), br, path, oblig(달), long, why(복무 기록의 이유) }
+   */
+  So.commission = (S, o = {}) => {
+    if (!S || !S.alive) return null;
+    let base = null, fromMil = false;
+    if (S.mil && hasMl()) {
+      const m = S.mil, unit = m.unit;
+      fromMil = true;
+      if (m.pol && isoOf(S) === 'PRK') base = '정치군관';
+      Ml.discharge(S, o.why || (m.mpOff ? 'off' : 'done'), { quiet: true, next: false });
+      const h = S.ml && S.ml.hist && S.ml.hist[S.ml.hist.length - 1];
+      if (h && unit && !h.unit) h.unit = unit;
+    }
+    // 의무 복무를 마친 사람의 예비군 훈련 소식은 직업군인으로 있는 동안 멈춘다(전역하면 다시)
+    if (S.ml && S.ml.res && !S.ml.res.done) { So.sol(S).res = S.ml.res; delete S.ml.res; }
+    const iso = isoOf(S);
+    const track = o.track || 'nco';
+    let rk = o.rk, title = o.title;
+    if (typeof title === 'string' && ranksOf(iso, track).includes(title)) { if (rk === undefined) rk = title; title = null; }
+    const job = { id: 'soldier', title: '', pay: 0, formal: true, lv: 0 };
+    const so = So.init(S, job, { track, rk, br: o.br, path: o.path || 'api', oblig: o.oblig, long: o.long, title: title || base || undefined });
+    job.pay = So.payFor(S, so);
+    E.takeJob(S, job);
+    const j = soJob(S);
+    if (!j) return null;
+    E.stat(S, 'happy', 4);
+    const note = o.note ? (/^\{N/.test(o.note) ? o.note : `{N은} ${o.note}`) : joinLine(S, j.so);
+    const tail = fromMil ? (iso === 'PRK' && j.so.track === 'off' ? ' 군관은 결혼해 관사에서 가족과 함께 살 수 있습니다.' : ' 이제 영내 병사가 아니라 관사에서 지내며 출퇴근합니다.') : '';
+    log(S, note + tail, 'milestone');
+    return j;
+  };
+  /** 직업군인 생활을 끝낸다(기록 한 줄 → 일자리 정리 → 연금 정산은 loseJob 연결 고리가 맡음) */
+  So.leave = (S, why = 'quit', o = {}) => {
+    const j = soJob(S);
+    if (!j) return;
+    if (!o.quiet && j.so) log(S, o.line || leaveLine(S, j.so, why), 'milestone');
+    S.work.history.push({ id: j.id, title: j.so ? `${j.title} (${So.rankName(j.so)})` : j.title, from: j.since, to: S.ageM, pay: j.pay });
+    S.work.job = null;
+    S.work.seeking = !S.work.retired;
+    S.work.unemployedM = 0;
+    E.fire('loseJob', S, why, j);
+  };
+  const leaveLine = (S, so, why) => {
+    const r = So.rankName(so), y = yrsKo((S.ageM - so.since) / 12);
+    if (why === 'upout') return `{N은} 진급 누락으로 ${r} 계급에서 전역했습니다. 군에서 ${U.j(y, '을')} 보냈습니다.`;
+    if (why === 'oblig') return `{N은} 의무 복무를 마치고 ${r} 계급으로 전역했습니다.`;
+    if ((S.ageM - so.since) / 12 >= 20) return `{N은} ${y}의 군 생활을 마치고 ${r} 계급으로 전역식을 치렀습니다.`;
+    return `{N은} ${r} 계급으로 전역했습니다. 군에서 ${U.j(y, '을')} 보냈습니다.`;
+  };
+
+  /* ================================================================ 진급 */
+  /** 한 계급 오른다(mult: 보수 배수, 없으면 계급별 기본값) */
+  So.rankUp = (S, o = {}) => {
+    const j = soJob(S);
+    if (!j || !j.so) return '';
+    const so = j.so, nx = So.nextRule(so);
+    if (!nx) { j.pay *= 1.03; return ''; }
+    const e0 = eqOf(so);
+    so.rk = nx.to; so.rkM = S.ageM; so.fail = 0; delete so.upout;
+    if (so.track !== 'off' && so.rk >= ncoAt(so.iso)) so.track = 'nco';
+    // 봉급표의 계급 차이(호봉은 엔진의 해마다 오르는 몫이 맡음): 병 4%·부사관 6%·위관 5%·영관 이상 8% 안팎(근삿값)
+    const mult = o.mult || (so.track === 'off' ? (e0 <= 1 ? 1.05 : 1.08) : so.rk <= ncoAt(so.iso) ? 1.04 : 1.06);
+    j.pay *= Math.min(1.2, mult);
+    j.lv = So.tier(so);
+    const r = So.rankName(so);
+    if (so.track === 'off' && eqOf(so) >= 6) {
+      H.ach(S, 'so_general');
+      if (hasCr()) Cr.honor(S, 'award', `${E.year(S)} ${r} 진급`);
+    }
+    if (!o.quiet) log(S, `{N은} ${U.j(r, '으로')} 진급했습니다.`, 'good');
+    return r;
+  };
+  /** 진급 누락: 미국은 대위 이하가 두 번 떨어지면 전역(up or out) */
+  So.failed = (S) => {
+    const j = soJob(S);
+    if (!j || !j.so) return;
+    const so = j.so;
+    so.fail = (so.fail || 0) + 1;
+    if (so.iso === 'USA' && so.track === 'off' && eqOf(so) <= 2 && so.fail >= 2) so.upout = 1;
+  };
+
+  /* ================================================================ 군인연금 정산 */
+  /** 일반 연금 가입 기록에서 군 복무 몫을 뺀다 */
+  const unAccrue = (S, so) => {
+    const pr = S.work.pr || {};
+    for (const k in so.pm || {}) {
+      const r = pr[k];
+      if (!r) continue;
+      r.m = Math.max(0, r.m - so.pm[k]);
+      r.sum = Math.max(0, r.sum - ((so.ps || {})[k] || 0));
+    }
+  };
+  /** 전역할 때 한 번: 연금(조건을 채우면 바로) 또는 일시금, 복무 기록, GI Bill, 예비군 소식 되살리기 */
+  So.settle = (S, j) => {
+    const so = j && j.so;
+    if (!so || so.done) return null;
+    so.done = 1;
+    const sol = So.sol(S), cur = isoOf(S), iso = so.iso || cur;
+    const m = Math.max(0, so.m || 0), yrs = m / 12;
+    const R = So.penRule(iso, so);
+    const avg = m > 0 && so.sum > 0 ? so.sum / m : j.pay;
+    let amt = 0, lump = 0, line = '';
+    if (R && yrs >= R.yrs) {
+      const base = R.base === 'hi3' ? j.pay * 0.97 : R.base === 'last85' ? j.pay * 0.85 : avg;
+      amt = conv(base * Math.min(R.cap, R.rate * yrs), iso, cur);
+      if (R.sep) unAccrue(S, so);
+      if (R.age && ageOf(S) < R.age) {
+        sol.penAt = R.age; sol.penLater = (sol.penLater || 0) + amt;
+        line = `복무 ${U.j(yrsKo(yrs), '을')} 채워 ${R.ko} 자격을 얻었습니다. ${R.age}세부터 해마다 약 ${U.j(money(S, amt), '을')} 받습니다.`;
+      } else {
+        S.work.pension = (S.work.pension || 0) + amt;
+        sol.pen = (sol.pen || 0) + amt;
+        line = `복무 ${U.j(yrsKo(yrs), '을')} 채워 ${U.j(R.ko, '이')} 바로 나오기 시작했습니다. 해마다 약 ${money(S, amt)}입니다.`;
+      }
+      if (R.lumpX) { lump = amt * R.lumpX; earn(S, lump); line += ` 한꺼번에 받는 돈 ${money(S, lump)}도 들어왔습니다.`; }
+      H.ach(S, 'so_pension');
+    } else if (R && yrs >= 0.5) {
+      lump = conv((avg / 12) * yrs * R.lumpF, iso, cur);
+      if (iso === 'KOR') unAccrue(S, so);
+      earn(S, lump);
+      line = `복무 ${U.j(yrsKo(yrs), '으로')} ${R.ko} 조건(${yrsKo(R.yrs)})에 못 미쳐 ${R.lumpKo} 약 ${U.j(money(S, lump), '을')} 받았습니다.`;
+    }
+    sol.hist = (sol.hist || []).concat([{ iso, from: so.since, to: S.ageM, rk: So.rankName(so), tr: so.track, br: so.br, y: Math.round(yrs * 10) / 10, pen: amt > 0 ? 1 : 0 }]).slice(-6);
+    if (iso === 'USA' && yrs >= 3 && !sol.gi) {
+      sol.gi = { m: S.ageM };
+      line += `${line ? ' ' : ''}현역 3년을 넘겨 GI Bill(제대 군인 교육 지원) 자격도 얻었습니다. 36개월 동안 대학 학비와 주거비를 지원받습니다.`;
+    }
+    // 예비군: 의무 복무 뒤 멈춰 두었던 예비군 훈련 소식을 다시(한국 등)
+    if (sol.res && S.ml && hasMl() && Ml.RESERVE) {
+      const RV = Ml.RESERVE[sol.res.iso];
+      if (RV && ageOf(S) < 40 && cur === sol.res.iso) S.ml.res = { iso: sol.res.iso, until: S.ageM + RV[0] * 12 };
+      delete sol.res;
+    }
+    if (line) log(S, line, amt > 0 ? 'good' : 'ev');
+    return { amt, lump };
+  };
+  /** 히스토리에 계급을 붙인다(전역 계급이 이력에 보이게) */
+  const tagHist = (S, j) => {
+    if (!j || !j.so) return;
+    const h = S.work.history[S.work.history.length - 1];
+    if (h && h.id === 'soldier' && h.from === j.since && !/\(/.test(h.title || '')) h.title = `${h.title} (${So.rankName(j.so)})`;
+  };
+
+  /* ================================================================ 해마다·매달 */
+  So.yearTick = (S, ay) => {
+    const sol = S.sol;
+    // 영국: 20년을 채웠지만 40세 전이면 40세부터
+    if (sol && sol.penAt && ay >= sol.penAt && sol.penLater > 0) {
+      S.work.pension = (S.work.pension || 0) + sol.penLater;
+      sol.pen = (sol.pen || 0) + sol.penLater;
+      log(S, `군인연금이 나오기 시작했습니다. 해마다 약 ${money(S, sol.penLater)}입니다.`, 'good');
+      delete sol.penAt; delete sol.penLater;
+    }
+    // 사관생도: 대학을 마치지 못하고 그만두었으면 생도 신분도 끝
+    if (sol && sol.cadet && S.edu.stage !== 3) {
+      if (S.edu.level >= 4 && !soOn(S)) So.cadetGrad(S);
+      else if (S.edu.level < 4) { if (!sol.cadet.sv0) S.flags.served = !!sol.cadet.sv0; delete sol.cadet; }
+    }
+    const j = soJob(S);
+    if (!j || !j.so || S.prison || S.mil || !S.alive) return;
+    const so = j.so;
+    // 외인부대: 3년을 복무하면 프랑스 국적을 신청할 수 있다
+    if (sol && sol.legion && !sol.legion.ask && so.path === 'legion' && S.ageM - so.since >= 36 && !citizen(S, 'FRA')) { sol.legion.ask = 1; H.ask(S, 'so_legionCit', {}); }
+    // 파키스탄 장교: 근속 15·25·28년에 택지 한 필지(국방주택청, 근삿값)
+    if (so.iso === 'PAK' && so.track === 'off' && hasEc() && Ec.add) {
+      const sv = Math.floor((S.ageM - so.since) / 12), got = (sol && sol.plots) || [];
+      for (const y of [15, 25, 28]) if (sv >= y && !got.includes(y)) {
+        So.sol(S).plots = got.concat([y]);
+        Ec.add(S, 'land', H.pay(S, U.randInt(24, 60)), { cost: 0 });
+        log(S, `근속 ${y}년을 맞아 국방주택청(DHA)에서 장교 택지 한 필지를 받았습니다.`, 'good');
+        break;
+      }
+    }
+    // 정년·진급 누락 전역
+    const lim = So.limit(S);
+    if (lim) { H.ask(S, 'so_out', lim); return; }
+    // 진급: 낮은 계급은 근속을 채우면 저절로, 높은 계급은 심사 결정
+    const nx = So.nextRule(so);
+    if (!nx || (S.ageM - so.rkM) / 12 < nx.tg) return;
+    if (so.track === 'off' && so.iso === 'KOR' && eqOf(so) >= 2 && !so.long) return; // 단기 장교는 의무 기간 안에 소령이 되지 않는다
+    // 심사: 같은 계급에서 세 번 떨어지면 더는 심사 대상에 오르지 않는다(정년까지 그 계급)
+    if (nx.rev) { if ((so.fail || 0) < 3 && !S.queue.some((q) => q.id === 'x_j_sol_promo')) H.ask(S, 'j_sol_promo', {}); return; }
+    if (U.chance(So.promoP(S, so, nx))) So.rankUp(S);
+    else So.failed(S);
+    if (so.upout) H.ask(S, 'so_out', { why: 'upout', lim: 2 });
+  };
+  So.monthTick = (S) => {
+    if (!S.alive) return;
+    const sol = S.sol;
+    // 한국 병장: 전역 2~3달 전 전문하사·부사관 권유(열에 넷쯤)
+    const m = S.mil;
+    if (m && m.iso === 'KOR' && isoOf(S) === 'KOR' && m.k === 'act' && !m.ind && !m.paid && !m.resume && !m.soAsk && m.br !== 'sangmu' && m.endM - S.ageM <= 3 && m.endM - S.ageM >= 2 && (m.rk || 0) >= 3) {
+      m.soAsk = 1;
+      if (U.chance(0.4) && S.st.health >= 35) H.ask(S, 'so_kstay', { left: m.endM - S.ageM });
+    }
+    // 미국 GI Bill: 전역하고 일자리가 없을 때 한 번 대학을 권한다
+    if (sol && sol.gi && !sol.gi.ask && !S.work.job && !S.mil && !S.prison && S.edu.stage === null && S.edu.level === 3 && ageOf(S) < 40 && !S.work.retired) { sol.gi.ask = 1; H.ask(S, 'so_gi', {}); }
+    const j = soJob(S);
+    if (!j) return;
+    if (!j.so) { if (!j.rework) So.init(S, j, { old: true, title: baseOf(j) }); else return; }
+    const so = j.so;
+    so.m = (so.m || 0) + 1;
+    so.sum = (so.sum || 0) + j.pay;
+    if (j.formal) { const k = isoOf(S); so.pm[k] = (so.pm[k] || 0) + 1; so.ps[k] = (so.ps[k] || 0) + j.pay; }
+    if (j.lv !== So.tier(so)) j.lv = So.tier(so);
+    // 의무 기간이 끝나 갈 때 장기 복무(재계약) 심사, 떨어지거나 원하지 않으면 끝나는 달에 전역
+    if (!so.long && !S.prison && !S.mil) {
+      if (!so.longAsk && S.ageM >= so.oblig - 6) { so.longAsk = 1; H.ask(S, 'so_long', {}); }
+      else if (S.ageM >= so.oblig && so.longAsk && !S.queue.some((q) => q.id === 'so_long' || q.id === 'so_out')) H.ask(S, 'so_out', { why: 'oblig', lim: 0 });
+    }
+  };
+
+  /* ================================================================ 결정 */
+  /** 결정 목록(사건 틀로 등록 — 대기열에서 상태와 맞지 않게 되면 엔진이 버림). typ 이 함수인 선택지는 아래에서 푼다 */
+  const DECS = [];
+  const pTxt = (p) => `가능성 약 ${pct(p)}%`;
+
+  /* ---------------------------------------------------------------- 정년·의무 기간 끝: 전역과 다음 길 */
+  const CIVIL_OK = (S) => S.edu.level >= 3 && ageOf(S) < 60;
+  /** 병과 경력을 살릴 민간 일자리 */
+  So.brJob = (S, so) => {
+    const ed = S.edu.level, mj = S.edu.major, a = ageOf(S);
+    const id = {
+      cyber: ed >= 4 ? (mj === 'cs' ? 'programmer' : 'engineer') : 'electrician', sig: ed >= 4 ? 'engineer' : 'electrician', intel: ed >= 3 ? 'clerk' : null,
+      eng: ed >= 4 ? 'engineer' : 'construction', avi: 'mechanic', armor: 'mechanic', log: ed >= 3 ? 'clerk' : 'driver', adm: ed >= 3 ? 'clerk' : null,
+      med: mj === 'med' ? 'doctor' : mj === 'nurse' ? 'nurse' : 'care', law: mj === 'law' ? 'lawyer' : null, art: 'driver',
+      inf: ed >= 3 && a < 40 ? 'police' : null, sf: ed >= 3 && a < 40 ? 'police' : null,
+    }[so.br];
+    const d = id && C.JOB[id];
+    if (!d || ed < d.edu || (d.need && !d.need(S)) || (d.minAge && a < d.minAge)) return null;
+    return id;
+  };
+  const ELITE_OFF = new Set(['EGY', 'PAK', 'MMR', 'THA', 'VEN', 'CUB', 'IRN']);
+  const outTitle = { age: '계급 정년', svc: '근속 정년', tig: '계급 정년', upout: '진급 누락', oblig: '의무 복무를 마치며' };
+  const outText = (S, ctx) => {
+    const j = soJob(S);
+    if (!j || !j.so) return '';
+    const so = j.so, r = So.rankName(so), y = yrsKo((S.ageM - so.since) / 12);
+    const head = {
+      age: `${r} 계급의 연령 정년(${ctx.lim}세)이 되어 군을 떠나야 합니다.`,
+      svc: `${r} 계급의 근속 정년(${ctx.lim}년)에 닿아 군을 떠나야 합니다.`,
+      tig: `${r} 계급에 머물 수 있는 기간(${ctx.lim}년)이 지나 군을 떠나야 합니다.`,
+      upout: `진급 심사에서 두 번 떨어졌습니다. ${nm(so.iso)} 군은 진급하지 못한 대위 이하 장교를 내보냅니다(up or out).`,
+      oblig: `의무 복무 기간이 끝났습니다.${so.exit ? '' : ' 장기 복무로 이어지지 않아 군을 떠납니다.'}`,
+    }[ctx.why] || '군을 떠날 때가 되었습니다.';
+    return [head, `군에서 ${U.j(y, '을')} 보냈습니다.`, So.penPreview(S), '전역한 뒤의 길을 정합니다.'].filter(Boolean).join(' ');
+  };
+  const outChoices = (S, ctx) => {
+    const j = soJob(S);
+    if (!j || !j.so) return [{ label: '그냥 넘어간다', run: () => null }];
+    const so = j.so, tier = So.tier(so), a = ageOf(S), ra = retireAge(S);
+    const R = So.penRule(so.iso, so), penOk = !!(R && (so.m || 0) / 12 >= R.yrs);
+    const go = (S2) => So.leave(S2, ctx.why);
+    const out = [];
+    const oldEnough = a >= Math.min(55, ra - 3);
+    let typ = oldEnough && a >= ra - 3 ? 'retire' : penOk && h01(S, `out${so.since}`) < 0.45 ? 'rest' : CIVIL_OK(S) ? 'civil' : 'guard';
+    if (CIVIL_OK(S)) {
+      const p = clamp(0.3 + S.edu.level * 0.07 + tier * 0.04 + luck(S), 0.25, 0.8);
+      out.push({ label: isoOf(S) === 'KOR' ? '군무원·공공 기관 자리를 알아본다' : '공공 기관 자리를 알아본다', sub: pTxt(p), typ: typ === 'civil', run: (S2) => {
+        go(S2);
+        if (!U.chance(p)) return T(S2, '공공 기관 자리는 얻지 못했습니다. 다른 일을 천천히 찾아봅니다.');
+        const o = C.makeJob(S2, C.JOB.civil, 1.05);
+        o.formal = true;
+        if (isoOf(S2) === 'KOR' && U.chance(0.5)) o.title = '군무원';
+        E.takeJob(S2, o);
+        return T(S2, `{N은} ${U.j(o.title, '으로')} 새 일을 시작했습니다. 군에서 익힌 꼼꼼함이 쓸모가 있었습니다.`);
+      } });
+    }
+    const bj = So.brJob(S, so);
+    if (bj && So.brKo(so) && a < 60) {
+      const jt = C.jobTitle(S, C.JOB[bj]);
+      out.push({ label: `${So.brKo(so)} 병과 경력을 살려 ${U.j(jt, '으로')} 일한다`, sub: pTxt(0.6), typ: typ === 'br', run: (S2) => {
+        go(S2);
+        if (!U.chance(0.6 + luck(S2))) return T(S2, `${jt} 자리는 아직 얻지 못했습니다. 계속 알아봅니다.`);
+        const o = C.makeJob(S2, C.JOB[bj], 1.05);
+        E.takeJob(S2, o);
+        return T(S2, `{N은} ${U.j(o.title, '으로')} 새 일을 시작했습니다. 군에서 배운 기술이 그대로 쓰였습니다.`);
+      } });
+    }
+    if (a < 62) {
+      out.push({ label: '보안 업체로 간다', sub: pTxt(0.75), typ: typ === 'guard', run: (S2) => {
+        go(S2);
+        if (!U.chance(0.75 + luck(S2))) return T(S2, '자리가 이미 찼다는 연락을 받았습니다. 다른 일을 찾아봅니다.');
+        const o = C.makeJob(S2, C.JOB.guard, tier >= 1 ? 1.4 : 1.1);
+        o.title = tier >= 1 ? '보안 업체 팀장' : '보안 요원';
+        E.takeJob(S2, o);
+        return T(S2, `{N은} 보안 업체에 ${tier >= 1 ? '팀장으로 ' : ''}들어갔습니다.`);
+      } });
+    }
+    if (ELITE_OFF.has(so.iso) && so.track === 'off' && tier >= 3 && a < 65) {
+      out.push({ label: '국영 기업·국가 기관의 요직으로 간다', sub: `퇴역 고위 장교가 흔히 가는 길 · ${pTxt(0.6)}`, run: (S2) => {
+        go(S2);
+        if (!U.chance(0.6 + luck(S2))) return T(S2, '기대했던 자리는 다른 사람에게 돌아갔습니다.');
+        const o = C.makeJob(S2, C.JOB.civil, 1.6);
+        o.formal = true; o.lv = 3;
+        o.title = tier >= 4 ? '국가 기관 고위직' : '국영 기업 임원';
+        E.takeJob(S2, o);
+        S2.power = clamp((S2.power || 0) + 8, 0, 100);
+        return T(S2, `{N은} 군 시절 인맥으로 ${U.j(o.title, '이')} 되었습니다.`);
+      } });
+    }
+    out.push({ label: '쉬면서 다음 길을 천천히 찾는다', sub: penOk ? `${R.ko}이 나옵니다` : '', typ: typ === 'rest', run: (S2) => { go(S2); E.stat(S2, 'happy', 2); return T(S2, '{N은} 당분간 쉬면서 다음 일을 천천히 알아보기로 했습니다.'); } });
+    if (oldEnough) out.push({ label: '은퇴한다', sub: '일을 놓고 쉽니다', typ: typ === 'retire', run: (S2) => { if (hasEc()) Ec.retire(S2); else go(S2); E.stat(S2, 'happy', 3); return T(S2, '{N은} 군복을 벗으며 일에서도 물러났습니다.'); } });
+    if (!out.some((c) => c.typ)) out[out.length - 1].typ = true;
+    return out;
+  };
+  C.DEC.so_out = {
+    title: (S, ctx) => outTitle[ctx.why] || '전역',
+    text: (S, ctx) => T(S, outText(S, ctx)),
+    choices: (S, ctx) => outChoices(S, ctx),
+  };
+
+  /* ---------------------------------------------------------------- 장기 복무 심사·재계약 */
+  const longP = (S, so) => {
+    let p = so.iso === 'KOR' ? (so.track === 'off' ? 0.3 : 0.9) : so.path === 'legion' ? 0.9 : so.iso === 'USA' ? 0.85 : 0.8;
+    if (S.st.health < 35) p -= 0.3;
+    if (S.flags.exCon) p -= 0.3;
+    return clamp(p + (so.iso === 'KOR' && so.track === 'off' ? (S.st.smarts - 55) / 200 : 0), 0.05, 0.95);
+  };
+  C.DEC.so_long = {
+    title: (S) => { const j = soJob(S); return j && j.so && j.so.iso === 'KOR' ? '장기 복무 심사' : '복무 연장'; },
+    text: (S) => {
+      const j = soJob(S);
+      if (!j || !j.so) return '';
+      const so = j.so, left = Math.max(0, so.oblig - S.ageM), R = So.penRule(so.iso, so);
+      let t;
+      if (so.iso === 'KOR' && so.track === 'off') t = `의무 복무가 ${moKo(left)} 남았습니다. 장기 복무를 신청하면 심사를 거쳐 계급 정년까지 군에 남을 수 있습니다. 사관학교 출신이 아닌 장교가 장기 복무에 뽑히는 비율은 30%가 안 됩니다(보도 근삿값).`;
+      else if (so.iso === 'KOR') t = `의무 복무가 ${moKo(left)} 남았습니다. 장기 복무를 신청하면 심사를 거쳐 계급 정년까지 군에 남을 수 있습니다. 2028년부터는 결격 사유가 없으면 부사관 대부분이 장기 복무로 전환됩니다(근삿값).`;
+      else if (so.path === 'legion') t = `외인부대 첫 계약이 ${moKo(left)} 남았습니다. 다시 계약하면 복무를 이어 갑니다.`;
+      else t = `복무 계약이 ${moKo(left)} 남았습니다. 다시 계약해 군에 남을지 정해야 합니다.${R ? ` 복무가 ${U.j(yrsKo(R.yrs), '을')} 넘으면 ${U.j(R.ko, '이')} 나옵니다(근삿값).` : ''}`;
+      return T(S, t);
+    },
+    choices: (S) => {
+      const j = soJob(S);
+      if (!j || !j.so) return [{ label: '그냥 넘어간다', run: () => null }];
+      const so = j.so, kor = so.iso === 'KOR', p = longP(S, so);
+      const share = kor ? (so.track === 'off' ? 0.4 : 0.55) : so.iso === 'USA' ? 0.45 : 0.5;
+      const stay = h01(S, `long${so.since}`) < share;
+      return [
+        { label: kor ? '장기 복무를 신청한다' : '다시 계약한다', sub: pTxt(p), typ: stay, run: (S2) => {
+          const j2 = soJob(S2);
+          if (!j2 || !j2.so) return null;
+          if (U.chance(clamp(p + luck(S2), 0.02, 0.98))) { j2.so.long = true; E.stat(S2, 'happy', 3); return T(S2, kor ? '장기 복무 심사에 붙었습니다. 계급 정년까지 군에 남을 수 있습니다.' : '다시 계약서에 서명했습니다. 복무를 이어 갑니다.'); }
+          j2.so.exit = 1; E.stat(S2, 'happy', -4);
+          return T(S2, kor ? '장기 복무 심사에서 떨어졌습니다. 의무 복무를 마치면 전역합니다.' : '재계약이 받아들여지지 않았습니다. 계약 기간을 마치면 전역합니다.');
+        } },
+        { label: '기간을 마치고 전역한다', typ: !stay, run: (S2) => { const j2 = soJob(S2); if (j2 && j2.so) j2.so.exit = 1; return T(S2, '{N은} 의무 복무를 마치면 군을 떠나기로 했습니다.'); } },
+      ];
+    },
+  };
+
+  /* ---------------------------------------------------------------- 한국 병장: 전문하사·부사관 (K11) */
+  C.DEC.so_kstay = {
+    title: () => '전역을 앞두고',
+    text: (S, ctx) => T(S, `전역이 ${ctx.left || 2}개월 남았습니다. 중대장이 전문하사로 남거나 부사관에 지원해 보라고 권합니다. 전문하사는 하사로 임관해 몇 달에서 4년까지 더 복무하는 길이고, 부사관은 4년 의무 복무 뒤 장기 복무로 이어질 수 있습니다. 하사 봉급은 병장 봉급의 약 두 배입니다(근삿값).`),
+    choices: (S) => {
+      const r = h01(S, 'kstay');
+      const pN = clamp(0.75 + (S.st.health - 60) / 300 + (S.edu.level >= 3 ? 0 : -0.2), 0.3, 0.92);
+      const ok = (S2) => !!(S2.mil && S2.mil.iso === 'KOR');
+      return [
+        { label: '전문하사로 남는다', sub: '하사 · 1년 더 복무 · 끝날 때 장기 복무 심사', typ: r < 0.06, run: (S2) => {
+          if (!ok(S2)) return null;
+          if (!U.chance(0.9)) return T(S2, '전문하사 선발 인원이 이미 차 예정대로 전역합니다.');
+          const sv = S2.mil.save || 0;
+          So.commission(S2, { track: 'nco', path: 'kstay', note: `전역 대신 전문하사로 남았습니다. 하사 계급장을 달고 복무를 이어 갑니다.${sv > H.pay(S2, 0.5) ? ` 그동안 월급과 적금으로 모은 ${Wd.money(isoOf(S2), sv)}도 받았습니다.` : ''}` });
+          return null;
+        } },
+        { label: '부사관에 지원한다', sub: `하사 · 의무 4년 · 선발 ${pTxt(pN)}`, typ: r >= 0.06 && r < 0.09, run: (S2) => {
+          if (!ok(S2)) return null;
+          if (!U.chance(clamp(pN + luck(S2), 0.02, 0.98))) return T(S2, '부사관 선발에서 떨어졌습니다. 예정대로 전역합니다.');
+          So.commission(S2, { track: 'nco', path: 'knco', note: '부사관 선발에 붙어 교육을 마치고 하사로 임관했습니다. 의무 복무는 4년입니다.' });
+          return null;
+        } },
+        { label: '예정대로 전역한다', typ: r >= 0.09, run: (S2) => T(S2, '{N은} 예정대로 전역하기로 했습니다.') },
+      ];
+    },
+  };
+
+  /* ---------------------------------------------------------------- 미국 GI Bill */
+  C.DEC.so_gi = {
+    title: () => 'GI Bill',
+    text: (S) => T(S, '복무를 마친 {N}에게는 GI Bill(제대 군인 교육 지원) 자격이 있습니다. 36개월 동안 공립 대학 학비와 주거비를 나라가 대 줍니다.'),
+    choices: (S) => {
+      const go = h01(S, 'gi') < 0.4;
+      return [
+        { label: 'GI Bill로 대학에 간다', sub: '학비 걱정 없이 전공을 고릅니다', typ: go, run: (S2) => {
+          if (S2.work.job || S2.edu.stage !== null) return T(S2, '지금은 대학에 갈 형편이 아닙니다.');
+          S2.work.seeking = false; S2.work.helping = false;
+          So.sol(S2).gi.used = 1;
+          E.ask(S2, 'major', {});
+          return T(S2, '{N은} GI Bill로 대학에 가기로 했습니다.');
+        } },
+        { label: '바로 일자리를 찾는다', typ: !go, run: (S2) => T(S2, '{N은} 대학 대신 바로 일자리를 찾기로 했습니다.') },
+      ];
+    },
+  };
+
+  /* ---------------------------------------------------------------- 외인부대 3년: 프랑스 국적 */
+  C.DEC.so_legionCit = {
+    title: () => '흘린 땀으로 얻는 국적',
+    text: (S) => {
+      const L = hasMg() && Mg.loseOnNatur ? Mg.loseOnNatur(S, 'FRA') : { why: [] };
+      return T(S, `외인부대에서 3년을 복무해 프랑스 국적을 신청할 수 있게 되었습니다. ${L.why.join(' ') || '이중 국적이 허용되어 원래 국적도 그대로 지닐 수 있습니다.'}`);
+    },
+    choices: (S) => {
+      const L = hasMg() && Mg.loseOnNatur ? Mg.loseOnNatur(S, 'FRA') : { lose: [] };
+      const p = S.flags.exCon ? 0.5 : 0.85;
+      return [
+        { label: L.lose.length ? `${L.lose.map(nm).join('·')} 국적을 내려놓고 귀화한다` : '귀화를 신청한다', sub: pTxt(p), typ: !L.lose.length, run: (S2) => {
+          if (!U.chance(clamp(p + luck(S2), 0.02, 0.98))) { E.stat(S2, 'happy', -3); return T(S2, '귀화 심사에서 떨어졌습니다. 몇 해 뒤 다시 신청할 수 있습니다.'); }
+          S2.cit = (hasMg() ? Mg.cits(S2) : S2.cit || [S2.born.iso]).filter((c) => !L.lose.includes(c));
+          if (!S2.cit.includes('FRA')) S2.cit.push('FRA');
+          if (S2.res && isoOf(S2) === 'FRA') S2.res.status = 'citizen';
+          S2.stamps.push({ iso: 'FRA', m: S2.ageM, k: 'natur' });
+          E.stat(S2, 'happy', 6);
+          H.ach(S2, 'naturalized');
+          return T(S2, `{N은} 프랑스 국민이 되었습니다. 이제 프랑스 여권을 씁니다.${L.lose.length ? ` ${L.lose.map(nm).join('·')} 국적은 내려놓았습니다.` : ''}`);
+        } },
+        { label: '지금 국적으로 지낸다', typ: !!L.lose.length, run: (S2) => T(S2, '{N은} 원래 국적을 지키기로 했습니다.') },
+      ];
+    },
+  };
+
+  /* ---------------------------------------------------------------- 사관학교(대학 입학 때) */
+  const ACAD_KO = { KOR: '육·해·공군 사관학교', USA: '웨스트포인트·해군사관학교 같은 사관학교', GBR: '샌드허스트 같은 사관학교', JPN: '방위대학교', FRA: '생시르 같은 사관학교', IND: '국방사관학교(NDA)', PAK: '파키스탄 육군사관학교', NGA: '나이지리아 국방사관학교' };
+  const acadKo = (iso) => ACAD_KO[iso] || '사관학교';
+  So.acadOk = (S) => {
+    const iso = isoOf(S), a = ageOf(S);
+    if (iso === 'PRK' || S.fam.married || a > 22 || S.edu.stage !== 3 || (S.edu.year || 1) > 1) return false;
+    if (S.edu.major === 'med' || S.edu.major === 'art' || S.edu.tier === 'jc') return false;
+    if (S.cg && S.cg.ab && !S.cg.ab.done) return false;
+    if (S.st.smarts < 62 || S.st.health < 55 || (hasDs() && Ds.milExempt(S))) return false;
+    return !(S.sol && (S.sol.cadet || S.sol.acadNo));
+  };
+  const acadP = (S) => clamp(0.25 + (S.st.smarts - 62) / 80 + (S.st.health - 60) / 150, 0.1, 0.7);
+  C.DEC.so_acad = {
+    title: () => '사관학교',
+    text: (S) => {
+      const iso = isoOf(S), ob = So.obligDef(iso, 'off', 'acad') / 12;
+      return T(S, `{N}의 성적과 체력이면 ${acadKo(iso)}에 지원해 볼 만하다는 이야기를 들었습니다. 4년 동안 학비 없이 생도 수당을 받으며 공부와 훈련을 하고, 졸업하면 소위로 임관해 ${ob}년을 복무해야 합니다. 입학 경쟁은 치열합니다.`);
+    },
+    choices: (S) => {
+      const p = acadP(S), go = h01(S, 'acad') < 0.3;
+      return [
+        { label: '사관학교에 지원한다', sub: `합격 ${pTxt(p)} · 학비 없음 · 졸업 뒤 의무 복무`, typ: go, run: (S2) => {
+          const sol = So.sol(S2);
+          if (S2.edu.stage !== 3) return null;
+          if (!U.chance(clamp(p + luck(S2), 0.02, 0.98))) { sol.acadNo = 1; E.stat(S2, 'happy', -2); return T(S2, '사관학교 입학 시험에서 떨어졌습니다. 지금 대학에서 공부를 이어 갑니다.'); }
+          sol.cadet = { iso: isoOf(S2), m: S2.ageM, sv0: S2.flags.served ? 1 : 0 };
+          S2.flags.served = true;
+          if (S2.cg && S2.cg.loan) delete S2.cg.loan;
+          E.stat(S2, 'happy', 4);
+          return { text: T(S2, `{N은} ${U.j(acadKo(isoOf(S2)), '에')} 생도로 입교했습니다. 학비 없이 생도 수당을 받으며 공부와 훈련을 함께 합니다.`), k: 'milestone' };
+        } },
+        { label: '지금 대학에 다닌다', typ: !go, run: (S2) => { So.sol(S2).acadNo = 1; return T(S2, '{N은} 지금 다니는 대학에서 공부하기로 했습니다.'); } },
+      ];
+    },
+  };
+  /** 사관학교 졸업 → 소위 */
+  So.cadetGrad = (S) => {
+    const sol = So.sol(S), c = sol.cadet;
+    if (!c) return;
+    delete sol.cadet;
+    S.queue = S.queue.filter((q) => q.id !== 'nextStage');
+    So.commission(S, { track: 'off', rk: 0, path: 'acad', long: true });
+  };
+
+  /* ---------------------------------------------------------------- 진급 심사(j_sol_promo 감싸기) */
+  const promoText = (S) => {
+    const j = soJob(S), so = j.so, nx = So.nextRule(so);
+    if (!nx) return T(S, '이번 인사에서는 계급 변동이 없습니다.');
+    const cur = So.rankName(so), tig = Math.max(1, Math.floor((S.ageM - so.rkM) / 12)), p = So.promoP(S, so, nx);
+    let t = `${cur} ${tig}년 차, ${U.j(nx.toKo, '으로')} 오를 진급 심사철입니다. 이번 심사 대상자 가운데 약 ${pct(p)}%가 진급합니다(근삿값).`;
+    if (so.track === 'off' && eqOf(so) >= 5) t += ' 장군 자리는 몇 되지 않습니다.';
+    if (so.iso === 'KOR' && !so.long) t += ' 장기 복무자가 아니면 진급이 어렵습니다.';
+    if (so.iso === 'USA' && so.track === 'off' && eqOf(so) <= 2 && so.fail >= 1) t += ' 한 번 더 떨어지면 규정에 따라 군을 떠나야 합니다.';
+    return T(S, t);
+  };
+  const promoChoices = (S) => {
+    const j = soJob(S), so = j.so, nx = So.nextRule(so);
+    if (!nx) return [{ label: '지금 자리를 지킨다', typ: true, run: () => null }];
+    const p = So.promoP(S, so, nx), p2 = clamp(p * (1.1 + Math.max(0, S.st.smarts - 50) / 200) + 0.01, 0.01, 0.97);
+    const up = (S2, fx) => {
+      const r = So.rankUp(S2, { quiet: true });
+      if (fx) fx(S2);
+      E.stat(S2, 'happy', 5);
+      return { text: T(S2, `{N은} ${U.j(r, '으로')} 진급했습니다. 계급장이 바뀌었습니다.${fam(S2, -2)}`), k: 'good' };
+    };
+    const down = (S2, t) => {
+      So.failed(S2);
+      E.stat(S2, 'happy', -4);
+      const j2 = soJob(S2);
+      if (j2 && j2.so && j2.so.upout) H.ask(S2, 'so_out', { why: 'upout', lim: 2 });
+      return T(S2, t);
+    };
+    const out = [
+      { label: '평가와 업무에 최선을 다한다', sub: pTxt(p), typ: true, run: (S2) => (soOn(S2) && U.chance(clamp(p + luck(S2), 0.02, 0.98)) ? up(S2) : soOn(S2) ? down(S2, '이번 심사에서는 떨어졌습니다. 다음 해를 기약합니다.') : null) },
+      { label: '교육 과정을 밟아 준비한다', sub: `${pTxt(p2)} · 지식 +`, run: (S2) => { E.stat(S2, 'smarts', 2); return soOn(S2) && U.chance(clamp(p2 + luck(S2), 0.02, 0.98)) ? up(S2) : soOn(S2) ? down(S2, '교육은 마쳤지만 진급은 다음으로 밀렸습니다.') : null; } },
+    ];
+    // 미국 대위 이하는 진급 심사를 피할 수 없다(두 번 누락이면 전역)
+    if (!(so.iso === 'USA' && so.track === 'off' && eqOf(so) <= 2)) out.push({ label: '진급에 욕심내지 않는다', run: (S2) => { E.stat(S2, 'happy', 1); return T(S2, '지금 계급에 만족하기로 했습니다.'); } });
+    return out;
+  };
+
+  /* ================================================================ 무작위 사건(입문 경로) */
+  // 지원제 나라: 징병제가 아니거나 선발·추첨 나라, 또는 의무 복무를 이미 마친 사람
+  const volunteer = (S) => { const d = consc(isoOf(S)); return !d || !((S.sex === 'm' ? d.m : d.f) > 0) || d.selective || d.lottery || !!S.flags.served; };
+  const recruitOk = (S) => !soJob(S) && !S.mil && !S.prison && !S.work.retired && S.edu.stage === null && !H.incap(S) && !(S.flags.a_gulf) && !(S.ml && S.ml.sv && !S.ml.sv.done);
+  const RUS_WAR = (S) => isoOf(S) === 'RUS' && warLv('RUS') >= 2;
+  DECS.push(
+    {
+      id: 'so_enl', age: [17, 50], cd: 4,
+      when: (S) => recruitOk(S) && So.canJoin(S) && volunteer(S) && !(isoOf(S) === 'KOR' && S.sex === 'm' && !S.flags.served),
+      rate: (S) => {
+        const a = ageOf(S), iso = isoOf(S);
+        if (RUS_WAR(S)) {
+          if (S.sex !== 'm' || a > 50) return 0;
+          return 0.03 * (S.money < 0 || !S.work.job ? 3 : 1);
+        }
+        if (a > So.entryMax(S, iso, 'enl') || (iso === 'KOR' && S.edu.level < 3)) return 0;
+        let r = 0.05;
+        if (a > 25) r *= 0.3;
+        if (!S.work.job) r *= 2; else if (S.work.job.formal && S.work.job.pay > H.pay(S, 14)) r *= 0.4;
+        if (S.sex === 'f') r *= 0.3;
+        if (S.edu.level < 3) r *= Wd.dev(iso) >= 2 ? 0.3 : 0.7;
+        if (S.fam.married) r *= 0.6;
+        if (S.edu.level >= 4) r *= 0.5;
+        return r;
+      },
+      title: (S) => (RUS_WAR(S) ? '계약병 모집' : isoOf(S) === 'KOR' ? '부사관 모집' : '군 모집'),
+      text: (S) => {
+        const iso = isoOf(S), R = So.penRule(iso, { track: 'enl' });
+        if (RUS_WAR(S)) return '{country} 국방부 모집소가 계약병을 모읍니다. 입대금(지역에 따라 보통 일꾼 월급 몇 달에서 몇 년 치), 보통 일꾼의 두 배가 넘는 월급, 밀린 빚 탕감을 내걸었습니다. 계약은 전쟁이 끝날 때까지 이어질 수 있고, 전선으로 보내질 수 있습니다.';
+        if (iso === 'KOR') return '부사관 모집 공고가 났습니다. 고졸 이상이면 27세까지(군필은 조금 더) 지원할 수 있고, 하사로 임관해 4년을 복무합니다. 2028년부터는 결격 사유가 없으면 대부분 장기 복무로 전환됩니다(근삿값).';
+        if (iso === 'USA') return '모집소 부사관이 연락해 왔습니다. 4년 현역 계약(의무 8년 가운데 나머지는 예비군)이고, 3년을 넘기면 GI Bill로 대학 학비를 지원받습니다. 20년을 채우면 연금이 나옵니다.';
+        return `{country} 군이 사병·부사관을 모집합니다. 처음 4년쯤을 복무하고, 계급이 오르면 부사관이 됩니다.${R ? ` ${U.j(yrsKo(R.yrs), '을')} 넘게 복무하면 ${U.j(R.ko, '이')} 나옵니다(근삿값).` : ''}`;
+      },
+      choices: [
+        {
+          l: (S) => (RUS_WAR(S) ? '계약서에 서명한다' : isoOf(S) === 'KOR' ? '부사관에 지원한다' : '입대한다'),
+          typ: (S) => h01(S, `enl${Math.floor(S.ageM / 48)}`) < (RUS_WAR(S) ? 0.06 : isoOf(S) === 'USA' ? 0.1 : 0.06),
+          p: (S) => (RUS_WAR(S) ? 0.95 : clamp((isoOf(S) === 'KOR' ? 0.75 : 0.65) + (S.st.health - 60) / 250 - (S.flags.exCon ? 0.4 : 0), 0.1, 0.9)),
+          ok: { run: (S) => {
+            if (RUS_WAR(S)) {
+              const bonus = H.pay(S, U.randInt(5, 30));
+              const debt = S.money < 0;
+              if (debt) S.money = 0;
+              So.commission(S, { track: 'enl', path: 'contract', note: '계약서에 서명하고 계약병이 되었습니다.' });
+              earn(S, bonus);
+              return `입대금으로 ${U.j(Wd.money(isoOf(S), bonus), '을')} 받았습니다.${debt ? ' 밀린 빚도 탕감받았습니다.' : ''}`;
+            }
+            So.commission(S, { track: isoOf(S) === 'KOR' ? 'nco' : 'enl', path: 'enl' });
+            return null;
+          } },
+          no: { t: '체력 검사와 면접을 거쳤지만 뽑히지 못했습니다.', fx: { happy: -2 } },
+        },
+        { l: '관심 없다', typ: (S) => !(h01(S, `enl${Math.floor(S.ageM / 48)}`) < (RUS_WAR(S) ? 0.06 : isoOf(S) === 'USA' ? 0.1 : 0.06)), t: '모집 공고를 넘겼습니다.' },
+      ],
+    },
+    {
+      id: 'so_off', age: [21, 34], cd: 5,
+      when: (S) => recruitOk(S) && S.edu.level >= 4 && isoOf(S) !== 'PRK' && So.canJoin(S) && ageOf(S) <= So.entryMax(S, isoOf(S), 'off') + 0.99 &&
+        !(isoOf(S) === 'KOR' && S.sex === 'm' && !S.flags.served) && So.gradRecent(S),
+      rate: (S) => 0.06 * (S.sex === 'f' ? 0.4 : 1) * (S.work.job && S.work.job.pay > H.pay(S, 18) ? 0.4 : 1),
+      title: '장교 후보생 모집',
+      text: (S) => (isoOf(S) === 'KOR' ? '학사사관 후보생을 모집합니다. 16주 교육을 마치면 소위로 임관하고 36개월을 복무합니다.'
+        : isoOf(S) === 'USA' ? '장교후보생학교(OCS) 모집관이 학사 학위가 있는 {N}에게 연락해 왔습니다. 12주 교육을 마치면 소위로 임관하고 4년쯤 복무합니다.'
+          : '{country} 군이 대학을 나온 장교 후보생을 모집합니다. 몇 달 교육을 마치면 소위로 임관해 정해진 기간을 복무합니다.'),
+      choices: [
+        {
+          l: '장교 후보생에 지원한다', typ: (S) => h01(S, 'off') < 0.1,
+          p: (S) => clamp(0.45 + (S.st.smarts - 55) / 150 + (S.st.health - 60) / 200, 0.15, 0.85),
+          ok: { run: (S) => { So.commission(S, { track: 'off', rk: 0, path: 'ocs' }); return null; } },
+          no: { t: '장교 후보생 선발에서 떨어졌습니다.', fx: { happy: -2 } },
+        },
+        { l: '지원하지 않는다', typ: (S) => h01(S, 'off') >= 0.1, t: '장교의 길은 가지 않기로 했습니다.' },
+      ],
+    },
+    {
+      id: 'so_legion', age: [18, 39], cd: 8,
+      when: (S) => recruitOk(S) && S.sex === 'm' && ageOf(S) >= 17.5 && ageOf(S) < 39.5 && isoOf(S) !== 'FRA' && !citizen(S, 'FRA') &&
+        !['PRK', 'ERI', 'TKM'].includes(isoOf(S)) && !S.fam.married && !kidsHome(S).length && S.st.health >= 50 && !(hasMl() && Ml.exitBan && Ml.exitBan(S)) && !(S.sol && S.sol.legion),
+      rate: (S) => 0.0015 * (!S.work.job ? 2 : 1) * (E.wealthP(S) < 0.4 ? 1.5 : 0.6) * (Wd.dev(isoOf(S)) >= 3 ? 0.4 : 1),
+      title: '프랑스 외인부대',
+      text: '프랑스 외인부대가 국적을 묻지 않고 17.5~39.5세 남성을 받는다는 이야기를 들었습니다. 첫 계약은 5년이고, 첫해에는 다른 이름으로 지낼 수도 있습니다. 3년을 복무하면 프랑스 국적을 신청할 수 있습니다. 지원자 가운데 뽑히는 사람은 열에 한두 명입니다(근삿값).',
+      choices: [
+        {
+          l: '오바뉴 모집소로 간다', cost: 1, typ: (S) => h01(S, 'legion') < 0.04,
+          p: (S) => clamp(0.15 + (S.st.health - 50) / 200 + (S.st.smarts - 50) / 400, 0.08, 0.35),
+          ok: { run: (S) => {
+            const from = isoOf(S);
+            S.mgNext = 'work';
+            E.moveCountry(S, 'FRA', 'visa');
+            So.sol(S).legion = { m: S.ageM, from };
+            So.commission(S, { track: 'enl', rk: 0, path: 'legion', br: 'legion', title: '외인부대원', note: '선발을 통과해 프랑스 외인부대에 들어갔습니다. 5년 계약의 외인부대원이 되었습니다.' });
+            H.ach(S, 'so_legion');
+            return null;
+          } },
+          no: { t: '선발 시험에서 떨어져 돌아왔습니다.', fx: { happy: -3 } },
+        },
+        { l: '가지 않는다', typ: (S) => h01(S, 'legion') >= 0.04, t: '먼 나라 군대 이야기는 이야기로만 남겨 두었습니다.' },
+      ],
+    },
+  );
+  /** 대학을 마친 지 3년이 안 되었는가 */
+  So.gradRecent = (S) => {
+    const g = (S.cg && S.cg.gradM) || ((S.stamps || []).filter((x) => x.k === 'grad').slice(-1)[0] || {}).m;
+    return g !== undefined && S.ageM - g <= 36;
+  };
+  C.addEvents(DECS);
+  for (const d of DECS) {
+    const dec = C.DEC['x_' + d.id];
+    if (!dec) continue;
+    const ch0 = dec.choices;
+    dec.choices = (S, ctx) => ch0(S, ctx).map((c) => (typeof c.typ === 'function' ? { ...c, typ: !!c.typ(S, ctx) } : c));
+  }
+
+  /* ================================================================ 기존 사건 손질(ev_jobs.js 의 j_sol_*) */
+  const evById = (id) => C.EVENTS.find((e) => e.id === id);
+  const cold = (S) => ['eca', 'na'].includes(H.region(S)) || (Wd.social('hazards', isoOf(S), []) || []).includes('한파');
+  // 훈련: 장교는 부하들을 지휘하고, 부사관은 분대원을 이끈다
+  {
+    const ev = evById('j_sol_drill');
+    if (ev && !ev._so) {
+      const r0 = ev.run;
+      ev.run = (S) => {
+        const j = soJob(S);
+        if (!j || !j.so || j.so.track === 'enl') return r0(S);
+        const off = j.so.track === 'off';
+        const a = off
+          ? ['부하들을 이끌고 사흘 동안 야외 전술 훈련을 지휘했습니다.', '밤새 지휘소에서 상황판을 지켰습니다. 새벽에야 눈을 붙였습니다.', '부하들의 사격 훈련을 점검했습니다. 처음으로 모두 합격했습니다.', `${cold(S) ? '영하의 날씨에' : '한낮 땡볕 아래'} 대대 훈련을 지휘했습니다. 다친 사람 없이 마쳐 안도했습니다.`]
+          : ['분대원들을 이끌고 밤새 행군을 마쳤습니다. 낙오한 사람은 한 명도 없었습니다.', '신병들에게 총기 다루는 법을 가르쳤습니다. 잔뜩 긴장한 얼굴들이 몇 해 전 자신 같았습니다.', '장비 정비 점검에서 부대 최고 점수를 받았습니다.', `${cold(S) ? '영하의 날씨에' : '한낮 땡볕 아래'} 사흘 동안 야외 훈련을 했습니다. 분대원들 발의 물집부터 살폈습니다.`];
+        H.fx(S, { health: 1, happy: -1, skill: 1, social: off ? 1 : 0 });
+        E.log(S, C.t(S, U.pick(a)), 'ev');
+      };
+      ev._so = 1;
+    }
+  }
+  // 파병: 유엔 평화유지 파견지를 요즘 임무로(말리 2023년 종료, 레바논 2026년 말 종료), 저소득 기여국은 더 자주, 북한은 평화유지 파병 없음,
+  // 전쟁 중 전방에 배치된 여섯 달 동안은 분쟁 지역에 있는 것으로 본다
+  const PKO_NOW = ['SSD', 'CAF', 'COD', 'CYP'];
+  const PKO_TOP = new Set(['UGA', 'NPL', 'BGD', 'IND', 'RWA', 'ETH', 'BDI', 'KEN', 'PAK', 'IDN', 'GHA', 'SEN']);
+  {
+    const ev = evById('j_sol_deploy'), dec = C.DEC.x_j_sol_deploy;
+    if (ev && !ev._so) {
+      const r0 = ev.rate;
+      ev.rate = (S) => {
+        const r = typeof r0 === 'function' ? r0(S) : r0;
+        if (!(r > 0)) return r;
+        const iso = isoOf(S), war = H.war(S) >= 1;
+        if (!war && iso === 'PRK') return 0;
+        if (war) return r;
+        return r * (PKO_TOP.has(iso) ? 1.6 : Wd.dev(iso) >= 3 ? 0.5 : Wd.dev(iso) <= 1 ? 1.2 : 1);
+      };
+      ev._so = 1;
+    }
+    if (dec && !dec._so) {
+      const setDest = (S, ctx) => { if (ctx && !ctx.dest) { const ok = PKO_NOW.filter((d) => DATA.c[d] && d !== isoOf(S)); if (ok.length) ctx.dest = ok[(S.ageM + ok.length) % ok.length]; } };
+      const t0 = dec.text, c0 = dec.choices;
+      dec.text = (S, ctx) => { setDest(S, ctx); return t0(S, ctx); };
+      dec.choices = (S, ctx) => {
+        setDest(S, ctx);
+        let out = c0(S, ctx);
+        // 러시아 계약병: 전쟁 중에는 계약을 끝낼 수 없다
+        if (RUS_WAR(S) && soOn(S)) out = out.filter((c) => !/전역 신청/.test(c.label || ''));
+        return out.map((c) => ({ ...c, run: (S2, c2) => {
+          const r = c.run(S2, c2);
+          const t = typeof r === 'string' ? r : r && r.text;
+          const j = soJob(S2);
+          if (j && j.so && H.war(S2) >= 1 && typeof t === 'string' && /포성|전방에서/.test(t)) j.so.front = S2.ageM + 6;
+          return r;
+        } }));
+      };
+      dec._so = 1;
+    }
+  }
+  // 진급 심사: 계급이 오르게(무작위로 뜨지 않고 해마다 근속을 채운 사람에게 So.yearTick 이 묻는다)
+  {
+    const ev = evById('j_sol_promo'), dec = C.DEC.x_j_sol_promo;
+    if (ev && !ev._so) { const r0 = ev.rate; ev.rate = (S) => (soOn(S) ? 0 : typeof r0 === 'function' ? r0(S) : r0); ev._so = 1; }
+    if (dec && !dec._so) {
+      const t0 = dec.title, x0 = dec.text, c0 = dec.choices;
+      dec.title = (S, ctx) => { if (!soOn(S)) return t0(S, ctx); const nx = So.nextRule(soJob(S).so); return nx && soJob(S).so.track === 'off' && eqOf(soJob(S).so) >= 5 ? '장성 진급 심사' : '진급 심사'; };
+      dec.text = (S, ctx) => (soOn(S) ? promoText(S) : x0(S, ctx));
+      dec.choices = (S, ctx) => (soOn(S) ? promoChoices(S) : c0(S, ctx));
+      dec._so = 1;
+    }
+  }
+  // 봉급 체불: 북한은 배급
+  {
+    const ev = evById('j_sol_pay');
+    if (ev && !ev._so) {
+      const r0 = ev.run;
+      ev.run = (S) => {
+        if (isoOf(S) !== 'PRK') return r0(S);
+        H.fx(S, { money: -0.3, happy: -3 });
+        E.log(S, C.t(S, U.pick(['쌀 배급이 두 달째 제대로 나오지 않았습니다. 장마당 외상으로 버팁니다.', '공급이 끊겨 부대 부업지 옥수수로 끼니를 이었습니다.'])), 'bad');
+      };
+      ev._so = 1;
+    }
+  }
+  // 전역 뒤의 길: 의무 기간 뒤에만, 러시아 전쟁 중에는 막음, 지금 전역하면 받는 연금을 보여 줌, 한국은 '제대군인 지원센터'(제대 군인 가산점은 1999년 위헌 결정으로 없어짐)
+  {
+    const ev = evById('j_sol_exit'), dec = C.DEC.x_j_sol_exit;
+    if (ev && !ev._so) {
+      const r0 = ev.rate;
+      ev.rate = (S) => {
+        const j = soJob(S);
+        if (j && j.so && (S.ageM < j.so.oblig || (RUS_WAR(S) && j.so.iso === 'RUS'))) return 0;
+        return typeof r0 === 'function' ? r0(S) : r0;
+      };
+      ev._so = 1;
+    }
+    if (dec && !dec._so) {
+      const x0 = dec.text, c0 = dec.choices;
+      dec.text = (S, ctx) => { const t = x0(S, ctx); const pv = So.penPreview(S); return pv ? `${t} ${pv}` : t; };
+      dec.choices = (S, ctx) => c0(S, ctx).map((c) => {
+        if (isoOf(S) !== 'KOR' || !/특별 채용/.test(c.label || '')) return c;
+        return { ...c, label: '제대군인 지원센터의 취업 지원을 받는다', run: (S2, c2) => {
+          const r = c.run(S2, c2);
+          const fix = (s) => s.replace('제대 군인 특별 채용으로', '제대군인 지원센터의 취업 지원을 받아');
+          if (typeof r === 'string') return fix(r);
+          if (r && typeof r.text === 'string') return { ...r, text: fix(r.text) };
+          return r;
+        } };
+      });
+      dec._so = 1;
+    }
+  }
+  // 회사식 승진(m_promo → '승진 기회' 결정)은 직업군인에게 띄우지 않는다(진급은 위 심사로)
+  {
+    const ev = evById('m_promo');
+    if (ev && !ev._so) { const r0 = ev.rate; ev.rate = (S) => (soJob(S) ? 0 : typeof r0 === 'function' ? r0(S) : r0); ev._so = 1; }
+  }
+
+  /** 의무 복무 기간 안(러시아 계약병은 전쟁 중 내내)이라 스스로 그만두거나 옮길 수 없는가 */
+  So.locked = (S) => { const j = soJob(S); return !!(j && j.so && (S.ageM < j.so.oblig || (j.so.path === 'contract' && RUS_WAR(S)))); };
+  const lockWhy = (S) => { const j = soJob(S); return j.so.path === 'contract' && RUS_WAR(S) ? '전쟁 중에는 계약을 끝낼 수 없습니다' : `의무 복무가 ${moKo(Math.max(1, j.so.oblig - S.ageM))} 남아 있습니다`; };
+
+  /* ================================================================ 다른 파일과의 연결(그 파일은 고치지 않음) */
+  // 직함: '직업군인 (부장)' 대신 '직업군인 (중사)'
+  {
+    const jt0 = H.jobTitle;
+    H.jobTitle = (S) => (soOn(S) ? So.fullTitle(S) : jt0(S));
+  }
+  // 회사 직급 이름(선임·팀장·부장·임원)으로 '승진'한 문장을 계급 '진급'으로 바꾼다(뇌물·인맥 승진 등)
+  const fixLv = (S, t) => {
+    const j = soJob(S);
+    if (!j || !j.so || typeof t !== 'string') return t;
+    const r = U.j(So.rankName(j.so), '으로');
+    let s = t;
+    for (const L of C.LEVELS) if (L) s = s.split(`${U.j(L, '으로')} 승진`).join(`${r} 진급`);
+    return s.replace(/(^|\s)(으로|로) 승진/g, `$1${r} 진급`);
+  };
+  // 승진: 직업군인은 직급 대신 계급이 오른다
+  {
+    const pr0 = H.promote;
+    H.promote = (S, mult = 1.25) => {
+      if (!soOn(S)) return pr0(S, mult);
+      if (!So.nextRule(soJob(S).so)) { soJob(S).pay *= Math.min(1.05, mult); return true; }
+      So.rankUp(S, { mult: Math.min(mult, 1.15), quiet: true });
+      return true;
+    };
+  }
+  if (C.DEC.promotion && !C.DEC.promotion._so) {
+    const c0 = C.DEC.promotion.choices;
+    C.DEC.promotion.choices = (S, ctx) => c0(S, ctx).map((c) => ({ ...c, run: (S2, c2) => { const r = c.run(S2, c2); return typeof r === 'string' ? fixLv(S2, r) : r; } }));
+    C.DEC.promotion._so = 1;
+  }
+  for (const a of C.ACTIONS || []) {
+    if (a.id === 'bribe' && !a._so) { const r0 = a.run; a.run = (S, ...x) => { const r = r0(S, ...x); return typeof r === 'string' ? fixLv(S, r) : r; }; a._so = 1; }
+    // 의무 복무 중에는 일을 그만두거나 다른 일을 찾을 수 없다
+    if (['jobhunt', 'quitjob', 'startup', 'selfstart'].includes(a.id) && !a._so) { const n0 = a.need; a.need = (S) => (So.locked(S) ? lockWhy(S) : n0 ? n0(S) : true); a._so = 1; }
+    // 군 봉급은 계급·호봉으로 정해져 협상할 상대가 없다
+    if (a.id === 'raise' && !a._so) { const n0 = a.need; a.need = (S) => (soJob(S) ? '군인 봉급은 계급과 호봉으로 정해져 협상할 수 없습니다' : n0 ? n0(S) : true); a._so = 1; }
+  }
+  // 이직 제안: 의무 복무 중이면 옮길 수 없다
+  if (C.DEC.jobOffers && !C.DEC.jobOffers._so) {
+    const c0 = C.DEC.jobOffers.choices;
+    C.DEC.jobOffers.choices = (S, ctx) => {
+      const out = c0(S, ctx);
+      if (!So.locked(S)) {
+        // 연금 조건을 몇 해 앞둔 직업군인은 보통 남는다(20년 채우기)
+        const j = soJob(S), R = j && j.so && So.penRule(j.so.iso, j.so), y = j && j.so ? (j.so.m || 0) / 12 : 0;
+        if (!R || y < 8 || y >= R.yrs) return out;
+        const note = `전역하면 ${R.ko} 조건(${yrsKo(R.yrs)})까지 ${yrsKo(R.yrs - y)} 모자랍니다`;
+        return out.map((c) => (/지금 일을 계속/.test(c.label || '') ? { ...c, typ: true, sub: c.sub ? `${c.sub} · ${note}` : note } : { ...c, typ: false }));
+      }
+      const why = lockWhy(S);
+      return out.map((c) => (/지금 일을 계속/.test(c.label || '') ? { ...c, typ: true } : { ...c, typ: false, disabled: true, sub: why }));
+    };
+    C.DEC.jobOffers._so = 1;
+  }
+  // 일 그만두기: 직업군인은 '전역'(의무 복무 중이면 막음), 지금 전역하면 받는 연금을 보여 줌
+  if (C.DEC.quitJob && !C.DEC.quitJob._so) {
+    const t0 = C.DEC.quitJob.text, c0 = C.DEC.quitJob.choices;
+    C.DEC.quitJob.text = (S, ctx) => { const t = t0(S, ctx); const pv = soOn(S) ? So.penPreview(S) : ''; return pv ? `${t} ${pv}` : t; };
+    C.DEC.quitJob.choices = (S, ctx) => {
+      const out = c0(S, ctx);
+      if (!soOn(S)) return out;
+      return out.map((c) => {
+        if (!/그만둔다/.test(c.label || '')) return c;
+        if (So.locked(S)) return { ...c, label: '전역한다', disabled: true, sub: lockWhy(S) };
+        return { ...c, label: '전역한다', run: (S2) => { if (soOn(S2)) So.leave(S2, 'quit'); else E.loseJob(S2, 'quit'); return null; } };
+      });
+    };
+    C.DEC.quitJob._so = 1;
+  }
+  // 군인은 '회사 사정'으로 잘리지 않는다(엔진의 달마다 실직 위험은 특별 직업처럼 0으로)
+  if (typeof E.sysWorkMonthly === 'function') {
+    const sw0 = E.sysWorkMonthly;
+    E.sysWorkMonthly = (S) => {
+      const d = C.JOB.soldier;
+      if (!soOn(S) || !d || d.special) return sw0(S);
+      d.special = 1;
+      try { return sw0(S); } finally { delete d.special; }
+    };
+  }
+  // 일자리 제안: 직업군인은 나라별 입대 나이·건강 기준 안에서만(북한은 군 경로로만)
+  {
+    const mo0 = C.makeOffers;
+    C.makeOffers = (S, n) => { const out = mo0(S, n); return out.filter((o) => o.id !== 'soldier' || (soJob(S) ? false : So.canJoin(S))); };
+  }
+  // 일자리를 바꾸면: 직업군인을 그만두는 것이면 연금 정산, 직업군인끼리면(병 → 장교 임관 등) 복무 기간을 잇는다
+  let curPrev = null; // 바꾸기 전 직업군인 일자리(takeJob 연결 고리가 새 계급 상태를 만들지 않고 잇도록)
+  {
+    const tj0 = E.takeJob;
+    E.takeJob = (S, offer) => {
+      const prev = soJob(S);
+      curPrev = prev && prev.so ? prev : null;
+      try { tj0(S, offer); } finally { curPrev = null; }
+      const j = S.work.job;
+      if (!prev || !prev.so || prev === j) return;
+      if (j && j.id === 'soldier') {
+        // 직업군인끼리(병 → 장교 임관 등)는 한 경력: 이력에 따로 남기지 않는다
+        const h = S.work.history[S.work.history.length - 1];
+        if (h && h.id === 'soldier' && h.from === prev.since) S.work.history.pop();
+        j.since = Math.min(j.since, prev.since);
+        if (!j.so) { j.so = prev.so; j.lv = So.tier(prev.so); return; }
+        if (j.so !== prev.so) { const a = j.so, b = prev.so; a.m += b.m || 0; a.sum += b.sum || 0; for (const k in b.pm || {}) { a.pm[k] = (a.pm[k] || 0) + b.pm[k]; a.ps[k] = (a.ps[k] || 0) + (b.ps[k] || 0); } a.since = Math.min(a.since, b.since); }
+        return;
+      }
+      tagHist(S, prev);
+      log(S, `{N은} ${So.rankName(prev.so)} 계급으로 전역했습니다.`, 'milestone');
+      So.settle(S, prev);
+    };
+  }
+  E.hook('takeJob', (S, offer) => {
+    const j = S.work.job;
+    if (!j || j.id !== 'soldier' || j.so) return;
+    // 은퇴 뒤 '예전에 하던 일'로 돌아온 경우: 계급 없이 계약직 군무원으로
+    if (offer && offer.rework) { j.title = '군무원(계약직)'; return; }
+    if (curPrev) { j.so = curPrev.so; j.lv = So.tier(curPrev.so); j.formal = true; return; }
+    const so = So.init(S, j, { path: (offer && offer.soPath) || 'offer', title: baseOf(j) });
+    log(S, joinLine(S, so), 'milestone');
+  });
+  E.hook('loseJob', (S, why, j) => { if (j && j.id === 'soldier' && j.so && !j.so.done) { tagHist(S, j); So.settle(S, j); } });
+  // 은퇴: 현역이면 먼저 전역 정산, 그리고 일반 연금이 군인연금을 지우지 않게(엔진은 둘 가운데 큰 쪽만 남겼음)
+  if (typeof Ec !== 'undefined' && Ec && typeof Ec.retire === 'function') {
+    const re0 = Ec.retire;
+    Ec.retire = (S, opts = {}) => {
+      const j = soJob(S);
+      if (j && j.so && !j.so.done) {
+        if (!opts.quiet) log(S, `{N은} ${So.rankName(j.so)} 계급으로 전역했습니다.`, 'milestone');
+        S.work.history.push({ id: j.id, title: `${j.title} (${So.rankName(j.so)})`, from: j.since, to: S.ageM, pay: j.pay });
+        S.work.job = null;
+        So.settle(S, j);
+        E.fire('loseJob', S, 'retire', j);
+      }
+      const mil = S.sol && S.sol.pen > 0 ? Math.min(S.sol.pen, S.work.pension || 0) : 0;
+      if (!mil) return re0(S, opts);
+      const iso = isoOf(S);
+      S.work.socPen = S.work.socPen || {};
+      if (S.work.socPen[iso] === undefined) S.work.socPen[iso] = false; // 군인연금을 받는 사람은 기초(사회) 연금 대상에서 빼는 나라가 많다(근삿값)
+      S.work.pension = Math.max(0, (S.work.pension || 0) - mil);
+      const plan = re0(S, opts);
+      S.work.pension = (S.work.pension || 0) + mil;
+      return plan;
+    };
+  }
+  // 대학 졸업: 사관생도는 소위로 임관(다음 진로 결정 대신)
+  if (typeof E.finishStage === 'function') {
+    const fs0 = E.finishStage;
+    E.finishStage = (S) => {
+      const k = S.edu.stage;
+      fs0(S);
+      if (k === 3 && S.edu.stage === null && S.edu.level >= 4 && S.sol && S.sol.cadet) So.cadetGrad(S);
+    };
+  }
+  // 대학 입학: 성적·체력이 좋은 사람에게 드물게 사관학교 권유
+  E.hook('school', (S, k) => {
+    if (k !== 3 || !S.alive || S.mode === 'tribe' || !So.acadOk(S)) return;
+    if (U.chance(0.06 * (S.sex === 'f' ? 0.4 : 1))) H.ask(S, 'so_acad', {});
+  });
+  // 한국 미필 대졸 남성: 병역 결정에 학군·학사장교
+  if (C.DEC.military && !C.DEC.military._so) {
+    const mc0 = C.DEC.military.choices;
+    C.DEC.military.choices = (S, ctx) => {
+      const out = mc0(S, ctx);
+      if (isoOf(S) !== 'KOR' || S.sex !== 'm' || S.edu.level < 4 || ctx.leave || ctx.alt || (ctx.g && ctx.g > 3) || ageOf(S) > 27.99 || S.mil) return out;
+      const rotc = h01(S, 'rotc') < 0.75, typ = h01(S, 'rotcT') < 0.12;
+      const p = clamp(0.6 + (S.st.health - 60) / 250 + (S.st.smarts - 55) / 300, 0.3, 0.9);
+      const ch = {
+        label: rotc ? '학군장교(ROTC)로 임관한다' : '학사장교로 임관한다', sub: `${rotc ? '28' : '36'}개월 · 소위로 복무 · 선발 ${pTxt(p)}`, typ,
+        run: (S2) => {
+          if (!U.chance(clamp(p + luck(S2), 0.02, 0.98))) { if (hasMl()) return Ml.enlistTxt(S2, { br: 'army', note: '장교 선발에서 떨어져 육군으로 입대했습니다.' }); return null; }
+          So.commission(S2, { track: 'off', rk: 0, path: rotc ? 'rotc' : 'ocs', oblig: rotc ? 28 : 36, note: rotc ? '대학 학군단 과정을 마치고 소위로 임관했습니다. 의무 복무는 28개월입니다.' : '학사사관 후보생 교육을 마치고 소위로 임관했습니다. 의무 복무는 36개월입니다.' });
+          return null;
+        },
+      };
+      if (typ) for (const c of out) c.typ = false;
+      const at = out.findIndex((c) => /양심|나라를 떠나|입영을 거부/.test(c.label || ''));
+      out.splice(at >= 0 ? at : out.length, 0, ch);
+      return out;
+    };
+    C.DEC.military._so = 1;
+  }
+  // 동원·강제 징집·소집에서 현역 직업군인은 뺀다
+  if (hasMl()) {
+    for (const k of ['mobYear', 'forcedYear']) if (typeof Ml[k] === 'function') { const f0 = Ml[k]; Ml[k] = (S, ay) => (soJob(S) ? undefined : f0(S, ay)); }
+    if (typeof Ml.callUp === 'function') { const cu0 = Ml.callUp; Ml.callUp = (S, o) => (soJob(S) && !S.mil ? undefined : cu0(S, o)); }
+  }
+  // 사망 위험: 병과(특수전 ↑, 행정·통신 ↓)와 전쟁 중 전방 배치
+  if (typeof E.jobRisk === 'function') {
+    const jr0 = E.jobRisk;
+    E.jobRisk = (S) => { const r = jr0(S), j = soJob(S); if (j && j.so && BR_RISK[j.so.br]) { r.other *= BR_RISK[j.so.br][0]; r.conflict *= BR_RISK[j.so.br][1]; } return r; };
+  }
+  if (typeof E.hazardInput === 'function') {
+    const hi0 = E.hazardInput;
+    E.hazardInput = (S) => { const p = hi0(S), j = soJob(S); if (j && j.so && j.so.front > S.ageM && warLv(isoOf(S)) >= 1) p.warZone = true; return p; };
+  }
+  // 상태 줄: 사관생도
+  if (typeof C.statusText === 'function') {
+    const st0 = C.statusText;
+    C.statusText = (S) => { const s = st0(S); return S.sol && S.sol.cadet && S.edu.stage === 3 && typeof s === 'string' ? s.replace(/[^·]*대학 (\d+)학년/, '사관학교 $1학년') : s; };
+  }
+
+  /* ================================================================ 연결 고리 */
+  E.hook('ensure', (S) => {
+    const j = soJob(S);
+    if (j && !j.so && !j.rework) So.init(S, j, { old: true, title: baseOf(j) });
+  });
+  E.hook('month', (S) => So.monthTick(S));
+  E.hook('year', (S, ay) => { if (S.mode !== 'tribe') So.yearTick(S, ay); });
+  // 나라를 옮기면 군인연금 기록도 그 나라 돈으로(엔진이 S.work.pension 을 바꾸는 것과 같게)
+  E.hook('move', (S, from, to) => {
+    const s = S.sol;
+    if (!s || from === to) return;
+    if (s.pen) s.pen = conv(s.pen, from, to);
+    if (s.penLater) s.penLater = conv(s.penLater, from, to);
+  });
+
+  /* ================================================================ 업적 */
+  C.ACH.so_general = { ko: '별을 달다', desc: '장성(준장 이상)으로 진급하기' };
+  C.ACH.so_pension = { ko: '군인연금', desc: '연금 조건을 채울 만큼 복무하고 전역하기' };
+  C.ACH.so_legion = { ko: '외인부대', desc: '프랑스 외인부대에 들어가기' };
+})();
+
+/* 지구 어딘가에서 — 북한(PRK)의 군 복무 생활 (v0.6.2, 피드백 173·174·175·180번)
+ *
+ * 근거: docs/점검_군복무_특수국가_결과_20261015_1537.md '3.1 북한'(사실 정리·사건 제안 1~20·덮어쓰기 목록).
+ *   탈북민 증언·RFA·Daily NK·AsiaPress·NKDB 보도를 모은 근삿값이고, 보도가 엇갈리거나 확인하지 못한 값은 보수적으로 잡았다.
+ * 피드백
+ *   173 북한 의대 졸업 → 10년 병사 → 면허 시험·전공의/일반의 선택까지 떠서 '군인이면서 의사'가 됨
+ *       → 의학대학을 마친 남성은 3년 동안 '군의'로 복무(S.mil.br 'med')하고, 제대하면 국가가 병원에 배치한다(mp_docpost).
+ *         북한에서는 면허 시험을 '의사 자격 판정'으로 부르고, 복무 중에는 판정·첫 일자리 결정을 미뤘다가 제대한 뒤 묻는다.
+ *   174 복무 중 결혼 — 부대 안 병사의 혼담은 situ.js 가 미룬다. 여기서는 결혼한 여성을 소집하지 않고, 군관이 되면 결혼·관사 생활이 된다.
+ *   175 특수 국가는 따로 — 이 파일은 북한만 덧씌운다(다른 나라는 military.js 그대로).
+ *   180 10년 동안 할 수 있는 게 거의 없음 — 부대 배치, 허약·군인 건설자·옥수수밭·'담배 한 보루'·입당 심사·군관 추천·여군이 겪는
+ *       부당한 요구·표창·정치 학습과 소조 같은 복무 생활, 감정·생활·영예군인 제대, 만기 제대 뒤 집단배치.
+ * 하는 일(다른 파일은 고치지 않고 여기서 감싼다)
+ *  (가) 기간·대상(Ml.months·Ml.liable): 직발생(대학을 마친 남성) 36개월, 그 밖 남 120·여 84개월. 처형자·수용소·탈북자 가족
+ *       (regime.js 의 S.rg.kin·exPol·defFail, 적대 계층 가운데 일부 집안)과 결혼한 여성은 소집하지 않는다.
+ *  (나) 초모(Ml.milText·Ml.milChoices): '결핵 진단서를 산다'·'친척 집에 숨는다'·'부모가 서류상 이혼한다'·(여성) '일찍 결혼한다'.
+ *  (다) 부대 배치(Ml.enlist·Ml.postLine): 최전연 25·후방 35·건설 25·특수 10·호위사령부 3(핵심 성분·건강·사상), 돈·연줄이면 후방 ×2,
+ *       여성은 건설·통신·간호·고사총 → S.mil.unit. 계급 이름은 military.js 의 북한 계급(없으면 전사~중사), 군의는 '군의'(Ml.rankName).
+ *  (라) 복무 생활 사건 mp_*(북한 병사만), 휴가(t_mil_leave) ×0.05·면회(ml_visit) ×0.33('원호 물자를 지고 면회'),
+ *       입당 심사(후보 3년 → S.rg.party), 군관 추천(군관학교 → 소위, So.commission 이 있으면 그쪽으로).
+ *  (마) 제대 종류(Ml.discharge·Ml.histKo): 만기 / 감정제대(병·허약) / 생활제대(징계) / 영예군인(복무 중 장애) → S.ml.hist 의 why,
+ *       만기 제대 뒤 집단배치 결정(mp_mass: 받아들임·고향 배치 청·뇌물·대학 추천·무단 이탈).
+ * 사망: 새 원인 없이, 군인 건설자로 동원된 동안만 '기타 사고' 위험 ×1.3(E.jobRisk).
+ */
+'use strict';
+
+const Mp = {};
+(() => {
+  /* ================================================================ 도구 */
+  const clamp = U.clamp;
+  const pct = (p) => Math.round(p * 100);
+  const T = (S, s, x) => C.t(S, s, x);
+  const log = (S, s, k = 'ev') => E.log(S, C.t(S, s), k);
+  const moKo = (n) => (n >= 12 ? `${Math.floor(n / 12)}년${n % 12 ? ` ${n % 12}개월` : ''}` : `${n}개월`);
+  const hasRg = () => typeof Rg !== 'undefined' && !!Rg && typeof Rg.prk === 'function';
+  const hasSi = () => typeof Si !== 'undefined' && !!Si && typeof Si.barracks === 'function';
+  const hasDs = () => typeof Ds !== 'undefined' && !!Ds && typeof Ds.add === 'function';
+  const hasPp = () => typeof Pp !== 'undefined' && !!Pp && typeof Pp.bump === 'function';
+  const PK = () => (typeof DATA !== 'undefined' && DATA.rg && DATA.rg.PRK) || null;
+  /** 지금 북한에 살고 체제 자료가 있음 */
+  const prk = (S) => !!S && hasRg() && Rg.prk(S);
+  const rgOf = (S) => (S.rg = S.rg || {});
+  const mpOf = (S) => (S.mp = S.mp || {});
+  const sbOf = (S) => (S.rg && S.rg.sb) || 'wav';
+  const sbKo = (S) => (hasRg() && Rg.SB_KO ? Rg.SB_KO[sbOf(S)] : '');
+  const h01 = (S, k) => (hasRg() && Rg.hash01 ? Rg.hash01(S, k) : U.rand());
+  const barracks = (S) => (hasSi() ? Si.barracks(S) : !!(S.mil && S.mil.k !== 'alt'));
+  const isPrkAct = (m) => !!m && m.iso === 'PRK' && (m.k === 'act' || !m.k);
+  /** 북한에서 의무 복무 중인 병사(부대 안) */
+  const sol = (S) => !!S.mil && S.mil.k === 'act' && S.mil.iso === 'PRK' && E.iso(S) === 'PRK' && barracks(S);
+  /** 군의·군관학교 생도가 아닌 보통 병사 */
+  const ranker = (S) => sol(S) && S.mil.br !== 'med' && !S.mil.ocs;
+  const medSol = (S) => sol(S) && S.mil.br === 'med';
+  const nSvc = (S) => (S.mil ? S.ageM - S.mil.start : 0);
+  /** 대학을 마친 남성(직발생)·그 가운데 의학 전공 */
+  const gradM = (S) => S.sex === 'm' && S.edu.level >= 4;
+  const medGrad = (S) => gradM(S) && S.edu.major === 'med';
+  const party = (S) => !!(S.rg && (S.rg.party || S.rg.pCand));
+  const nextBday = (S) => (Math.floor(S.ageM / 12) + 1) * 12;
+  /** 일자리가 없으면 다시 일자리를 찾는다(초모에서 빠진 해) */
+  const freeTime = (S) => { if (!S.work.job && !S.work.retired && E.age(S) >= 15) { S.work.seeking = true; S.work.helping = false; } };
+  /** 돈을 낼 수 있는가: 내 돈, 또는 독립 전이면 집안 형편 */
+  const canPay = (S, mo, famP = 0.45) => S.money + H.pay(S, 1) >= H.pay(S, mo) || (!S.indep && S.fam.famP > famP);
+  const bumpPar = (S, d) => {
+    if (!hasPp()) return;
+    for (const k of ['father', 'mother']) if (S.fam[k] && S.fam[k].alive && S.fam[k].close !== undefined) Pp.bump(S, S.fam[k], k, d);
+  };
+  const danMonths = () => { const r = (PK() && PK().punish && PK().punish.danryeon) || [3, 6]; return U.randInt(r[0], r[1]); };
+  const punish = (S, kind, months, why) => (hasRg() && Rg.punish ? Rg.punish(S, kind, months, why) || '' : (H.jail(S, months, why), ''));
+
+  /* ================================================================ 표 */
+  // 부대: 추첨 무게(w), 허약 배수(weak), 건설 동원 빈도(bld, 연), 입당 가산(party) — 보고서 사건 제안 4·5·6·9
+  const UNIT = {
+    front: { ko: '최전연 부대', w: 25, weak: 1.3, bld: 0.15, party: 0.1 },
+    gen: { ko: '후방 보병 부대', w: 35, weak: 1, bld: 0.5, party: 0 },
+    bld: { ko: '건설 부대', w: 25, weak: 1.3, bld: 1.2, party: 0 },
+    spec: { ko: '특수 부대', w: 10, weak: 0.9, bld: 0.15, party: 0.1 },
+    guard: { ko: '호위사령부', w: 3, weak: 0.3, bld: 0.1, party: 0.15 },
+    sig: { ko: '통신 부대', w: 25, weak: 0.9, bld: 0.25, party: 0 },
+    nurse: { ko: '군 병원', w: 20, weak: 0.8, bld: 0.1, party: 0 },
+    aa: { ko: '고사총 부대', w: 20, weak: 1, bld: 0.3, party: 0.05 },
+    med: { ko: '군의', w: 0, weak: 0.3, bld: 0, party: 0.05 },
+  };
+  const RANK = ['전사', '초급병사', '중급병사', '상급병사', '하사', '중사']; // military.js 에 북한 계급 이름이 없을 때만 씀
+  const WHY_KO = { done: '만기 제대', sick: '감정제대', disc: '생활제대', hero: '영예군인 제대', off: '군관 임관', desert: '탈영', jail: '수감으로 끝남', left: '나라를 떠남', end: '복무 끝', adm: '제대' };
+  Mp.UNIT = UNIT;
+  /** 검사 도구가 끄고 켜 보는 스위치. move: 집단배치(탄광·농장) 때 사는 곳을 시골로 옮김 — 옮기면 시골의 손수 지은 집 때문에
+   *  30세 집 보유가 9% → 17%로 오르는데(실제로는 광산 새 살림집 입주가 30% 미만), 그래서 기본은 끔(리 진료소 배치만 시골로) */
+  Mp.OPT = { move: false };
+  Mp.RANK = RANK;
+
+  /** 처형자·정치범 수용소·탈북자 가족: 병력이 모자라도 소집하지 않는다(보고서 [PRK1]).
+   *  regime.js 의 표시(먼저 한국에 간 친척 kin, 교화소·수용소 경력 exPol, 탈북 미수 defFail)와,
+   *  적대 계층 가운데 집안에 처형·수용소 이력이 있는 집(사람마다 고정된 약 15%, 근삿값) */
+  Mp.noCall = (S) => {
+    const r = S && S.rg;
+    if (!r) return false;
+    return !!(r.kin || r.exPol || r.defFail || (r.sb === 'host' && h01(S, 'mpFamPol') < 0.15));
+  };
+  /** 부대 추첨 */
+  Mp.drawUnit = (S) => {
+    if (S.sex === 'f') return U.weighted([['bld', 35], ['sig', 25], ['nurse', 20], ['aa', 20]]);
+    const sb = sbOf(S);
+    const conn = E.wealthP(S) > 0.6 || (sb === 'core' && S.fam.famP > 0.5); // 돈이나 연줄
+    const guardOk = sb === 'core' && S.st.health >= 65 && !(S.rg && (S.rg.media || S.rg.camp));
+    const list = [['front', UNIT.front.w], ['gen', UNIT.gen.w * (conn ? 2 : 1)], ['bld', UNIT.bld.w], ['spec', UNIT.spec.w]];
+    if (guardOk) list.push(['guard', UNIT.guard.w]);
+    return U.weighted(list);
+  };
+
+  /* ================================================================ 기간·대상 */
+  if (typeof Ml === 'undefined' || !Ml) { E.Mp = Mp; return; }
+  {
+    const mo0 = Ml.months;
+    Ml.months = (S, br) => {
+      const v = mo0(S, br);
+      if (E.iso(S) !== 'PRK') return v;
+      if (br === 'med' || gradM(S)) return 36; // 직발생: 대학을 마친 뒤 3년(소식통, 2003년 제도)
+      return v;
+    };
+    const li0 = Ml.liable;
+    Ml.liable = (S) => {
+      if (!li0(S)) return false;
+      if (E.iso(S) !== 'PRK') return true;
+      const x = S.mp;
+      if (x && ((x.tbUntil || 0) > S.ageM || (x.hideUntil || 0) > S.ageM)) return false; // 결핵 진단서·숨어 지내는 해
+      if (S.sex === 'f' && S.fam.married) return false; // 결혼한 여성은 소집하지 않는다
+      if (Mp.noCall(S)) return false;
+      return true;
+    };
+    const nc0 = Ml.notCalledLine;
+    if (typeof nc0 === 'function') Ml.notCalledLine = (S, d) => (E.iso(S) === 'PRK' ? '{N은} 이번 초모에서 뽑히지 않았습니다.' : nc0(S, d));
+  }
+
+  /* ================================================================ 초모(북한판 입대 결정) */
+  Mp.tb = (S, cost) => {
+    E.addMoney(S, -H.pay(S, cost));
+    const x = mpOf(S);
+    x.tbN = (x.tbN || 0) + 1;
+    const r = U.rand();
+    if (r < 0.5 + E.luckP(S)) {
+      x.tbUntil = nextBday(S);
+      freeTime(S);
+      E.stat(S, 'happy', 2);
+      return T(S, '{N은} 뒷돈을 건네고 결핵 진단서를 받았습니다. 올해 초모에서는 빠졌지만, 해마다 다시 검사를 받아야 합니다.');
+    }
+    if (r < 0.65) {
+      x.tbBad = 1;
+      x.forceEnlist = 1;
+      const tail = punish(S, 'danryeon', 6, '진단서 위조');
+      return T(S, `가짜 결핵 진단서가 들통났습니다. {N은} 노동단련대에 6개월 동안 보내졌고, 나오면 곧바로 입대해야 합니다.${tail}`);
+    }
+    return Ml.enlistTxt(S, { note: '결핵 진단서가 통하지 않아 결국 입대했습니다.' });
+  };
+  Mp.hide = (S) => {
+    const x = mpOf(S);
+    x.hideN = (x.hideN || 0) + 1;
+    if (U.chance(0.4 + E.luckP(S))) {
+      x.hideUntil = nextBday(S);
+      S.work.seeking = false;
+      S.work.helping = false;
+      E.stat(S, 'happy', -5);
+      return T(S, '{N은} 먼 지방의 친척 집으로 몸을 숨겼습니다. 바깥출입을 삼가며 한 해를 보냅니다.');
+    }
+    x.forceEnlist = 1;
+    const tail = punish(S, 'danryeon', danMonths(), '병역 기피');
+    return T(S, `친척 집에 숨어 있다가 군사동원부 일꾼들에게 붙잡혔습니다. {N은} 노동단련대에 보내졌고, 나오면 곧바로 입대해야 합니다.${tail}`);
+  };
+  Mp.fakeDiv = (S) => {
+    const x = mpOf(S);
+    x.divTry = 1;
+    const r = U.rand();
+    if (r < 0.3 + E.luckP(S)) {
+      Ml.ensure(S).ex = 'mpDiv';
+      freeTime(S);
+      E.stat(S, 'happy', -2);
+      return T(S, '부모님이 서류상으로 이혼했습니다. {N은} 초모 대상에서 빠졌습니다. 동네에 말이 돌았지만 집안 살림은 그대로입니다.');
+    }
+    if (r < 0.4) {
+      E.addMoney(S, -H.pay(S, 2));
+      E.stat(S, 'happy', -6);
+      return Ml.enlistTxt(S, { note: '부모님의 위장 이혼이 들통나 집안이 벌금을 물었고, 결국 입대했습니다.' });
+    }
+    E.stat(S, 'happy', -3);
+    return Ml.enlistTxt(S, { note: '부모님이 서류상 이혼했지만 학교와 청년동맹의 평가가 좋다며 그대로 소집되어 입대했습니다.' });
+  };
+  Mp.earlyWed = (S) => {
+    if (U.chance(0.8 + E.luckP(S))) {
+      log(S, '{N은} 초모를 피하려고 서둘러 혼처를 찾았습니다. 결혼한 여성은 소집하지 않습니다.', 'ev');
+      Ml.ensure(S).ex = 'mpWed';
+      E.marry(S, C.makePartner(S, true), true);
+      E.stat(S, 'happy', -3);
+      freeTime(S);
+      return null;
+    }
+    return Ml.enlistTxt(S, { note: '서둘러 혼처를 찾았지만 혼사가 이뤄지지 않아 입대했습니다.' });
+  };
+  const choChoices = (S) => {
+    const out = [], x = S.mp || {}, cost = 4; // 결핵 진단서: 약 100달러에서 500달러로(2025) — 보통 집 벌이 2~6달 치 가운데 4달 치
+    if (!x.tbBad) out.push({ label: '결핵 진단서를 산다', sub: `의사에게 뒷돈을 주고 진단서를 받습니다 · 비용 약 ${H.amt(S, cost)} · 통할 가능성 약 50% · 해마다 다시 사야 하고, 들키면 노동단련대`, disabled: !canPay(S, cost, 0.35), run: (S2) => Mp.tb(S2, cost) });
+    out.push({ label: '친척 집에 숨는다', sub: '먼 지방 친척 집에서 한 해를 넘깁니다 · 가능성 약 40% · 붙잡히면 처벌받고 입대', run: (S2) => Mp.hide(S2) });
+    if (H.parentsAlive(S) === 2 && !x.divTry) out.push({ label: '부모가 서류상 이혼한다', sub: '부모가 이혼한 집 아이는 소집하지 않기도 합니다 · 가능성 약 30% · 학교와 청년동맹 평가가 좋으면 그래도 소집되고, 들키면 벌금', run: (S2) => Mp.fakeDiv(S2) });
+    if (S.sex === 'f' && !S.fam.married && E.age(S) >= E.minWed(S)) out.push({ label: '일찍 결혼한다', sub: '결혼한 여성은 소집하지 않습니다 · 혼처를 찾을 가능성 약 80%', run: (S2) => Mp.earlyWed(S2) });
+    return out;
+  };
+  {
+    const mt0 = Ml.milText;
+    Ml.milText = (S, ctx) => {
+      if (!prk(S) || ctx.alt) return mt0(S, ctx);
+      const lot = ctx.lot ? '초모 대상으로 뽑혔습니다. ' : '';
+      const head = medGrad(S) ? '의학대학을 마친 사람은 3년 동안 군의(군 의사)로 복무합니다. '
+        : gradM(S) ? '대학을 마친 직발생은 3년을 복무해야 졸업증을 받는다고 알려져 있습니다. '
+          : `{country}에서는 고급중학교를 마치면 초모(입대 모집)를 거쳐 ${S.sex === 'm' ? '남성은 약 10년' : '뽑힌 여성은 약 7년'} 동안 군에 복무합니다. `;
+      return T(S, `${lot}${head}25세가 넘도록 불리지 않으면 소집 대상에서 벗어납니다. 결핵 진단서를 사거나 숨어 지내며 피하는 사람도 있지만, 들키면 처벌을 받습니다. 정기 휴가는 거의 없고, 복무하는 동안에는 결혼하기 어렵습니다.`);
+    };
+    const mc0 = Ml.milChoices;
+    Ml.milChoices = (S, ctx) => {
+      const out = mc0(S, ctx);
+      if (!prk(S) || ctx.alt) return out;
+      const i = out.findIndex((c) => c.label === '입대한다');
+      if (i >= 0 && medGrad(S)) out[i] = { ...out[i], label: '군의로 입대한다', sub: `${out[i].sub || '3년'} · 부대 의무소와 군 병원에서 진료` };
+      out.splice(i >= 0 ? i + 1 : 0, 0, ...choChoices(S));
+      return out;
+    };
+    if (C.DEC.military) {
+      const ti0 = C.DEC.military.title;
+      C.DEC.military.title = (S, ctx) => (prk(S) && !(ctx && ctx.alt) ? '초모(군 입대)' : ti0(S, ctx));
+    }
+  }
+
+  /* ================================================================ 입대: 부대 배치·계급 */
+  {
+    const en0 = Ml.enlist;
+    Ml.enlist = (S, o = {}) => {
+      if (!S || !S.alive || E.iso(S) !== 'PRK' || (o.k && o.k !== 'act')) return en0(S, o);
+      const o2 = { ...o };
+      const med = medGrad(S);
+      if (med && !o2.br) o2.br = 'med';
+      if (!o2.note && med) o2.note = '의학대학을 마치고 군의로 입대했습니다.';
+      else if (!o2.note && gradM(S)) o2.note = '대학을 마친 직발생으로 입대했습니다.';
+      const m = en0(S, o2);
+      if (!m) return m;
+      m.unit = o2.br === 'med' ? 'med' : Mp.drawUnit(S);
+      if (o2.br === 'med') m.rk = 2; // 군의는 병사 계급을 밟지 않는다(고참병의 괴롭힘·잡일 사건도 받지 않음)
+      const cur = S.ml && S.ml.cur;
+      if (cur) { cur.unit = m.unit; cur.rk = m.rk; }
+      return m;
+    };
+    const POST = {
+      front: () => '신병 훈련을 마치고 군사분계선 가까운 최전연 부대에 배치되었습니다. 돈이나 연줄이 있는 집은 아들을 후방으로 빼낸다는 말이 돕니다.',
+      gen: () => `신병 훈련을 마치고 ${U.pick(['후방의 보병 사단', '군단 직속 부대', '해안 방어 부대'])}에 배치되었습니다.`,
+      bld: (S) => (S.sex === 'f' ? '신병 훈련을 마치고 건설 부대에 배치되었습니다. 사격보다 벽돌과 시멘트를 나르는 날이 훨씬 많습니다.' : "신병 훈련을 마치고 건설 부대에 배치되었습니다. 총보다 삽을 드는 날이 많은 '군인 건설자'가 되었습니다."),
+      spec: () => '신병 훈련을 마치고 특수 부대에 뽑혀 갔습니다. 훈련이 혹독하기로 이름난 곳입니다.',
+      guard: () => '사상 검증과 신원 조사를 거쳐 최고지도자 경호를 맡는 호위사령부에 뽑혔습니다. 집안의 자랑이 되었습니다.',
+      sig: () => '신병 훈련을 마치고 통신 부대에 배치되었습니다. 교환대와 무전기를 다루는 법을 배웁니다.',
+      nurse: () => '신병 훈련을 마치고 군 병원 간호원으로 배치되었습니다.',
+      aa: () => '신병 훈련을 마치고 고사총 부대에 배치되었습니다.',
+      med: () => '부대 의무소와 군 병원을 오가며 군의로 병사들을 진료하기 시작했습니다.',
+    };
+    const pl0 = Ml.postLine;
+    Ml.postLine = (S) => {
+      const m = S.mil;
+      if (!isPrkAct(m) || !m.unit) return pl0(S);
+      const head = (POST[m.unit] || POST.gen)(S);
+      return `${head} ${moKo(m.mo || m.endM - m.start)}의 군 생활이 시작되었습니다.`;
+    };
+    const ra0 = Ml.rankAt;
+    Ml.rankAt = (m, n) => (isPrkAct(m) && (m.br === 'med' || m.ocs) ? m.rk || 0 : ra0(m, n));
+    const rn0 = Ml.rankName;
+    // military.js 가 북한 계급 이름을 이미 갖고 있으면 그것을 쓴다(한곳에서 정하도록). 없을 때만 이 파일의 이름
+    const builtIn = rn0({ iso: 'PRK', k: 'act' }, 1) !== rn0({ iso: 'ZZZ', k: 'act' }, 1);
+    Ml.rankName = (m, rk) => {
+      if (!isPrkAct(m)) return rn0(m, rk);
+      if (m.br === 'med') return '군의';
+      if (m.ocs) return m.pol ? '정치군관 후보' : '군관 후보';
+      return builtIn ? rn0(m, rk) : RANK[Math.min(RANK.length - 1, rk || 0)];
+    };
+    const bk0 = Ml.brKo;
+    Ml.brKo = (m) => (isPrkAct(m) && m.unit && m.unit !== 'med' && UNIT[m.unit] ? UNIT[m.unit].ko : bk0(m));
+    const sk0 = Ml.statusKo;
+    Ml.statusKo = (S) => {
+      const m = S.mil;
+      if (isPrkAct(m) && m.ocs) return `${m.pol ? '정치군관 과정' : '군관학교'} 생도(임관까지 ${Math.max(0, m.ocs - S.ageM)}개월)`;
+      return sk0(S);
+    };
+  }
+
+  /* ================================================================ 제대 */
+  const endLine = (S, m, why, n, rk, note) => {
+    if (why === 'sick') return `{N은} ${note || '영양실조와 병으로 더 복무하기 어렵다는 판정을 받았습니다.'} 감정제대(질병 제대)로 ${moKo(Math.max(1, n))} 만에 집으로 돌아왔습니다.`;
+    if (why === 'disc') return '{N은} 거듭된 징계 끝에 생활제대로 군복을 벗었습니다. 생활제대자라는 꼬리표가 오래 따라다닙니다.';
+    if (why === 'hero') return '{N은} 복무 중 크게 다쳐 영예군인으로 제대했습니다. 영예군인 증서를 받고 집으로 돌아왔습니다.';
+    if (m.br === 'med') return `{N은} ${moKo(Math.max(1, n))} 동안의 군의 복무를 마치고 제대했습니다.`;
+    // '상사·특무상사'는 직장 상사와 헷갈리지 않게(제대한 뒤의 기록 문장) 계급을 빼고 쓴다
+    return `{N은} ${rk && !/상사/.test(rk) ? U.j(rk, '으로') + ' ' : ''}${moKo(Math.max(1, n))}의 군 복무를 마치고 만기 제대했습니다.`;
+  };
+  /** 미뤄 둔 면허 결정(복무 중에 온 자격 판정·첫 일자리)을 다시 묻는다. 의사는 병원 배치로 */
+  const ask0 = E.ask;
+  const resolveLic = (S) => {
+    const x = S.mp, L = (x && x.lic) || [];
+    if (!L.length) return false;
+    x.lic = [];
+    for (const q of L) {
+      if (q.id === 'licStart' && q.ctx && q.ctx.mj === 'med') ask0(S, 'mp_docpost', {});
+      else E.ask(S, q.id, q.ctx);
+    }
+    return true;
+  };
+  const licensedMed = (S) => !!S.flags.lic_med;
+  /** 북한 병사가 제대한 뒤: 대학(먼저 복무한 사람) · 미뤄 둔 면허 결정 · 병원 배치(군의) · 집단배치(만기) · 고향의 직장 배치 */
+  const afterPrk = (S, why, m) => {
+    if (S.ml && S.ml.uniAfter) { Ml.afterSvc(S); return; }
+    if (resolveLic(S)) return;
+    if (m.br === 'med' && licensedMed(S)) { ask0(S, 'mp_docpost', { mil: 1 }); return; }
+    if (why === 'done') { ask0(S, 'mp_mass', { n: S.ageM - m.start }); return; }
+    E.afterSchool(S);
+  };
+  {
+    const dis0 = Ml.discharge;
+    Mp.dis0 = dis0;
+    Ml.discharge = (S, why = 'done', o = {}) => {
+      const m = S.mil;
+      if (!m || o.mpRaw || m.mpOff || m.iso !== 'PRK' || m.k !== 'act' || E.iso(S) !== 'PRK' || !['done', 'sick', 'disc', 'hero'].includes(why)) return dis0(S, why, o);
+      const n = S.ageM - m.start, rk = Ml.rankName(m, m.rk), unit = m.unit;
+      dis0(S, why, { ...o, quiet: true, next: false });
+      const ml = S.ml, h = ml && ml.hist[ml.hist.length - 1];
+      if (h) h.unit = unit;
+      const x = mpOf(S);
+      x.end = why;
+      if (why === 'disc') { E.stat(S, 'happy', -10); E.stat(S, 'social', -4); }
+      if (why === 'sick') E.stat(S, 'happy', -2);
+      if (!o.quiet) log(S, endLine(S, m, why, n, rk, o.note), why === 'disc' ? 'bad' : 'milestone');
+      if (o.next === false) return;
+      afterPrk(S, why, m);
+    };
+    const hk0 = Ml.histKo;
+    Ml.histKo = (S, h) => {
+      if (!h || h.iso !== 'PRK' || h.k !== 'act') return hk0(S, h);
+      const yA = (mm) => S.start.y + Math.floor((S.start.m + mm) / 12);
+      const y0 = yA(h.from), y1 = yA(h.to), span = y0 === y1 ? `${y0}년` : `${y0}~${y1}년`;
+      const where = h.iso !== S.born.iso ? `${Wd.name(h.iso)} ` : '';
+      if (h.why === 'off') return `${where}${UNIT[h.unit] ? UNIT[h.unit].ko + ' ' : ''}복무 · 군관학교를 거쳐 소위 임관 (${span})`;
+      const who = h.br === 'med' ? '군의' : [UNIT[h.unit] ? UNIT[h.unit].ko : '', h.rk || ''].filter(Boolean).join(' ');
+      return `${where}${who ? who + ' ' : ''}${WHY_KO[h.why] || '제대'} (${span})`;
+    };
+    const vw0 = Ml.view;
+    Ml.view = (S) => {
+      let r = vw0(S);
+      if (!S || !(S.born.iso === 'PRK' || (S.mil && S.mil.iso === 'PRK'))) return r;
+      const x = S.mp || {}, rows = [];
+      if (isPrkAct(S.mil) && S.mil.unit && UNIT[S.mil.unit]) rows.push(['부대', UNIT[S.mil.unit].ko]);
+      if (x.noCall) rows.push(['초모', "집안 이력으로 소집 대상에서 빠짐('군대도 못 가는 집')"]);
+      if (x.tbN) rows.push(['초모', `결핵 진단서를 산 해 ${x.tbN}번`]);
+      if (x.hideN) rows.push(['초모', `친척 집에 숨어 지낸 해 ${x.hideN}번`]);
+      if (S.rg && S.rg.pCand) rows.push(['입당', `후보 당원(정식 당원까지 ${Math.max(0, S.rg.pCand - S.ageM)}개월)`]);
+      const ex = S.ml && S.ml.ex, exKo = { mpDiv: '부모의 서류상 이혼으로 초모에서 빠짐', mpWed: '결혼해 초모에서 빠짐' }[ex];
+      if (!rows.length && !exKo) return r;
+      if (!r) r = { title: '병역', rows: [], note: '' };
+      if (exKo) r.rows = r.rows.map(([k, v]) => (k === '면제' ? [k, exKo] : [k, v]));
+      r.rows = r.rows.concat(rows).slice(0, 14);
+      if (!r.note) r.note = '북한의 병역 수치(기간·소집·배치·입당)는 탈북민 증언과 보도를 모은 근삿값입니다.';
+      return r;
+    };
+  }
+
+  /* ================================================================ 의사: 자격 판정·병원 배치(피드백 173번) */
+  /** 아직 입대하지 않았지만 곧 소집될 사람(초모 결정이 줄 서 있거나 소집 나이) */
+  const svcAhead = (S) => S.queue.some((q) => q.id === 'military') || (!S.flags.served && !S.mil && E.age(S) >= 17 && E.needsService(S));
+  E.ask = (S, id, ctx = {}) => {
+    if ((id === 'licStart' || id === 'licExam') && S && S.alive && prk(S)) {
+      // 복무 중(또는 곧 입대)에는 자격 판정·첫 일자리를 미뤘다가 제대한 뒤 묻는다
+      if (S.mil || (id === 'licStart' && svcAhead(S))) {
+        const x = mpOf(S);
+        (x.lic = x.lic || []).push({ id, ctx });
+        if (x.lic.length > 4) x.lic.shift();
+        return undefined;
+      }
+      if (id === 'licStart' && ctx && ctx.mj === 'med') return ask0(S, 'mp_docpost', {});
+    }
+    return ask0(S, id, ctx);
+  };
+  // 병원 배치: 0 리 진료소 · 1 군 인민병원 · 2 도·시 인민병원 · 3 평양의 큰 병원(성분·연줄이 가른다)
+  const cityOf = (S) => {
+    const c = S.place.city;
+    if (S.place.urban && c && c !== '평양') return c;
+    const cs = Wd.cities('PRK').filter((x) => x !== '평양');
+    return cs.length ? cs[Math.floor(h01(S, 'mpCity') * cs.length) % cs.length] : '함흥';
+  };
+  const DOC = [
+    { ko: () => '리 진료소 호담당의사', pay: 0.8, perk: 0.9 },
+    { ko: () => '군 인민병원 의사', pay: 0.9, perk: 1 },
+    { ko: (S) => `${cityOf(S)}시 인민병원 의사`, pay: 1, perk: 1.2 },
+    { ko: () => '평양의 중앙급 병원 의사', pay: 1.2, perk: 1.4 },
+  ];
+  /** 막 군의 복무를 마쳤는가(병원 배치 안내 문장용) */
+  const justMed = (S) => { const hs = (S.ml && S.ml.hist) || [], h = hs[hs.length - 1]; return !S.mil && !!h && h.iso === 'PRK' && h.br === 'med' && S.ageM - h.to <= 2; };
+  const docDraw = (S) => {
+    const s = sbOf(S);
+    const w = s === 'core' ? [5, 15, 45, 35] : s === 'host' ? [60, 30, 10, 0] : [25, 37, 35, 3];
+    return U.weighted(w.map((v, i) => [i, v]));
+  };
+  Mp.placeDoc = (S, tier, pre = '') => {
+    const t = DOC[clamp(tier, 0, 3)], title = t.ko(S);
+    if (C.JOB.doctor) {
+      const o = C.makeJob(S, C.JOB.doctor, t.pay);
+      o.title = title;
+      o.rgPerk = t.perk;
+      E.takeJob(S, o);
+      if (S.work.job) S.work.job.title = title;
+    }
+    if (!S.flags.lic_med) S.flags.lic_med = S.ageM;
+    if (tier === 3) { S.place.urban = true; S.place.city = '평양'; rgOf(S).py = true; }
+    if (tier === 0) { S.place.urban = false; if (S.rg) S.rg.py = false; }
+    const mid = tier === 3 ? '평양 시민증도 함께 받았습니다. ' : tier === 0 ? '마을 수백 가구의 건강을 혼자 맡습니다. ' : '';
+    return T(S, `${pre}{N은} ${U.j(title, '으로')} 배치되었습니다. ${mid}공식 월급은 적어서, 환자들이 건네는 사례와 약값이 살림에 보탬이 된다고 합니다.`);
+  };
+  C.DEC.mp_docpost = {
+    title: () => '병원 배치',
+    text: (S, ctx) => T(S, `${(ctx && ctx.mil) || justMed(S) ? '군의 복무를 마쳤습니다. ' : ''}{country}에서는 국가가 의사가 일할 병원을 정해 줍니다(배치). 출신 성분과 연줄에 따라 평양의 큰 병원, 도·시·군 인민병원, 리 진료소의 호담당의사로 갈립니다. 전공의 수련이나 개인 의원을 고르는 길은 없습니다. {N}의 출신 성분은 ${sbKo(S)}입니다.`),
+    choices: (S) => {
+      const P = PK(), sb = sbOf(S);
+      const cost = (P && P.bribe && P.bribe.assignCost) || 6, p = (P && P.bribe && P.bribe.assign && P.bribe.assign[sb]) || 0.5;
+      const done = (S2) => S2.work.job && S2.work.job.id === 'doctor';
+      return [
+        { label: '배치를 받아들인다', sub: '어디로 갈지는 국가가 정합니다', typ: true, run: (S2) => (done(S2) ? null : Mp.placeDoc(S2, docDraw(S2))) },
+        { label: '뇌물을 써서 더 나은 병원으로 배치받는다', sub: `비용 약 ${H.amt(S, cost)} · 가능성 약 ${pct(p)}%`, disabled: !canPay(S, cost, 0.6),
+          run: (S2) => {
+            if (done(S2)) return null;
+            E.addMoney(S2, -H.pay(S2, cost));
+            const t0 = docDraw(S2);
+            if (U.chance(p)) return Mp.placeDoc(S2, Math.min(sb === 'host' ? 2 : 3, t0 + 1), '배치 일꾼에게 돈을 건넨 덕에 ');
+            return Mp.placeDoc(S2, t0, '돈만 건네고 ');
+          } },
+      ];
+    },
+  };
+  {
+    const prkMed = (S, ctx) => prk(S) && !!ctx && ctx.mj === 'med';
+    if (C.DEC.licExam) {
+      const d = C.DEC.licExam, ti0 = d.title, t0 = d.text, c0 = d.choices;
+      d.title = (S, ctx) => (prkMed(S, ctx) ? '의사 자격 판정' : ti0(S, ctx));
+      d.text = (S, ctx) => (prkMed(S, ctx) ? T(S, `${ctx.retry ? '다시 ' : ''}의사 자격 판정을 받을 때가 되었습니다. 의학대학을 마치면 국가의 자격 판정을 거쳐 의사 자격을 얻고, 국가가 일할 병원을 정해 줍니다(배치).`) : t0(S, ctx));
+      d.choices = (S, ctx) => {
+        const out = c0(S, ctx);
+        if (!prkMed(S, ctx)) return out;
+        return out.map((c) => ({
+          ...c,
+          label: c.label === '시험을 본다' ? '자격 판정을 받는다' : /면허 시험은 보지 않고/.test(c.label) ? '의사 일은 하지 않고 다른 길을 간다' : c.label,
+          run: (S2, c2) => {
+            const r = c.run(S2, c2);
+            return typeof r === 'string' ? r.replace('의사 국가시험에 합격했습니다! 면허증을 받았습니다.', '의사 자격 판정에 붙었습니다. 의사 자격증을 받았습니다.').replace('의사 국가시험에 떨어졌습니다.', '의사 자격 판정에서 떨어졌습니다.') : r;
+          },
+        }));
+      };
+    }
+    if (C.DEC.licStart) {
+      const d = C.DEC.licStart, ti0 = d.title, t0 = d.text, c0 = d.choices;
+      d.title = (S, ctx) => (prkMed(S, ctx) ? C.DEC.mp_docpost.title(S, {}) : ti0(S, ctx));
+      d.text = (S, ctx) => (prkMed(S, ctx) ? C.DEC.mp_docpost.text(S, {}) : t0(S, ctx));
+      d.choices = (S, ctx) => (prkMed(S, ctx) ? C.DEC.mp_docpost.choices(S, {}) : c0(S, ctx));
+    }
+  }
+
+  /* ================================================================ 집단배치(만기 제대 뒤) */
+  const MASS_KO = { miner: '북부 내륙의 탄광', farmhand: '먼 지방의 협동농장', construction: '중점 건설장', factory: '지방의 공장' };
+  Mp.massPlace = (S, pre = '') => {
+    const id = U.weighted(S.sex === 'f' ? [['farmhand', 0.6], ['factory', 0.4]] : [['miner', 0.45], ['farmhand', 0.35], ['construction', 0.2]]);
+    mpOf(S).mass = 1;
+    if (C.JOB[id] && !S.work.job) E.takeJob(S, C.makeJob(S, C.JOB[id], 1));
+    if (Mp.OPT.move && (id === 'miner' || id === 'farmhand')) { S.place.urban = false; if (S.rg) S.rg.py = false; }
+    return T(S, `${pre}{N은} 제대군인 수십 명과 함께 ${MASS_KO[id]}에 무리로 배치되었습니다. 살림집을 먼저 주고 입당에도 힘써 주겠다는 약속을 받았습니다.`);
+  };
+  const homeBack = (S, pre = '') => {
+    mpOf(S).home = 1;
+    E.afterSchool(S);
+    return T(S, `${pre}{N은} 고향으로 돌아왔습니다. 고향의 직장 배치를 기다립니다.`);
+  };
+  C.DEC.mp_mass = {
+    title: () => '제대와 배치',
+    text: (S, ctx) => T(S, `${moKo((ctx && ctx.n) || 120)}의 군 복무를 마쳤습니다. 제대군인은 탄광·광산·협동농장·중점 건설장에 무리로 배치되는 일이 많습니다(집단배치). 당원 자격과 살림집을 먼저 준다며 설득하지만, 광산의 새 살림집에 실제로 들어가 사는 사람은 30%가 안 된다는 보도도 있습니다. 고향으로 보내 달라고 청할 수도 있습니다.`),
+    choices: (S) => {
+      const sb = sbOf(S), x = S.mp || {};
+      const pHome = clamp(0.5 + (sb === 'core' ? 0.2 : sb === 'host' ? -0.15 : 0) + (party(S) ? 0.15 : 0), 0.05, 0.92);
+      const pBr = clamp(pHome + 0.2, 0.05, 0.95);
+      const typHome = h01(S, 'mpMass') < 0.45;
+      const busy = (S2) => !!S2.mil || !!S2.work.job;
+      const out = [
+        { label: '집단배치를 받아들인다', sub: '탄광·협동농장·건설장 · 살림집과 입당에서 우대', typ: !typHome, run: (S2) => (busy(S2) ? null : Mp.massPlace(S2)) },
+        { label: '고향으로 배치해 달라고 청한다', sub: `가능성 약 ${pct(pHome)}% · 안 되면 집단배치`, typ: typHome,
+          run: (S2) => (busy(S2) ? null : U.chance(pHome + E.luckP(S2)) ? homeBack(S2, '청이 받아들여졌습니다. ') : Mp.massPlace(S2, '고향 배치 청은 받아들여지지 않았습니다. ')) },
+        { label: '뇌물을 써서 고향 배치를 받는다', sub: `비용 약 ${H.amt(S, 3)} · 가능성 약 ${pct(pBr)}% · 안 되면 집단배치`, disabled: !canPay(S, 3),
+          run: (S2) => {
+            if (busy(S2)) return null;
+            E.addMoney(S2, -H.pay(S2, 3));
+            return U.chance(pBr + E.luckP(S2)) ? homeBack(S2, '배치 일꾼에게 돈을 건넨 덕에 ') : Mp.massPlace(S2, '돈만 건네고 고향 배치는 받지 못했습니다. ');
+          } },
+      ];
+      // 제대군인 대학 추천(예전보다 드묾, 근삿값 10~15%)
+      if (S.edu.stage === null && S.edu.level === 3 && E.age(S) < 32 && S.st.smarts >= 55 && x.end === 'done') {
+        const pU = clamp(0.12 + (party(S) ? 0.1 : 0) + (sb === 'host' ? -0.08 : 0), 0.02, 0.4);
+        out.push({ label: '제대군인 대학 추천을 받아 본다', sub: `가능성 약 ${pct(pU)}% · 안 되면 집단배치`,
+          run: (S2) => {
+            if (busy(S2)) return null;
+            if (U.chance(pU + E.luckP(S2))) { S2.work.seeking = false; E.ask(S2, 'major', {}); return T(S2, '{N은} 제대군인 추천으로 대학에 갈 자격을 얻었습니다.'); }
+            return Mp.massPlace(S2, '대학 추천 명단에는 들지 못했습니다. ');
+          } });
+      }
+      out.push({ label: '배치지로 가지 않고 집으로 간다', sub: '무단 이탈 · 단속에 걸리면 노동단련대(약 30%)',
+        run: (S2) => {
+          if (busy(S2)) return null;
+          mpOf(S2).run = 1;
+          S2.work.seeking = true;
+          S2.work.helping = false;
+          if (U.chance(0.3) && hasRg() && Rg.bust) Rg.bust(S2, '배치지로 가지 않고 고향에 머문 일이 드러났습니다.', 'danryeon', [3, 6], '배치지 이탈');
+          return T(S2, '{N은} 배치지로 가지 않고 고향 집으로 돌아갔습니다. 서류상으로는 아직 배치지 소속이라 늘 조마조마합니다.');
+        } });
+      return out;
+    },
+  };
+
+  /* ================================================================ 입당 심사·군관 추천 */
+  const partyP = (S) => {
+    const m = S.mil || {}, s = sbOf(S), u = UNIT[m.unit] || {};
+    const p = 0.2 + (u.party || 0) + (s === 'core' ? 0.15 : s === 'host' ? -0.2 : 0) + Math.min(0.1, 0.05 * (m.good || 0))
+      - (m.refused ? 0.2 : 0) - (m.bad ? 0.1 : 0) - (S.rg && S.rg.exPol ? 0.3 : 0);
+    return clamp(p, 0.03, 0.9);
+  };
+  const partyTry = (S, p, bribed) => {
+    if (!S.mil) return null;
+    if (U.chance(p + E.luckP(S))) {
+      rgOf(S).pCand = S.ageM + 36; // 2020년 9월부터 군인 후보 기간 3년
+      E.stat(S, 'happy', 5);
+      return T(S, `${bribed ? '뇌물이 통했는지 ' : ''}입당 심사를 통과했습니다. {N은} 후보 당원이 되었습니다. 3년 동안 탈이 없으면 정식 당원이 됩니다.`);
+    }
+    E.stat(S, 'happy', -3);
+    return T(S, `${bribed ? '돈을 건넸지만 ' : ''}이번 심사에서는 이름이 빠졌습니다. 다음 해를 기다립니다.`);
+  };
+  C.DEC.mp_party = {
+    title: () => '입당 심사',
+    text: (S) => T(S, `부대 당 조직이 올해 입당 심사 대상자 명단에 {N}의 이름을 올렸습니다. 군 복무 중 입당은 제대 뒤 배치와 출세에 큰 힘이 됩니다. 예전에는 제대군인 대부분이 당원이 되었지만, 요즘은 열에 서넛 정도라고 합니다(근삿값). 심사를 통과하면 3년 동안 후보 당원으로 지낸 뒤 정식 당원이 됩니다. {N}의 출신 성분은 ${sbKo(S)}입니다.`),
+    choices: (S) => {
+      const p = partyP(S), pb = clamp(p + 0.15, 0.03, 0.95);
+      return [
+        { label: '입당 청원서를 낸다', sub: `가능성 약 ${pct(p)}%`, typ: true, run: (S2) => partyTry(S2, p, false) },
+        { label: '정치지도원에게 뇌물을 쓰고 추천을 받는다', sub: `비용 약 ${H.amt(S, 3)} · 가능성 약 ${pct(pb)}%`, disabled: !canPay(S, 3),
+          run: (S2) => { E.addMoney(S2, -H.pay(S2, 3)); return partyTry(S2, pb, true); } },
+        { label: '이번에는 나서지 않는다', run: (S2) => T(S2, '{N은} 이번 심사에는 나서지 않았습니다.') },
+      ];
+    },
+  };
+  const toOcs = (S, mo, pol) => {
+    const m = S.mil;
+    if (!m || m.ocs) return null;
+    m.ocs = S.ageM + mo;
+    m.pol = pol ? 1 : 0;
+    m.endM = Math.max(m.endM, m.ocs + 2);
+    E.stat(S, 'happy', 4);
+    E.stat(S, 'smarts', 2);
+    return T(S, pol ? '{N은} 김일성정치대학의 정치군관 과정에 들어갔습니다. 4년 동안 정치와 사상 교육을 받습니다.' : '{N은} 추천을 받아 군관학교에 들어갔습니다. 2년 동안 군관 교육을 받습니다.');
+  };
+  C.DEC.mp_officer = {
+    title: () => '군관 추천',
+    text: (S) => T(S, '부대에서 {N을} 군관(장교) 후보로 추천하겠다고 합니다. 군관은 대부분 성적과 사상이 좋은 하전사 가운데서 뽑아 군관학교로 보냅니다. 군관이 되면 정해진 복무 대신 직업군인으로 군에 남고, 결혼해 관사에서 가족과 함께 살 수 있습니다. 다만 군관 월급은 명목뿐이라 쌀 배급과 가족의 장마당 벌이에 기댄다고 합니다.'),
+    choices: (S) => {
+      const go = h01(S, 'mpOff') < 0.5;
+      const out = [{ label: '군관학교에 간다', sub: '2년 교육 · 마치면 소위로 임관 · 직업군인으로 군에 남습니다', typ: go, run: (S2) => toOcs(S2, 24, false) }];
+      if (party(S)) out.push({ label: '정치군관 과정에 지원한다', sub: '김일성정치대학 4년 · 당원(후보 포함)만 · 마치면 정치군관', run: (S2) => toOcs(S2, 48, true) });
+      out.push({ label: '사양한다', sub: '정해진 복무를 마치고 제대합니다', typ: !go, run: (S2) => T(S2, '{N은} 추천을 정중히 사양했습니다. 정해진 복무를 마치고 고향으로 돌아가고 싶었습니다.') });
+      return out;
+    },
+  };
+  /** 군관학교를 마치고 임관: 직업군인 모듈(So.commission)이 있으면 그쪽으로, 없으면 의무 복무를 끝내고 직업군인 일자리로 */
+  Mp.commission = (S) => {
+    const m = S.mil;
+    if (!m) return;
+    const pol = !!m.pol;
+    const note = pol ? '김일성정치대학의 정치군관 과정을 마치고 소위로 임관했습니다.' : '군관학교를 마치고 소위로 임관했습니다.';
+    m.mpOff = 1;
+    if (typeof So !== 'undefined' && So && typeof So.commission === 'function') { So.commission(S, { track: 'off', rk: 0, title: '소위', note }); return; }
+    const unit = m.unit;
+    Ml.discharge(S, 'off', { quiet: true, next: false });
+    const h = S.ml && S.ml.hist[S.ml.hist.length - 1];
+    if (h) h.unit = unit;
+    const title = pol ? '정치군관(소위)' : '군관(소위)';
+    if (C.JOB.soldier) {
+      const o = C.makeJob(S, C.JOB.soldier, 1.1);
+      o.title = title;
+      o.rgPerk = 1.2;
+      E.takeJob(S, o);
+      if (S.work.job) S.work.job.title = title;
+    }
+    E.stat(S, 'happy', 6);
+    log(S, `{N은} ${note} 이제 군관으로 군에 남습니다. 군관은 결혼해 관사에서 가족과 함께 살 수 있습니다.`, 'milestone');
+  };
+
+  /* ================================================================ 복무 생활 사건(북한 병사만) */
+  const unitOf = (S) => UNIT[(S.mil && S.mil.unit) || 'gen'] || UNIT.gen;
+  const addBad = (S) => { if (S.mil) S.mil.bad = (S.mil.bad || 0) + 1; };
+  C.addEvents([
+    {
+      id: 'mp_weak', age: [16, 45], cd: 1, k: 'bad', fx: { happy: -2 },
+      when: (S) => ranker(S) && nSvc(S) >= 3,
+      rate: (S) => (ranker(S) ? 0.35 * unitOf(S).weak * (E.wealthP(S) > 0.7 ? 0.7 : 1) : 0),
+      run: (S) => {
+        const m = S.mil;
+        m.weak = (m.weak || 0) + 1;
+        const r = U.rand();
+        if (r < 0.015) { E.stat(S, 'health', -15); E.stat(S, 'happy', -4); m.weakBad = 1; return '영양실조가 심해져 쓰러졌습니다. 군 병원에 실려 가 몇 주 동안 누워 지냈습니다.'; }
+        E.stat(S, 'health', -U.randInt(6, 10));
+        if (r < 0.25) {
+          E.stat(S, 'health', 3);
+          bumpPar(S, 2);
+          const who = S.fam.mother.alive ? '어머니가' : S.fam.father.alive ? '아버지가' : '가족이';
+          return `영양실조가 심해져 '허약 치료'를 받으라며 ${U.randInt(1, 2)}달 동안 집으로 보내졌습니다. ${who} 몰라볼 만큼 야위어 있었습니다.`;
+        }
+        if (S.sex === 'f' && U.chance(0.3)) return '배급이 줄어 몸무게가 크게 빠졌습니다. 영양실조로 몇 달째 월경이 멈췄습니다. 같은 막사의 여군 여럿이 같은 일을 겪었습니다.';
+        return U.pick(['부대 배급이 줄어 하루 두 끼를 옥수수밥과 소금국으로 버텼습니다. 몸이 눈에 띄게 야위었습니다.', '영양실조로 어지럼증이 잦아졌습니다. 같은 소대에 비슷한 병사가 여럿입니다.', '허기를 참지 못해 산에서 풀뿌리를 캐 먹었습니다. 며칠 동안 배앓이를 했습니다.']);
+      },
+    },
+    {
+      id: 'mp_build', age: [16, 45], cd: 1, fx: { health: -3, skill: 2 },
+      when: (S) => ranker(S) && nSvc(S) >= 2 && !((S.mil.bld || 0) > S.ageM),
+      rate: (S) => (ranker(S) ? unitOf(S).bld : 0),
+      run: (S) => {
+        const m = S.mil, n = U.randInt(2, 6);
+        m.bld = S.ageM + n;
+        m.bldN = (m.bldN || 0) + 1;
+        const site = U.pick(['평양의 살림집 건설장', '산골 발전소 건설장', '새로 닦는 도로 공사장', '지방 병원 건설장', '바닷가 간석지 둑 공사장']);
+        const head = `${site}에 ${n}달 동안 '군인 건설자'로 동원되었습니다.`;
+        if (hasDs() && U.chance(0.012)) {
+          Ds.add(S, U.pick(['limb', 'mob']), 2, { src: 'work' });
+          E.stat(S, 'health', -10);
+          return `${head} 비계에서 떨어진 자재에 크게 다쳐 군 병원으로 옮겨졌습니다.`;
+        }
+        return `${head} ${U.pick(['새벽부터 밤까지 시멘트와 벽돌을 날랐습니다.', '안전 장비 없이 높은 비계를 오르내렸습니다.', "기한 안에 끝내라는 '속도전' 구호 아래 쉬는 날이 없었습니다."])}`;
+      },
+    },
+    {
+      id: 'mp_corn', age: [16, 45], cd: 1, mon: [9, 10],
+      when: (S) => ranker(S) && S.mil.unit !== 'guard',
+      rate: 0.3,
+      title: '가을 옥수수밭',
+      text: '가을이 되자 부대 식량이 또 모자랍니다. 소대장이 근처 협동농장 옥수수밭에서 알아서 해결하라고 넌지시 말합니다. 형편이 나쁜 부대는 병사 절반 가까이가 영양실조라는 증언이 있습니다.',
+      choices: [
+        { l: '상관 말대로 따 먹는다', typ: true, p: 0.8,
+          ok: { t: '밤에 몰래 옥수수 이삭을 따서 구워 먹었습니다. 오랜만에 배가 찼습니다.', fx: { health: 2 } },
+          no: { t: '농장 경비원에게 붙잡혀 부대로 통보되었습니다. 비판을 받고 징계를 받았습니다.', fx: { happy: -4 }, run: (S) => { addBad(S); } } },
+        { l: '굶는다', t: '남의 곡식에는 손대지 않기로 했습니다. 허기를 참으며 가을을 넘겼습니다.', fx: { health: -3, happy: -1 } },
+        { l: '이삭을 모아 장마당에 내다 판다', p: 0.7,
+          ok: { t: '모은 이삭을 부대 밖 장마당에 몰래 넘겨 돈 몇 푼을 손에 쥐었습니다.', fx: { money: 0.4, happy: 1 } },
+          no: { t: '장마당에 넘기다 붙잡혀 며칠 동안 영창 신세를 졌습니다.', fx: { happy: -6 }, run: (S) => { addBad(S); } } },
+      ],
+    },
+    {
+      id: 'mp_cig', age: [16, 40], cd: 2,
+      when: (S) => ranker(S) && (S.mil.rk || 0) <= 1 && nSvc(S) >= 2,
+      rate: 0.4,
+      title: "고참의 '담배 한 보루'",
+      text: '고참 하나가 {N}에게 담배 한 보루를 구해 오라고 합니다. 병사 월급은 담배 한 갑 값 정도라, 결국 집에 손을 벌리라는 뜻입니다.',
+      choices: [
+        { l: '집에 돈을 부탁한다', typ: true, need: (S) => H.parentsAlive(S) > 0,
+          run: (S) => {
+            if (S.fam.famP < 0.25) { E.stat(S, 'happy', -5); return '집안 형편을 뻔히 알아 차마 부탁하지 못했습니다. 그 뒤로 고참에게 한동안 시달렸습니다.'; }
+            E.addMoney(S, -H.pay(S, 0.5));
+            E.stat(S, 'happy', -2);
+            return '부모님께 편지로 돈을 부탁했습니다. 몇 주 뒤 담배 한 보루를 구해 고참에게 건넸습니다.';
+          } },
+        { l: '거절한다', t: '담배를 구할 길이 없다고 버텼습니다.', fx: { happy: -1 }, then: 'ml_hazing' },
+        { l: '정치지도원에게 알린다', p: 0.25,
+          ok: { t: '정치지도원이 나서서 고참이 비판을 받았습니다. 한동안 조용해졌습니다.', fx: { happy: 4 } },
+          no: { t: '보고는 묻혔고, 고자질했다며 고참들의 괴롭힘이 더 심해졌습니다.', fx: { happy: -8, social: -3 } } },
+      ],
+    },
+    {
+      id: 'mp_f_harass', age: [16, 40], cd: 3,
+      when: (S) => ranker(S) && S.sex === 'f' && nSvc(S) >= 3,
+      rate: 0.12,
+      title: '상관의 부당한 요구',
+      text: '중대장이 밤늦게 {N을} 따로 불러 부당한 요구를 합니다. 입당 추천과 진급이 자기 손에 달려 있다는 말을 흘립니다. 여군들 사이에서는 거절하기 어렵다는 이야기가 오래전부터 돌았습니다.',
+      choices: [
+        { l: '단호히 거절한다', typ: true, t: '단호히 거절했습니다. 그 뒤로 입당 추천 명단에서 {N}의 이름이 빠졌습니다.', fx: { happy: -4 }, run: (S) => { if (S.mil) S.mil.refused = 1; } },
+        { l: '다른 부대로 보내 달라고 탄원한다', p: 0.3,
+          ok: { t: '탄원이 받아들여져 다른 부대로 옮겼습니다. 새 부대에서 조금은 숨을 돌렸습니다.', fx: { happy: 3 } },
+          no: { t: '탄원은 묻혔고, 부대 안에서 눈총을 받았습니다.', fx: { happy: -8, social: -3 }, run: (S) => { if (S.mil) S.mil.refused = 1; } } },
+        { l: '참고 넘긴다', t: '아무에게도 말하지 못했습니다. 오래도록 마음의 상처로 남았습니다.', fx: { happy: -12 } },
+      ],
+    },
+    {
+      id: 'mp_award', age: [16, 45], cd: 2, fx: { happy: 4, social: 2 },
+      when: (S) => ranker(S) && nSvc(S) >= 6,
+      rate: 0.25,
+      text: (S) => ["사격과 정치 학습에서 모범을 보여 부대에서 '모범 병사' 표창을 받았습니다.", '맡은 건설 과제를 앞당겨 끝낸 공로로 표창장을 받았습니다. 고향 집에도 소식이 전해졌습니다.'].concat(S.mil.unit === 'front' ? ['겨울 경계를 빈틈없이 섰다며 중대장의 표창을 받았습니다.'] : []),
+      run: (S) => { S.mil.good = (S.mil.good || 0) + 1; },
+    },
+    {
+      id: 'mp_life', age: [16, 45], cd: 1, fx: { social: 1 },
+      when: (S) => sol(S) && nSvc(S) >= 2,
+      rate: 0.9,
+      text: (S) => {
+        const m = S.mil;
+        if (m.ocs) return ['전술학과 사상 과목 시험을 준비하며 밤늦게까지 책을 붙들었습니다.', '소대장 실습으로 병사들을 이끌고 야외 훈련을 다녀왔습니다.'];
+        if (m.br === 'med') return ['영양실조로 쓰러진 병사들을 진료했습니다. 약이 모자라 약초를 달여 먹였습니다.', '훈련 중 다친 병사의 상처를 꿰맸습니다. 소독약이 늘 모자랍니다.', '막사를 돌며 결핵이 의심되는 병사들을 가려냈습니다.'];
+        const L = ['저녁마다 정치 학습 시간에 혁명 역사와 구호를 외웠습니다.', '토요일 생활총화에서 한 주의 잘못을 스스로 비판하고, 동기의 잘못도 하나씩 짚었습니다.', '부대 예술 소조에서 손풍금을 배워 명절 공연 무대에 섰습니다.', '부대 부업지에서 돼지를 기르고 콩을 거둬 부대 식량에 보탰습니다.', '겨울을 나려고 동기들과 산에서 땔나무를 해 날랐습니다.', '군사 학습 시간에 지도를 펴 놓고 전술 문제를 풀었습니다.'];
+        if (S.sex === 'f') L.push('여군 막사에서 동기들과 밤늦게까지 고향 이야기를 나누었습니다.');
+        return L;
+      },
+    },
+    {
+      id: 'mp_front', age: [16, 45], cd: 1, fx: { happy: -1 },
+      when: (S) => ranker(S) && ['front', 'spec', 'aa'].includes(S.mil.unit),
+      rate: 0.6,
+      text: (S) => {
+        const u = S.mil.unit;
+        if (u === 'front') return ['최전연 초소에서 밤새 경계 근무를 섰습니다. 철책 너머 남쪽 마을 불빛이 아득하게 보였습니다.', '영하 20도 아래로 떨어진 밤, 초소에서 경계를 서다 발가락에 동상이 걸렸습니다.', '철책 앞 지뢰밭 사이로 순찰을 돌았습니다. 발밑을 살피느라 온몸이 굳었습니다.'];
+        if (u === 'spec') return ['무거운 짐을 지고 며칠 동안 산을 넘는 산악 행군을 했습니다.', '밤새 침투 훈련을 받았습니다. 잠을 거의 자지 못했습니다.'];
+        return ['고사총 진지에서 밤하늘을 지키는 당번을 섰습니다.', '고사총 사격 훈련에서 끄는 표적을 맞혔습니다.'];
+      },
+    },
+    {
+      id: 'mp_gamjeong', age: [16, 45], cd: 3,
+      when: (S) => ranker(S) && nSvc(S) >= 24 && ((S.mil.weak || 0) >= 1 || S.st.health < 60),
+      rate: 0.15,
+      title: '감정제대',
+      text: '몸이 많이 상했습니다. 군의에게 담배 몇 보루와 돈을 건네면 병이 깊다는 서류를 꾸며 감정제대(질병 제대)를 앞당겨 준다는 말이 돕니다. 들키면 징계를 받습니다.',
+      choices: [
+        { l: '군의에게 뒷돈을 주고 감정제대를 청한다', cost: 2, p: 0.3,
+          ok: { run: (S) => { if (S.mil) Ml.discharge(S, 'sick', { note: '군의에게 담배와 돈을 건네고 감정제대 서류를 받았습니다.' }); return null; } },
+          no: { t: '건넨 것만 날렸습니다. 군의는 이 정도로는 어렵다며 고개를 저었습니다.', fx: { happy: -3 }, run: (S) => { if (U.chance(0.3)) addBad(S); } } },
+        { l: '끝까지 버틴다', typ: true, t: '제대할 날까지 버티기로 했습니다.', fx: { happy: -1 } },
+      ],
+    },
+    {
+      id: 'mp_med_bribe', age: [20, 45], cd: 2,
+      when: (S) => medSol(S) && nSvc(S) >= 3,
+      rate: 0.35,
+      title: '진단서를 써 달라는 병사',
+      text: '한 병사가 담배 두 보루와 돈을 내밀며 결핵 진단서를 써 달라고 합니다. 감정제대로 집에 가고 싶다고 합니다. 이런 일로 군의가 처벌받기도 합니다.',
+      choices: [
+        { l: '받고 진단서를 써 준다', p: 0.85,
+          ok: { t: '진단서를 써 주었습니다. 그 병사는 몇 주 뒤 집으로 돌아갔습니다. 받은 담배는 장마당에서 돈으로 바꿨습니다.', fx: { money: 0.8, happy: 1 } },
+          no: { t: '진단서를 꾸민 일이 검열에 걸렸습니다. 비판을 받고 징계를 받았습니다.', fx: { happy: -6, social: -3 }, run: (S) => { addBad(S); } } },
+        { l: '정말 아픈지 진찰해 보고 정한다', t: '진찰해 보니 영양실조가 심했습니다. 받은 것은 돌려주고, 허약 치료를 받게 해 주었습니다.', fx: { social: 2, happy: 1 } },
+        { l: '거절한다', typ: true, t: '규정대로 하겠다고 했습니다. 그 병사는 원망 섞인 눈으로 돌아섰습니다.', fx: { social: -1 } },
+      ],
+    },
+  ]);
+
+  /* ================================================================ 기존 사건 손질(그 파일은 고치지 않음) */
+  {
+    const evById = (id) => C.EVENTS.find((e) => e.id === id);
+    const scaleRate = (id, f) => {
+      const ev = evById(id);
+      if (!ev || ev._mp) return;
+      const r0 = ev.rate;
+      ev.rate = (S) => { const r = typeof r0 === 'function' ? r0(S) : r0; return r > 0 && sol(S) ? r * f : r; };
+      ev._mp = true;
+    };
+    // 휴가: 군 복무 탈북민 30명 가운데 96.7%가 정기 휴가를 받아 본 적이 없음([PRK27]) · 면회는 드물게(연 약 15%)
+    scaleRate('t_mil_leave', 0.05);
+    scaleRate('ml_visit', 0.33);
+    const vis = evById('ml_visit');
+    if (vis && typeof vis.run === 'function') {
+      const r0 = vis.run;
+      vis.run = (S, ...a) => {
+        if (!sol(S)) return r0(S, ...a);
+        E.stat(S, 'happy', 4);
+        const pa = H.parentsAlive(S);
+        let t;
+        if (pa > 0) {
+          const who = pa === 2 ? '부모님이' : S.fam.mother.alive ? '어머니가' : '아버지가';
+          t = `${who} 옥수수 가루와 콩, 담배 같은 원호 물자를 등에 지고 먼 길을 와서 면회했습니다. 면회소에서 반나절을 함께 보냈습니다. 몇 달 만에 배불리 먹었습니다.`;
+          bumpPar(S, 3);
+        } else {
+          const p = S.fam.married && S.fam.partner && S.fam.partner.alive ? S.fam.partner : S.romance;
+          t = p ? `${U.j(p.name, '이')} 먹을 것을 싸 들고 먼 길을 와서 면회했습니다. 헤어질 때 오래 손을 흔들었습니다.` : '고향 사람이 먹을 것을 조금 싸 들고 면회를 왔습니다. 오랜만에 바깥 소식을 들었습니다.';
+          if (S.romance && p === S.romance) S.romance.love = clamp(S.romance.love + 5, 0, 100);
+        }
+        E.log(S, C.t(S, t), 'good');
+      };
+    }
+    // 군의는 '보직 선택(운전병·취사병·의무병)'을 겪지 않는다
+    const tr = evById('t_mil_trade');
+    if (tr && tr.when) { const w0 = tr.when; tr.when = (S) => w0(S) && !medSol(S); }
+    // regime.js 의 입당 권유: 복무 중에는 이 파일의 입당 심사가 대신하고, 후보 당원이면 묻지 않는다. 제대 종류·소집 제외·집단배치가 빈도에 작용
+    const rp = evById('rg_p_party');
+    if (rp && !rp._mp) {
+      const w0 = rp.when, r0 = rp.rate;
+      rp.when = (S) => (!w0 || w0(S)) && !sol(S) && !(S.rg && S.rg.pCand);
+      rp.rate = (S) => {
+        let r = typeof r0 === 'function' ? r0(S) : r0;
+        const x = S.mp;
+        if (x && r > 0) {
+          if (x.mass) r *= 1.25;
+          if (x.end === 'hero') r *= 1.5;
+          if (x.end === 'disc') r *= 0.3;
+          if (x.noCall) r *= 0.5;
+        }
+        return r;
+      };
+      rp._mp = true;
+    }
+  }
+  // 군인 건설자로 동원된 동안: 기타 사고 위험 ×1.3(보고서: 사망 사고를 본 사람이 많다는 면접 — 크기는 확인 필요라 작게)
+  if (typeof E.jobRisk === 'function') {
+    const jr0 = E.jobRisk;
+    E.jobRisk = (S) => {
+      const r = jr0(S), m = S.mil;
+      if (m && m.iso === 'PRK' && m.k === 'act' && (m.bld || 0) > S.ageM) r.other *= 1.3;
+      return r;
+    };
+  }
+
+  /* ================================================================ 매달 · 해마다 */
+  E.hook('month', (S) => {
+    if (!S.alive) return;
+    const m = S.mil;
+    if (m && m.iso === 'PRK' && m.k === 'act') {
+      // 군관학교를 마침
+      if (m.ocs && S.ageM >= m.ocs) { Mp.commission(S); return; }
+      // 영예군인: 복무 중에 생긴 중간 이상의 장애
+      if (!m.ocs && S.dis && S.dis.some((d) => d.since >= m.start && d.sev >= 2 && !d.cong && d.src !== 'age' && d.src !== 'stroke')) { Ml.discharge(S, 'hero'); return; }
+    }
+    // 후보 당원 3년 → 정식 당원(갇히면 자격을 잃음)
+    const r = S.rg;
+    if (r && r.pCand) {
+      if (S.prison || r.exPol) { delete r.pCand; log(S, '{N은} 후보 당원 자격을 잃었습니다.', 'bad'); }
+      else if (S.ageM >= r.pCand && prk(S)) {
+        delete r.pCand;
+        r.party = true;
+        S.power = Math.min(100, (S.power || 0) + 3);
+        E.stat(S, 'happy', 5);
+        log(S, '{N은} 후보 기간 3년을 마치고 조선노동당 정식 당원이 되었습니다.', 'good');
+      } else if (!prk(S)) delete r.pCand;
+    }
+    const x = S.mp;
+    if (!x) return;
+    if (!prk(S)) { if (x.lic) delete x.lic; if (x.forceEnlist) delete x.forceEnlist; return; }
+    // 단련대에서 나오면 곧바로 입대
+    if (x.forceEnlist && !S.prison && !S.mil && !S.queue.length) {
+      delete x.forceEnlist;
+      if (E.age(S) <= 27 && !H.incap(S)) Ml.enlist(S, { note: '노동단련대에서 나오자마자 군사동원부에 넘겨져 입대했습니다.' });
+    }
+    // 미뤄 둔 면허 결정(복무를 마쳤거나 소집에서 빠진 뒤)
+    if (x.lic && x.lic.length && !S.mil && !S.prison && !S.queue.length && !svcAhead(S)) resolveLic(S);
+  });
+  E.hook('year', (S, ay) => {
+    if (!S.alive || !prk(S)) return;
+    const x = S.mp;
+    // 소집 제외 낙인(한 번): 입당·대학 추천에도 불리
+    if (S.born.iso === 'PRK' && ay >= 17 && ay <= 25 && !S.flags.served && !S.mil && S.edu.stage === null && !(x && x.noCall) && Mp.noCall(S)) {
+      mpOf(S).noCall = 1;
+      E.stat(S, 'happy', -3);
+      log(S, "{N은} 집안 이력 때문에 초모 명단에 오르지 못했습니다. 동네에서는 '군대도 못 가는 집'이라고 수군거렸습니다. 입당과 대학 추천에서도 불리합니다.", 'bad');
+    }
+    // 25세가 넘도록 소집되지 않음(진단서·숨기로 버틴 사람)
+    if (ay === 26 && x && (x.tbN || x.hideN) && !S.flags.served && !S.mil && !x.ageOut) {
+      x.ageOut = 1;
+      freeTime(S);
+      log(S, '{N은} 25세가 넘도록 군에 가지 않아 초모 대상에서 벗어났습니다.', 'ev');
+    }
+    if (!sol(S)) return;
+    const m = S.mil, n = S.ageM - m.start;
+    // 감정제대: 병·허약
+    if (n >= 12 && !m.ocs && (S.st.health < 40 || m.weakBad) && U.chance(S.st.health < 30 ? 0.7 : 0.4)) { Ml.discharge(S, 'sick'); return; }
+    // 생활제대: 거듭된 징계
+    if ((m.bad || 0) >= 2 && !m.ocs && U.chance(0.35)) { Ml.discharge(S, 'disc'); return; }
+    // 입당 심사: 20세 이상·복무 36개월 뒤(3년 복무하는 사람은 24개월 뒤) 해마다 대상자를 추리고(표창 +, 징계·거절 −), 그 가운데서 심사한다.
+    // 제대군인 입당은 김정일 시기 약 90% → 2015년 약 50% → 최근 약 30%(보고서 [PRK8][PRK9]) — 복무를 마칠 때까지 약 30~40%가 되게 맞춘 값
+    const listP = clamp(0.25 + 0.08 * (m.good || 0) - (m.refused ? 0.15 : 0) - (m.bad ? 0.1 : 0), 0.05, 0.6) * (sbOf(S) === 'host' ? 0.3 : 1);
+    if (ay >= 20 && !m.ocs && n >= Math.min(36, (m.mo || 120) - 12) && !party(S) && !(S.rg && S.rg.exPol) && U.chance(listP) && !S.queue.some((q) => q.id === 'mp_party')) E.ask(S, 'mp_party', {});
+    // 군관 추천: 복무 3~5년 하전사, 지식 55 이상, 적대 계층 아님 — 연 5~10%(당원 +5%)
+    if (m.br !== 'med' && !m.ocs && n >= 36 && n <= 60 && S.st.smarts >= 55 && sbOf(S) !== 'host' && !m.bad) {
+      const p = ((sbOf(S) === 'core' ? 0.1 : 0.05) + (party(S) ? 0.05 : 0)) * (S.sex === 'f' ? 0.3 : 1);
+      if (U.chance(p) && !S.queue.some((q) => q.id === 'mp_officer')) E.ask(S, 'mp_officer', {});
+    }
+  });
+
+  E.Mp = Mp; // 검사 도구용
+})();
+
 /* 80억분의 1 — 업데이트 기록(게임 정보 → 업데이트 기록). 새 판을 낼 때 맨 위에 한 줄 더한다.
  * v: 판, d: 날짜(YY.MM.DD), t: 한 줄 제목, items: 바뀐 것(짧게)
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.6.2', d: '26.10.16', t: '군 복무 — 병사·군의관·직업군인·북한 인민군', items: ["복무 중 할 일: 부대 안 병사도 운동·공부·글쓰기·외국어·친구 만나기에 더해, 휴대폰을 쓸 수 있는 나라에서는 재산 관리·자격증·종교·기부·건강 관리 등을 할 수 있음(영리 활동·출국은 막힘)", "의사와 군 복무: 복무 중에는 면허 시험·첫 일자리를 미뤘다가 전역 뒤에 물음. 한국 의대 졸업생은 의무사관후보생으로 입영을 미루고 군의관(중위·38개월)이나 공중보건의사로 복무, 다른 나라 의사는 군의관(의무 장교)", "한국 병역 선택지: 상근예비역·생계곤란 감면·학군장교(ROTC)·학사장교, 공군은 추첨(2026년부터), 복무 중 포상휴가·분대장·해외 파병(동명·한빛·청해부대)", "직업군인: 회사 직급 대신 계급(하사~원사·소위~대장), 근속과 진급 심사, 나라별 정년(한국 연령·근속 정년, 미국 근속 상한·대위 이하 진급 누락 전역), 군인연금(한국 19년 6개월·미국 20년 등)과 못 채우면 일시금", "직업군인이 되는 길: 한국 병장의 전문하사·부사관 지원, 대학 졸업 뒤 장교 후보생, 사관학교(학비 없음·의무 복무), 지원제 나라의 사병·부사관 모집, 러시아 계약병, 프랑스 외인부대(3년 뒤 귀화 기회), 미국 GI Bill", "북한 인민군: 계급(전사·초급병사·중급병사·상급병사·하사…), 대학을 마친 사람 3년·의대 졸업생은 3년 군의, 초모 때 진단서·숨기·서류상 이혼·이른 결혼, 부대 배치(최전연·후방·건설·특수·호위사령부)", "북한 복무 생활: 허약(영양실조)과 허약 치료 귀가, 군인 건설자 동원, 가을 옥수수밭, 고참의 담배 요구, 모범 병사 표창, 입당 심사, 군관 추천과 군관학교, 휴가·면회는 드묾", "북한 제대: 만기·감정제대·생활제대·영예군인, 만기 제대 뒤 집단배치(탄광·농장·건설장)나 고향 배치 청원, 의사는 성분에 따라 평양 큰 병원부터 리 진료소까지 국가가 배치", "취미와 처지: 복무·수감·투병 중에는 그곳에서 할 수 있는 취미만 고를 수 있고, 하지 못하는 취미는 '쉬는 중'(효과가 멈췄다가 다시 이어짐)", "부대 안 병사는 혼담을 전역 뒤로 미루고, 면회·전화·포상휴가가 가족과의 가까움을 올림"] },
   { v: '0.6.1', d: '26.10.16', t: '나라 옮기기 — 재산·형편·체류·언어', items: ['탈북·난민·몰래 국경을 넘을 때는 몸에 지닌 돈만 가져가고 집·예금은 두고 감(탈북 전에 집과 살림을 몰래 팔아 돈을 마련하는 선택지)', '피난은 대개 이웃 나라로(국경 너머 난민촌), 형편이 아주 좋은 집안은 재산을 옮겨 비행기로 망명하는 길', '부모님을 따라 옮긴 아이의 집안 형편을 새 나라 기준으로 다시 정함(난민은 하위권, 일하러 옮긴 가족은 중하위~중위, 재산을 옮긴 망명은 중위 언저리) · 혼자 떠난 유학은 부모님 형편 그대로', '교환학생·어학연수·워킹홀리데이·해외 현장·해외 법인·평화유지군·해외 봉사 동안은 그 나라에서 살다가 돌아옴, 순환 근무·지방 발령은 실제로 그곳에서 지냄', '임기 중인 선출직은 해외 이주 불가, 이름이 알려졌거나 높은 공직을 지낸 사람은 초청·특별 재능 비자, 큰 재산이 있으면 투자 이민', '일곱 살 전에 옮겨 와 2년 넘게 자란 아이는 그 나라 말이 모국어가 됨(열두 살 전에는 "현지 말 익히기" 대신 학교에서 저절로)', '오래 산 나라의 말은 "능숙" 밑으로 잊히지 않음'] },
   { v: '0.6.0', d: '26.10.16', t: '처지에 맞는 사건', items: ['지금 처지(부대 안 복무·수감·입원·누워 지냄·유학으로 가족과 떨어짐·탈북해 가족을 두고 옴)를 한 곳에서 판정하고, 사건 1,211개마다 그 장면이 전제하는 것(바깥·일터·한집 가족·배우자·자녀·부모님·친척·몸 쓰기)을 붙여 맞지 않는 사건을 거름', '부대 안 병사는 혼담이 전역 뒤로 미뤄지고, 군 면회·전화가 가족과의 사이를 가깝게 함', '누워 지내는 사람 대신 가족이 정할 때 봉사·여행·운동 같은 선택지를 고르지 않음', '가족과 사이가 멀어질 때 까닭(멀리 떨어져 지냄·북에 두고 옴·바빠짐)을 밝힘, 갈 수 없는 친척 장례식은 소식만 전해 들음', '북한에 사는 가족과는 일반 전화·영상 통화를 할 수 없고, 연락은 따로 다룸 · 영상 통화는 상대 나라 사정도 봄 · 시차가 없는 곳에서는 "시차를 맞춰"라고 하지 않음', '흰머리를 뽑아 주는 아이처럼 곁에 있어야 하는 장면은 함께 사는 자녀가 있을 때만', '부모님 생활비 사건은 부모님이 같은 나라에 계실 때만', '성소수자 일터 차별은 회사에 고용된 사람만 — 정치인·자영업·방송인은 그 일에 맞는 장면, 이성 배우자와 사는 양성애자는 겉으로 덜 드러남'] },
   { v: '0.5.2', d: '26.10.16', t: '나라별 사실 바로잡기·문장 손질', items: ['주식·채권 시장이 없는 나라(북한·쿠바·에리트레아·아프가니스탄 등)에서는 투자할 수 없음', '술을 금지한 나라에서 신앙 깊은 사람은 술을 시작하지 않음', '파키스탄·아프가니스탄을 남아시아로(몬순·지참금 등), 시리아 법치·부패 지수 오류 바로잡음', '통행금지는 분쟁 지역 주민만, 러시아 전쟁 지역은 국경 지역만, 하지 순례 당첨은 드물게, 킨세아녜라는 스페인어·포르투갈어권만', '병역 자료: 북한 입영 상한 25세·여성 소집, 우크라이나 출국 금지 23~60세, 시리아 징병 폐지, 태국 추첨·이란 병사 급여', '화면에 {country} 같은 자리 표시가 그대로 보이던 문제, "교원 자격 자격증", 물건값을 수입에 맞게 안내("사흘 치쯤")', '일터 차별 사건이 무엇 때문인지 밝힘, 나라를 옮긴 일은 인생 기록에 큰 줄로 남김', '꿈에 "아이돌"과 "앞 목록으로" 추가, 이미 하는 일을 꿈 후보 맨 앞에, 일하는 대학생에게 인턴 제안 안 함', '새로 태어난 아이 이름이 옛 배우자 이름과 겹치지 않게'] },
@@ -46841,7 +49122,7 @@ UI.renderControls = (full) => {
   }
   $('#row-life').hidden = !S.indep;
   $('#p-life').innerHTML = [['frugal', '절약'], ['normal', '보통'], ['comfort', '넉넉히']].map(([k, ko]) => `<button class="chip" data-life="${k}" aria-pressed="${S.lifestyle === k}">${ko}</button>`).join('');
-  const hb = S.hobbies.map((h) => `<span class="chip note">${esc(C.hobbyName(S, h))}</span>`).join('');
+  const hb = S.hobbies.map((h) => `<span class="chip note">${esc(C.hobbyName(S, h))}${C.hobbyOK(S, h) ? '' : ' (쉬는 중)'}</span>`).join('');
   $('#p-hobby').innerHTML = (hb || '<span class="chip note">아직 없음</span>') + (E.age(S) >= 6 ? '<button class="chip" id="btn-hobby">바꾸기</button>' : '');
 };
 
@@ -47168,10 +49449,12 @@ UI.openHistoryOne = (h) => {
 };
 UI.openHobby = () => {
   const S = UI.S;
-  const av = C.availableHobbies(S);
-  UI.openSheet('취미 고르기', '취미는 두 개까지 가질 수 있어요. 고른 취미가 건강·지식·행복·관계에 조금씩 영향을 줍니다.', av.map((h) => ({
+  const av = C.availableHobbies(S).filter((h) => S.hobbies.includes(h) || C.hobbyOK(S, h));
+  for (const h of S.hobbies) if (!av.includes(h) && C.HOBBY[h]) av.unshift(h);
+  const w = C.hobbyWhere ? C.hobbyWhere(S) : '';
+  UI.openSheet('취미 고르기', '취미는 두 개까지 가질 수 있어요. 고른 취미가 건강·지식·행복·관계에 조금씩 영향을 줍니다.' + (w ? ` ${w}에는 할 수 있는 취미만 보입니다.` : ''), av.map((h) => ({
     label: (S.hobbies.includes(h) ? '✓ ' : '') + C.hobbyName(S, h),
-    sub: C.hobbyEffectText(h),
+    sub: C.hobbyOK(S, h) ? C.hobbyEffectText(h) : '지금은 쉬는 중 — 누르면 내려놓습니다',
     run: () => {
       if (S.hobbies.includes(h)) S.hobbies = S.hobbies.filter((x) => x !== h);
       else { S.hobbies.unshift(h); S.hobbies = S.hobbies.slice(0, 2); }
