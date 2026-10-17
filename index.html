@@ -1785,7 +1785,7 @@ C.milestones = (S, ay) => {
   }
   if (S.flags.smokeAt === ay && !S.habit.smoke) E.ask(S, 'smoke', {});
   if (S.flags.drinkAt === ay) E.ask(S, 'drink', {});
-  if (S.flags.retireAsked && S.work.job && S.flags.retireAskedAt !== undefined && ay - S.flags.retireAskedAt >= 5) {
+  if (S.flags.retireAsked && S.work.job && S.flags.retireAskedAt !== undefined && ay - S.flags.retireAskedAt >= 5 && (typeof Ec === 'undefined' || !Ec.retireAskOK || Ec.retireAskOK(S))) {
     S.flags.retireAskedAt = ay;
     E.ask(S, 'retire', {});
   }
@@ -2414,10 +2414,15 @@ C.DEC.disaster = {
   choices: (S, ctx) => {
     const iso = E.iso(S), h = ctx.hazard, mw = Wd.workerMedian(iso);
     const work = !!S.work.job, rural = !S.place.urban;
+    // 폭염: 에어컨을 켤 수 있는 집은 켜고 지내는 것이 보통(정전이 잦은 나라는 그날 끊길 수 있음), 없으면 돈이 있을 때 들이고 모자라면 선풍기(피드백 201번, device.js)
+    const acOn = typeof Dv !== 'undefined' && Dv.acOK && Dv.acOK(S), acP = C.ITEMS.ac ? C.itemPrice(S, 'ac') : Infinity;
+    const canAc = !S.flags.ac && !!S.env && !S.env.noElec && !!S.indep && S.money >= acP;
     if (h === '폭염') return [
-      { label: '한낮에는 쉬며 버틴다', typ: true, run: (S) => { E.addMoney(S, -mw * (work ? 0.02 : 0.005)); E.stat(S, 'health', -1); return C.t(S, '한낮에는 일을 멈추고 그늘에서 물을 자주 마시며 버텼습니다. 벌이가 조금 줄었습니다.'); } },
+      ...(acOn ? [{ label: '에어컨을 켜고 지낸다', typ: true, sub: '전기 요금이 늘어납니다', run: (S) => { E.addMoney(S, -Wd.tradablePrice(iso, 40)); const pb = Dv.pwrBad(iso); if (pb > 0 && U.chance(pb)) { E.stat(S, 'health', -2); return C.t(S, '에어컨을 켜 두고 버텼지만, 하필 가장 더운 날 정전이 되어 한나절을 그늘에서 물만 마시며 보냈습니다.'); } return C.t(S, '에어컨을 켜 두고 한낮에는 밖에 나가지 않았습니다. 전기 요금이 꽤 나왔습니다.'); } }] : []),
+      { label: '한낮에는 쉬며 버틴다', typ: !acOn, run: (S) => { E.addMoney(S, -mw * (work ? 0.02 : 0.005)); E.stat(S, 'health', -1); return C.t(S, '한낮에는 일을 멈추고 그늘에서 물을 자주 마시며 버텼습니다. 벌이가 조금 줄었습니다.'); } },
       ...(work ? [{ label: '평소처럼 일한다', sub: '더위를 먹을 수 있습니다', run: (S) => { if (U.chance(0.35)) { E.stat(S, 'health', -6); E.addMoney(S, -mw * 0.03); return C.t(S, '일하다 더위를 먹고 쓰러져 며칠 앓아누웠습니다.'); } E.stat(S, 'health', -1); return C.t(S, '땀을 비 오듯 흘리며 일을 마쳤습니다.'); } }] : []),
-      ...(S.env && !S.env.noElec ? [{ label: '선풍기와 냉방 기구를 장만한다', sub: Wd.money(iso, Wd.tradablePrice(iso, 120)), run: (S) => { E.addMoney(S, -Wd.tradablePrice(iso, 120)); E.stat(S, 'happy', 2); return C.t(S, '냉방 기구를 들여 밤에는 잠을 잘 수 있었습니다.'); } }] : []),
+      ...(canAc ? [{ label: '에어컨을 들인다', sub: Wd.money(iso, acP), run: (S) => { E.addMoney(S, -acP); S.flags.ac = true; E.stat(S, 'happy', 3); return C.t(S, '에어컨을 들였습니다. 밤에도 잠을 설치지 않게 되었습니다.'); } }] : []),
+      ...(S.env && !S.env.noElec && !S.flags.ac ? [{ label: canAc ? '선풍기와 냉풍기만 장만한다' : '선풍기와 냉풍기를 장만한다', sub: Wd.money(iso, Wd.tradablePrice(iso, 120)), run: (S) => { E.addMoney(S, -Wd.tradablePrice(iso, 120)); E.stat(S, 'happy', 2); return C.t(S, '선풍기와 냉풍기를 들여 밤에는 잠을 잘 수 있었습니다.'); } }] : []),
     ];
     if (h === '가뭄' && rural) return [
       { label: '가축과 곡식 일부를 팔아 버틴다', typ: true, run: (S) => { E.addMoney(S, -mw * 0.08); E.stat(S, 'happy', -4); return C.t(S, '헐값에 가축과 곡식 일부를 팔았습니다. 한 해 수확이 크게 줄었습니다.'); } },
@@ -2428,9 +2433,11 @@ C.DEC.disaster = {
       { label: '물을 아껴 쓰며 버틴다', typ: true, run: (S) => { E.addMoney(S, -mw * 0.02); E.stat(S, 'happy', -2); return C.t(S, '물 나오는 시간에 맞춰 통마다 물을 받아 두며 버텼습니다. 장바구니 값이 올라 살림이 빠듯했습니다.'); } },
       { label: '물탱크를 들인다', sub: Wd.money(iso, Wd.tradablePrice(iso, 150)), run: (S) => { E.addMoney(S, -Wd.tradablePrice(iso, 150)); E.stat(S, 'happy', 1); return C.t(S, '옥상에 물탱크를 놓았습니다. 급수가 끊겨도 며칠은 걱정이 없습니다.'); } },
     ];
+    // 한파: 난방비를 댈 형편이 안 되면(생활수준 하위 20% 또는 바로 쓸 돈이 난방비보다 적음) 껴입고 버티는 것이 보통. 혼자 사는 사람은 '식구' 대신 혼자(피드백 201번 점검)
+    const heatPoor = E.wealthP(S) < 0.2 || (!!S.indep && S.money < mw * 0.04), alone1 = !!S.indep && !!E.householdSize && E.householdSize(S) <= 1;
     if (h === '한파') return [
-      { label: '난방비를 아끼지 않는다', typ: true, run: (S) => { E.addMoney(S, -mw * 0.04); return C.t(S, '난방비가 크게 나왔지만 식구들이 감기 한 번 안 걸리고 겨울을 났습니다.'); } },
-      { label: '옷을 껴입고 한 방에 모여 지낸다', run: (S) => { E.stat(S, 'health', -3); E.stat(S, 'social', 1); return C.t(S, '온 식구가 한 방에 모여 이불을 덮고 겨울을 버텼습니다. 기침을 달고 살았습니다.'); } },
+      { label: '난방비를 아끼지 않는다', typ: !heatPoor, run: (S) => { E.addMoney(S, -mw * 0.04); return C.t(S, alone1 ? '난방비가 크게 나왔지만 감기 한 번 안 걸리고 겨울을 났습니다.' : '난방비가 크게 나왔지만 식구들이 감기 한 번 안 걸리고 겨울을 났습니다.'); } },
+      { label: alone1 ? '옷을 껴입고 방 하나만 데워 지낸다' : '옷을 껴입고 한 방에 모여 지낸다', typ: heatPoor, run: (S) => { E.stat(S, 'health', -3); E.stat(S, 'social', 1); return C.t(S, alone1 ? '옷을 몇 겹씩 껴입고 방 하나만 데워 겨울을 버텼습니다. 기침을 달고 살았습니다.' : '온 식구가 한 방에 모여 이불을 덮고 겨울을 버텼습니다. 기침을 달고 살았습니다.'); } },
       ...(rural ? [{ label: '가축우리부터 손본다', run: (S) => { if (U.chance(0.7)) { E.stat(S, 'happy', 2); return C.t(S, '가축우리에 짚을 두껍게 깔고 바람을 막았습니다. 가축이 모두 무사했습니다.'); } E.addMoney(S, -mw * 0.1); E.stat(S, 'happy', -4); return C.t(S, '애썼지만 가축 몇 마리가 얼어 죽었습니다.'); } }] : []),
     ];
     if (disTenant(S)) {
@@ -3775,6 +3782,8 @@ Ec.ensure = (S) => {
   S.yr = S.yr || { now: {}, last: {} }; // 올해·지난해 실제 들어온 돈(비정기 포함)
   S.trust = S.trust || 0; // 미성년 때 받은 유산(독립할 때 받음)
   if (S.work && !S.work.pr) S.work.pr = {}; // 나라별 연금 가입 기록 {iso: {m, sum}}
+  // 씀씀이가 따라가는 금융 재산(Ec.spendBase): 새 인생은 0에서, 예전 저장은 지금 재산에서 시작한다
+  if (typeof S.finRef !== 'number') S.finRef = S.indep && S.money !== undefined ? Math.max(0, Ec.financial(S)) : 0;
   // v0.2 저장 옮기기
   if (S.flags && S.flags.invest && S.flags.invest.amt) {
     const iv = S.flags.invest;
@@ -3879,6 +3888,37 @@ Ec.wealthRank = (S) => {
 };
 /** 재산에서 해마다 꺼내 쓸 수 있다고 보는 몫 */
 Ec.drawRate = (a) => (a >= 65 ? 0.055 : a >= 55 ? 0.045 : 0.035);
+/** 재산을 갖고 있는 비용(연): 운용 수수료·세금(주식·펀드·채권), 관리비·재산세(집·땅), 보관비(금) — Ec.year 와 살림 표가 함께 쓴다 */
+Ec.HOLD_FEE = { stock: 0.01, fund: 0.012, bond: 0.005, gold: 0.003, house: 0.006, land: 0.004 };
+/** 현금(통장에 둔 돈)의 한 해 실질 이자: 은행을 쓰는 사람 비율만큼 연 1%, 물가가 아주 높은 나라에서는 깎인다(engine.js sysFinance) */
+Ec.cashReal = (iso) => {
+  const c = Wd.c(iso), bank = (c.account || 50) / 100;
+  return bank * 0.01 - (1 - bank) * Math.max(0, (c.infl || 3) - 6) / 100 * 0.5;
+};
+/** 재산에서 보통 한 해에 생기는 돈(물가를 뺀 평균 근삿값, 피드백 185번): 현금·예금 이자, 채권·주식·펀드 수익, 금, 세 준 집·땅의 값 오름.
+ *  사는 집은 빼고, 세 준 집·땅의 임대료·가축 소득은 소득(Ec.incomes rent)에 이미 있어 넣지 않는다. 실제로는 해마다 오르내린다 */
+Ec.assetGain = (S) => {
+  const iso = E.iso(S);
+  let g = Math.max(0, S.money) * Ec.cashReal(iso);
+  for (const a of S.assets) {
+    if (a.home) continue;
+    const [mu] = Ec.ret(a.type, a.iso, true);
+    g += Ec.conv(a.value, a.iso, iso) * (mu - (Ec.HOLD_FEE[a.type] || 0));
+  }
+  return g;
+};
+/** 씀씀이가 따라가는 금융 재산(피드백 185번): 유산·복권·큰 매각으로 갑자기 큰돈이 생겨도 씀씀이는 바로 늘지 않고
+ *  몇 해에 걸쳐 따라간다(습관 — 목돈은 한 달에 차이의 3%, 한 해에 약 30%씩). 벌어서 모으는 돈(한 달 세후 소득까지)·이자와
+ *  투자 수익(Ec.year 가 비율대로 옮김)은 바로 따라가 평소의 씀씀이는 그대로다. 재산이 줄 때는 바로 따라 줄인다. sysFinance 가 매달 부른다 */
+Ec.HABIT_K = 0.03;
+Ec.spendBase = (S, fin) => {
+  if (!(fin > 0)) { S.finRef = 0; return 0; }
+  if (typeof S.finRef !== 'number' || !isFinite(S.finRef) || fin <= S.finRef) { S.finRef = fin; return fin; }
+  const gap = fin - S.finRef;
+  const quick = Math.min(gap, Math.max(H.pay(S, 1), (S.disp || 0) / 12) + S.finRef * 0.005);
+  S.finRef += quick + (gap - quick) * Ec.HABIT_K;
+  return S.finRef;
+};
 
 /* ================================================================ 집 */
 /** 집값: (중위 가구 소득 × 나라별 집값 배율) × 크기. 시골은 훨씬 싸다. */
@@ -4031,10 +4071,11 @@ Ec.year = (S) => {
   else if (U.chance(0.08)) shock.stock = 0.15 + U.rand() * 0.15;
   if (U.chance(0.04)) shock.house = -0.12 - U.rand() * 0.12;
   let crashed = false, boomed = false;
+  const fin0 = Ec.financial(S);
   for (const a of S.assets) {
     const [mu, sd] = Ec.ret(a.type, a.iso, a.home ? S.place.urban : true);
     // 운용 수수료·세금(주식·펀드·채권), 관리비·재산세(집·땅), 보관비(금)
-    let r = U.normal(mu, sd) - ({ stock: 0.01, fund: 0.012, bond: 0.005, gold: 0.003, house: 0.006, land: 0.004 }[a.type] || 0);
+    let r = U.normal(mu, sd) - (Ec.HOLD_FEE[a.type] || 0);
     if (a.iso === iso) {
       if (a.type === 'stock') r += shock.stock;
       if (a.type === 'fund') r += shock.stock * 0.6;
@@ -4044,6 +4085,8 @@ Ec.year = (S) => {
     if ((a.type === 'stock' || a.type === 'fund') && shock.stock < 0 && a.value > H.pay(S, 1)) crashed = true;
     if ((a.type === 'stock' || a.type === 'fund') && shock.stock > 0 && a.value > H.pay(S, 1)) boomed = true;
   }
+  // 투자 수익·손실은 씀씀이 기준 재산(Ec.spendBase)에도 같은 비율로 옮긴다(목돈이 아니라 원래 갖고 있던 재산의 오르내림)
+  if (typeof S.finRef === 'number' && S.finRef > 0 && fin0 > 0) S.finRef = Math.max(0, S.finRef * Math.max(0, Ec.financial(S)) / fin0);
   if (crashed) { E.log(S, C.t(S, `{country} 주식시장이 크게 떨어졌습니다. 가진 주식의 값이 ${pctE(-shock.stock)}% 넘게 줄었습니다.`), 'bad'); E.stat(S, 'happy', -4); }
   else if (boomed) E.log(S, C.t(S, '주식시장이 크게 올랐습니다. 넣어 둔 돈이 불어났습니다.'), 'good');
   if (shock.house < 0 && S.assets.some((a) => (a.type === 'house' || a.type === 'land') && a.iso === iso)) E.log(S, C.t(S, `{country} 집값이 크게 떨어졌습니다(약 ${pctE(-shock.house)}%).`), 'bad');
@@ -4713,11 +4756,78 @@ Ec.informalSettle = (S) => {
   E.stat(S, 'happy', -3);
   return C.t(S, `친척들이 ${Ec.fmtJ(S, help, '을')} 보태 주었고, 빚쟁이는 ${Ec.fmtJ(S, forgive, '을')} 깎아 주는 대신 나머지는 꼭 갚으라고 했습니다. 고개를 들기 어려운 날들이었습니다.`);
 };
+/* 정해진 은퇴가 없는 일(피드백 197번)
+ * - 임기 중인 선출직: 나이로 '은퇴할까요?'를 묻지 않는다. 물러날지는 임기 끝 '다음 선거'(career.js x_core_reelect, 불출마)에서 정하고,
+ *   임기 중에 할 일 '은퇴하기'를 누르면 '임기 중 사퇴'(건강·가족·추문 — 보궐 선거·평판)로 묻는다.
+ * - 자영업·창업자: '가게(회사)를 정리할까요 / 자녀에게 물려줄까요', 농부·목축·어부: '농사를 줄일까요', 성직자: '물러날까요'.
+ * - 작가·예술가: 나이로 묻지 않고 계속하되, 법정 은퇴 나이가 지나면 나이·건강에 따라 활동이 줄고 80세 넘어 차츰 접는다.
+ * 연금 안내 문장은 어느 쪽이든 같다. */
+Ec.RET_KIND = {
+  subsist: 'farm', cashcrop: 'farm', farmowner: 'farm', herder: 'farm', fisher: 'farm',
+  shop: 'shop', trader: 'shop', vendor: 'shop', hair: 'shop', craft: 'shop', chef: 'shop',
+  entrepreneur: 'biz', writer: 'art', artist: 'art', clergy: 'clergy',
+};
+Ec.retireKind = (S) => {
+  const j = S.work && S.work.job;
+  if (!j) return 'normal';
+  if (j.id === 'politician') return 'office';
+  if (j.cr && j.cr.kind === 'shop') return 'shop';
+  const k = j.cr && j.cr.kind === 'farm' ? 'farm' : Ec.RET_KIND[j.id] || 'normal';
+  // 도시에 사는 농부(드묾)는 '농사를 줄일까요' 대신 보통의 은퇴 질문
+  return k === 'farm' && S.place && S.place.urban ? 'normal' : k;
+};
+/** 법정 은퇴 나이에 '은퇴할까요?'를 물어도 되는지(임기 중 선출직·작가·예술가는 묻지 않는다) */
+Ec.retireAskOK = (S) => { const k = Ec.retireKind(S); return k !== 'office' && k !== 'art'; };
+/** 일을 줄인다: 스스로 하는 일(career.js 의 j.cr.base)은 기본 벌이를, 아니면 벌이를 깎는다 */
+Ec.cutWork = (S, f) => { const j = S.work.job; if (!j) return; if (j.cr && j.cr.base) j.cr.base *= f; j.pay *= f; };
+const retShop = (S) => {
+  const id = S.work.job ? S.work.job.id : '';
+  return id === 'vendor' || id === 'trader' ? '장사' : id === 'hair' ? '미용실' : id === 'craft' ? '공방' : id === 'chef' ? '식당' : id === 'entrepreneur' ? '회사' : '가게';
+};
+const retFarm = (S) => { const id = S.work.job ? S.work.job.id : ''; return id === 'herder' ? '가축 돌보는 일' : id === 'fisher' ? '고기잡이' : '농사'; };
+/** 물려받을 만한 다 큰 자녀 */
+const heirKid = (S) => S.fam.kids.find((k) => k.alive && (S.ageM - k.bornM) / 12 >= 22 && !k.left) || S.fam.kids.find((k) => k.alive && (S.ageM - k.bornM) / 12 >= 22) || null;
+/** 임기 중 사퇴(피드백 197번): 남은 임기를 잇는 방법 */
+const byElect = (S) => {
+  const t = S.work.job ? S.work.job.tier || 0 : 0;
+  if (t === 4) return typeof Cr !== 'undefined' && Cr.elecRule && Cr.elecRule(S).head === null ? '당이 새 대표를 뽑아 그 자리를 이었습니다.' : '남은 임기를 맡을 사람을 뽑는 선거를 다시 치렀습니다.';
+  return '남은 임기를 채울 보궐 선거가 치러졌습니다.';
+};
+const resign = (S, fx, txt) => {
+  const j = S.work.job, title = j ? j.title : '자리';
+  const ra = Wd.social('retire', E.iso(S), [62, 60])[Wd.si(S.sex)];
+  const after = byElect(S);
+  if (E.age(S) >= ra || fx.ill) { Ec.retire(S); S.flags.retireAsked = true; }
+  else E.loseJob(S, 'quit');
+  if (fx.rep && typeof Vl !== 'undefined' && Vl.add) Vl.add(S, { rep: fx.rep });
+  if (fx.fame) S.fame = U.clamp((S.fame || 0) + fx.fame, 0, 100);
+  if (fx.happy) E.stat(S, 'happy', fx.happy);
+  return C.t(S, `${txt.replace('{title}', title)} ${after}${fx.tail ? ' ' + fx.tail : ''}`);
+};
 /** 은퇴할까요? (할 일·법정 은퇴 나이에서 함께 쓴다) */
 C.DEC.retire = {
-  title: () => '은퇴할까요?',
+  title: (S) => {
+    const k = Ec.retireKind(S);
+    if (k === 'office') return '임기 중 사퇴할까요?';
+    if (k === 'shop') return retShop(S) === '장사' ? '장사를 접을까요?' : `${U.j(retShop(S), '을')} 정리할까요?`;
+    if (k === 'biz') return '회사를 정리하거나 물려줄까요?';
+    if (k === 'farm') return `${U.j(retFarm(S), '을')} 줄일까요?`;
+    if (k === 'clergy') return '성직에서 물러날까요?';
+    if (k === 'art') return '활동을 접을까요?';
+    return '은퇴할까요?';
+  },
   text: (S) => {
     const iso = E.iso(S), plan = Ec.retirePlan(S), a = E.ageY(S);
+    const k = Ec.retireKind(S), j = S.work.job;
+    const yrsIn = j && j.since !== undefined ? Math.max(1, Math.floor((S.ageM - j.since) / 12)) : 0;
+    let lead = '';
+    if (k === 'office' && j) {
+      const left = j.termEnd ? Math.max(0, Math.ceil((j.termEnd - S.ageM) / 12)) : 0;
+      lead = `${j.title} 임기가 ${left > 0 ? `${left}년쯤 남았습니다` : '얼마 남지 않았습니다'}. 임기 중에 물러나면 남은 임기를 채울 선거를 다시 치러야 하고, 당과 지지자들에게 부담이 됩니다. 정치인은 대개 임기를 마친 뒤 다음 선거에 나가지 않는 것으로 물러납니다.`;
+    } else if ((k === 'shop' || k === 'biz') && j) lead = `${U.j(retShop(S), '을')} 꾸린 지 ${yrsIn}년째입니다. 정해진 은퇴 나이는 없어 정리하거나, ${heirKid(S) ? '자녀에게 물려주거나, ' : ''}일을 줄여 가며 이어 갈 수 있습니다.`;
+    else if (k === 'farm') lead = `${U.j(retFarm(S), '은')} 정해진 은퇴 나이가 없습니다. 몸이 예전 같지 않으면 일을 줄이거나 ${heirKid(S) ? '자녀에게 물려주는' : '접는'} 일이 많습니다.`;
+    else if (k === 'clergy') lead = '후임에게 자리를 넘기고 원로로 물러날 수 있습니다.';
+    else if (k === 'art') lead = '작가·예술가에게는 정해진 은퇴 나이가 없습니다. 나이가 들면 활동이 저절로 줄어듭니다.';
     const cov = Wd.social('pension', iso, null);
     const nw = Ec.netWorth(S), spend = Math.max(S.spend || 0, Wd.consMoney(iso, 0.2));
     const other = Ec.sum(S.inc) - (S.inc.job || 0) - (S.inc.partner || 0);
@@ -4730,7 +4840,7 @@ C.DEC.retire = {
     const yrs = gap > 0 ? nw / gap : Infinity;
     const runway = gap <= 0 ? '연금과 다른 수입만으로 지금 생활을 이어 갈 수 있습니다.' : nw > 0 ? `모은 재산 ${Ec.fmtJ(S, nw, '으로')} 지금처럼 쓰면 약 ${yrs >= 40 ? '40년 넘게' : Math.max(0, Math.floor(yrs)) + '년'} 버틸 수 있습니다.` : '모아 둔 재산이 없어 생활이 크게 어려워질 수 있습니다.';
     const covT = cov !== null ? ` {country}에서 은퇴 나이가 지난 사람 중 연금을 받는 사람은 약 ${Math.round(cov)}%입니다.` : '';
-    return C.t(S, `${pT} ${runway}${covT}`);
+    return C.t(S, `${lead ? lead + ' ' : ''}${pT} ${runway}${covT}`);
   },
   choices: (S) => {
     // 보통의 선택(점검: 연금 받는 사람이 7%뿐인 나라에서도 모두 법정 나이에 은퇴, 75세 넘어 일하는 사람 0%):
@@ -4743,15 +4853,85 @@ C.DEC.retire = {
     if (a >= 70) pr = Math.max(pr, 0.6);
     if (a >= 75) pr = Math.max(pr, 0.85);
     if (S.st.health < 40) pr = Math.max(pr, 0.8);
-    let hsh = 0;
-    for (const ch of `${S.id}:${Math.floor(a)}`) hsh = (hsh * 31 + ch.charCodeAt(0)) % 100003;
-    const retTyp = hsh / 100003 < pr;
+    const hashOf = (s) => { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 100003; return h / 100003; };
+    const retTyp = hashOf(`${S.id}:${Math.floor(a)}`) < pr;
+    const k = Ec.retireKind(S);
+    const stay = (S2, t) => { S2.flags.retireAskedAt = E.ageY(S2); return C.t(S2, t); };
+    const done = (S2) => { Ec.retire(S2); S2.flags.retireAsked = true; };
+    if (k === 'office') {
+      // 임기 중 사퇴: 보통은 임기를 마친다(물러날지는 임기 끝 '다음 선거'에서)
+      const out = [{ label: '임기를 마친다', typ: true, run: (S2) => C.t(S2, '{N은} 남은 임기를 마치기로 했습니다. 물러날지는 임기 끝에 다음 선거를 앞두고 정합니다.') }];
+      const ill = S.st.health < 60 || a >= 70 || !!S.ill;
+      const F = S.fam, famOk = !!((F.married && F.partner && F.partner.alive) || F.kids.some((x) => x.alive) || (F.father && F.father.alive) || (F.mother && F.mother.alive));
+      if (ill) out.push({ label: '건강을 이유로 사퇴한다', sub: '남은 임기는 다시 뽑힌 사람이 잇습니다', run: (S2) => resign(S2, { ill: true, happy: -2 }, '{N은} 건강을 이유로 {title} 자리에서 물러났습니다. 지지자들은 쾌유를 빌었습니다.') });
+      if (famOk) out.push({ label: '가족을 돌보려 사퇴한다', sub: '남은 임기를 채울 선거를 다시 치러야 해 평판이 조금 떨어집니다', run: (S2) => resign(S2, { rep: -2, happy: 2 }, '{N은} 가족 곁에 있겠다며 임기 중에 {title} 자리에서 물러났습니다. 당에서는 아쉬워하는 목소리가, 지역에서는 "끝까지 책임지지 않았다"는 말이 나왔습니다.') });
+      if (S.flags.scandal) out.push({ label: '추문의 책임을 지고 사퇴한다', sub: '명성은 줄지만 책임지는 모습으로 남습니다', run: (S2) => resign(S2, { rep: 2, fame: -3, happy: -6 }, '{N은} 추문의 책임을 지고 {title} 자리에서 물러났습니다. 언론은 한동안 그 이야기를 다뤘습니다.') });
+      if (!ill && !famOk && !S.flags.scandal) out.push({ label: '개인 사정으로 사퇴한다', sub: '남은 임기를 채울 선거를 다시 치러야 해 평판이 떨어집니다', run: (S2) => resign(S2, { rep: -3 }, '{N은} 임기 중에 {title} 자리에서 물러났습니다. 갑작스러운 사퇴로 당과 지지자들의 원성이 컸습니다.') });
+      return out;
+    }
+    if (k === 'shop' || k === 'biz') {
+      // 자영업·창업자: 정리(가게·회사를 넘기고 받는 돈은 career.js Cr.bizValue) / 자녀에게 물려줌 / 일을 줄임 / 계속
+      const w = retShop(S), kid = heirKid(S), biz = k === 'biz', trade = w === '장사';
+      const hand = !!kid && hashOf(`${S.id}:heir`) < (Wd.dev(E.iso(S)) <= 1 ? 0.6 : 0.3);
+      const sell = (S2) => {
+        const j2 = S2.work.job;
+        let note = '';
+        if (j2 && typeof Cr !== 'undefined' && Cr.bizValue && (['entrepreneur', 'chef', 'shop'].includes(j2.id) || (j2.cr && j2.cr.kind === 'shop'))) {
+          const got = Cr.bizValue(S2, j2);
+          if (got > 0) { Ec.earn(S2, 'biz', got); if (got > H.pay(S2, 0.5)) note = ` ${biz ? '회사' : '가게'}를 넘기고 ${Ec.fmtJ(S2, got, '을')} 받았습니다.`; }
+        }
+        done(S2);
+        return note;
+      };
+      const out = [{ label: biz ? '회사를 팔고 물러난다' : trade ? '장사를 접는다' : `${U.j(w, '을')} 정리한다`, typ: retTyp && !hand,
+        run: (S2) => { const note = sell(S2); return C.t(S2, `{N은} ${biz ? '오래 이끈 회사를 정리하고 물러났습니다.' : trade ? '오래 해 온 장사를 접었습니다. 단골들이 아쉬워했습니다.' : `오래 꾸려 온 ${U.j(w, '을')} 정리했습니다. 단골들이 아쉬워했습니다.`}${note}`); } }];
+      if (kid) out.push({ label: biz ? '자녀에게 회사를 물려준다' : trade ? '자녀에게 장사 자리를 물려준다' : `자녀에게 ${U.j(w, '을')} 물려준다`, typ: retTyp && hand,
+        run: (S2) => { done(S2); E.stat(S2, 'happy', 4); return C.t(S2, `{N은} ${U.j(trade ? '장사 자리' : w, '을')} ${kid.name}에게 물려주었습니다. 가끔 들러 일을 거들며 지켜봅니다.`); } });
+      out.push({ label: '일을 줄여 가며 이어 간다', sub: '수입이 줄어듭니다', typ: !retTyp && a >= 70,
+        run: (S2) => { Ec.cutWork(S2, 0.65); return stay(S2, biz ? '{N은} 경영은 믿을 만한 사람에게 맡기고 큰일만 챙기기로 했습니다.' : '{N은} 문 여는 날과 시간을 줄여 쉬엄쉬엄 이어 가기로 했습니다.'); } });
+      out.push({ label: '하던 대로 계속한다', typ: !retTyp && a < 70, run: (S2) => stay(S2, '{N은} 아직은 손을 놓지 않기로 했습니다.') });
+      return out;
+    }
+    if (k === 'farm') {
+      // 농부·목축·어부: 접기 / 자녀에게 물려주기 / 줄이기(보통 나이가 많거나 몸이 약해지면) / 하던 대로
+      const w = retFarm(S), kid = heirKid(S);
+      const hand = !!kid && hashOf(`${S.id}:heir`) < 0.5;
+      const less = !retTyp && (a >= 68 || S.st.health < 55);
+      const out = [{ label: `${U.j(w, '을')} 접는다`, typ: retTyp && !hand,
+        run: (S2) => { done(S2); const keep = S2.assets.some((x) => x.type === 'land' || x.type === 'livestock'); return C.t(S2, `{N은} 평생 해 온 ${U.j(w, '을')} 접었습니다.${keep ? ' 땅과 가축은 남겨 두어 조금씩 소득이 들어옵니다.' : ''}`); } }];
+      if (kid) out.push({ label: '자녀에게 물려준다', typ: retTyp && hand, run: (S2) => { done(S2); E.stat(S2, 'happy', 4); return C.t(S2, `{N은} ${w} 일을 ${kid.name}에게 물려주었습니다. 이제는 곁에서 거들며 지켜봅니다.`); } });
+      out.push({ label: `${U.j(w, '을')} 줄인다`, sub: '수입이 줄어듭니다', typ: less,
+        run: (S2) => { Ec.cutWork(S2, 0.6); return stay(S2, w === '농사' ? '{N은} 밭 몇 뙈기만 남기고 농사를 줄였습니다. 몸이 한결 가볍습니다.' : w === '고기잡이' ? '{N은} 먼바다에는 나가지 않고 가까운 물에서만 고기를 잡기로 했습니다.' : '{N은} 가축 수를 줄여 돌보기 쉬운 만큼만 남겼습니다.'); } });
+      out.push({ label: '하던 대로 한다', typ: !retTyp && !less, run: (S2) => stay(S2, '{N은} 아직은 하던 대로 일하기로 했습니다.') });
+      return out;
+    }
+    if (k === 'clergy') return [
+      { label: '원로로 물러난다', typ: retTyp, run: (S2) => { done(S2); return C.t(S2, '{N은} 후임에게 자리를 넘기고 원로로 물러났습니다. 마지막 날 신도들이 오래도록 손을 잡아 주었습니다.'); } },
+      { label: '조금 더 섬긴다', typ: !retTyp, run: (S2) => stay(S2, '{N은} 조금 더 맡은 자리를 지키기로 했습니다.') },
+    ];
+    if (k === 'art') return [
+      { label: '활동을 접는다', run: (S2) => { const wr = S2.work.job && S2.work.job.id === 'writer'; done(S2); return C.t(S2, wr ? '{N은} 펜을 내려놓았습니다. 이미 낸 책의 인세는 계속 들어옵니다.' : '{N은} 작품 활동을 접었습니다. 작업실에는 마지막 작업이 남아 있습니다.'); } },
+      { label: '힘이 닿는 만큼 이어 간다', typ: true, run: (S2) => C.t(S2, '{N은} 힘이 닿는 만큼 계속하기로 했습니다.') },
+    ];
     return [
     { label: '은퇴한다', typ: retTyp, run: (S) => { Ec.retire(S); S.flags.retireAsked = true; return C.t(S, E.age(S) < Ec.retirePlan(S).full - 5 ? '{N은} 남들보다 일찍 일을 내려놓았습니다. 이제 내 시간을 삽니다.' : '{N은} 일을 내려놓았습니다. 긴 세월 수고 많았습니다.'); } },
     { label: '조금 더 일한다', typ: !retTyp, run: (S) => { S.flags.retireAskedAt = E.ageY(S); return C.t(S, '{N은} 조금 더 일하기로 했습니다.'); } },
     ];
   },
 };
+// 작가·예술가는 은퇴 질문 없이 이어 가되, 법정 은퇴 나이가 지나면 나이·건강에 따라 활동이 줄고(예술가 벌이 −6%/년, 아프면 −15%),
+// 80세가 넘거나 크게 아프면 차츰 활동을 접는다(작가의 벌이는 인세·글 수입으로 career.js 가 따로 정한다 — 피드백 197번)
+E.hook('year', (S) => {
+  if (!S.alive || !S.work || !S.work.job || S.work.retired || Ec.retireKind(S) !== 'art' || S.queue.length) return;
+  const a = E.age(S), ra = Wd.social('retire', E.iso(S), [62, 60])[Wd.si(S.sex)];
+  if (a < ra) return;
+  if (S.work.job.id !== 'writer') Ec.cutWork(S, S.st.health < 45 ? 0.85 : 0.94);
+  if ((a >= 80 && U.chance(0.12)) || (S.st.health < 30 && U.chance(0.25))) {
+    const wr = S.work.job.id === 'writer';
+    Ec.retire(S);
+    E.log(S, C.t(S, wr ? '{N은} 더는 새 글을 쓰지 않기로 했습니다. 책상 서랍에는 쓰다 만 원고가 남았습니다.' : '{N은} 작품 활동을 거의 접었습니다. 작업실 한쪽에 마지막 작업이 세워져 있습니다.'), 'ev');
+  }
+});
 
 /* ================================================================ 연결 고리 */
 // 재혼하면 유족 연금이 끊긴다(점검: 재혼 뒤에도 이어졌음)
@@ -5046,7 +5226,7 @@ C.ACTIONS = [
       E.stat(S, 'happy', 10); E.stat(S, 'social', 4); H.ach(S, 'pilgrim');
       return `${U.j(place, '으로')} 순례를 다녀왔습니다. 평생 잊지 못할 길이었습니다.`;
     } },
-  { id: 'retire', ko: '은퇴하기', cat: 'life', age: [35, 120], cd: 0, free: true, need: (S) => reason(!S.work.retired && (!!S.work.job || !!S.work.selfSup), S.work.retired ? '이미 은퇴했습니다' : '은퇴할 일이 없습니다'),
+  { id: 'retire', ko: '은퇴하기', koS: (S) => (S.work.job && S.work.job.id === 'politician' ? '임기 중 사퇴하기' : '은퇴하기'), cat: 'life', age: [35, 120], cd: 0, free: true, need:(S) => reason(!S.work.retired && (!!S.work.job || !!S.work.selfSup), S.work.retired ? '이미 은퇴했습니다' : '은퇴할 일이 없습니다'),
     run: (S) => { E.ask(S, 'retire', {}); return null; } },
   { id: 'will', ko: '유언장 쓰기', cat: 'life', age: [45, 120], cd: 120, need: (S) => reason(!S.flags.will, '이미 써 두었습니다'),
     run: (S) => { E.ask(S, 'x_core_will', {}); return null; } },
@@ -9498,6 +9678,13 @@ C.metaAch = (lives) => {
   const literate = (S) => S.edu.level >= 1 || !!S.flags.literate;
   const hot = (S) => (Wd.social('hazards', E.iso(S), []) || []).includes('폭염') || ['sas', 'mena'].includes(H.region(S)) || HOT.includes(E.iso(S));
   const cold = (S) => ['eca', 'na'].includes(H.region(S)) || COLD.includes(E.iso(S));
+  // 폭염 때의 형편(피드백 201번): 에어컨을 켤 수 있는 집·정전이 잦은 나라(device.js)·상위 10% 부자·전기가 없는 집
+  const acOn = (S) => (typeof Dv !== 'undefined' && Dv.acOK ? Dv.acOK(S) : false);
+  const pwrBad = (S) => (typeof Dv !== 'undefined' && Dv.pwrBad ? Dv.pwrBad(E.iso(S)) : 0);
+  const wellOff = (S) => E.wealthP(S) >= 0.9;
+  const noPower = (S) => !!(S.env && S.env.noElec);
+  const acPrice = (S) => (C.ITEMS.ac ? C.itemPrice(S, 'ac') : Infinity);
+  const canBuyAc = (S) => !S.flags.ac && !noPower(S) && !!S.indep && S.money >= acPrice(S);
   const farmer = (S) => H.jobSec(S) === 'agr' || S.work.history.some((h) => C.JOB[h.id] && C.JOB[h.id].sec === 'agr');
   const center = (S) => {
     const iso = E.iso(S);
@@ -9998,7 +10185,7 @@ C.metaAch = (lives) => {
       choices: [
         { l: '시키는 대로 돈을 보낸다', p: 0.15,
           ok: { t: '은행 직원이 이상하게 여겨 송금을 막아 주었습니다. 사기였습니다. 가슴을 쓸어내렸습니다.', fx: { happy: -2 } },
-          no: { fx: { happy: -12, social: -2 }, run: (S) => { const loss = Math.max(H.pay(S, 2), Math.max(0, S.money) * 0.25); E.addMoney(S, -loss); return `돈을 보낸 뒤에야 사기라는 것을 알았습니다. ${U.j(Wd.money(E.iso(S), loss), '이')} 사라졌습니다.`; } } },
+          no: { fx: { happy: -12, social: -2 }, run: (S) => { const loss = Math.max(H.pay(S, 2), Math.min(Math.max(0, S.money) * 0.25, H.pay(S, 36))); /* 큰돈도 보통 일꾼 3년 치까지(피드백 201번) */ E.addMoney(S, -loss); return `돈을 보낸 뒤에야 사기라는 것을 알았습니다. ${U.j(Wd.money(E.iso(S), loss), '이')} 사라졌습니다.`; } } },
         { l: '가족에게 먼저 확인한다', need: (S) => H.kids(S) > 0 || spouse(S), p: 0.92,
           ok: { t: '확인해 보니 모두 거짓말이었습니다. 사기 전화였습니다.', fx: { happy: 1 } },
           no: { t: '가족과 연락이 닿지 않아 애가 탔지만 끝내 돈은 보내지 않았습니다. 사기였습니다.', fx: { happy: -3 } } },
@@ -10274,11 +10461,23 @@ C.metaAch = (lives) => {
       id: 'o_heat', age: [65, 110], cd: 4, rate: (S) => (hot(S) ? 0.08 : 0), mon: (S) => H.hotMons(S), // 더운 철에만(place.js)
       title: '폭염',
       text: '숨이 턱턱 막히는 더위가 연일 이어집니다. 더위에 쓰러진 노인들이 있다는 소식이 들려옵니다.',
+      // 형편·나라에 맞는 선택지(피드백 201번): 에어컨이 있으면 켜고 지내는 것이 보통, 부자는 피서지, 형편이 어려우면 쉼터·젖은 수건,
+      // 정전이 잦거나 전기가 없는 집은 그늘·물. 에어컨은 돈이 있으면 바로 사고, 모자라면 선풍기로 버틴다(사망 위험 모형은 그대로)
       choices: [
-        { l: '무더위 쉼터로 피한다', need: (S) => H.urban(S), t: '{city}의 무더위 쉼터에서 낮을 보냈습니다. 시원한 물과 말벗이 있었습니다.', fx: { health: 1, social: 2 } },
-        { l: '집에서 젖은 수건을 두르고 버틴다', typ: true, p: 0.7,
+        { l: '에어컨을 켜고 집에서 지낸다', need: (S) => acOn(S) && !pwrBad(S), typ: true, t: '에어컨을 켜 두고 한낮에는 집 밖에 나가지 않았습니다. 전기 요금이 꽤 나왔지만 무사히 넘겼습니다.', fx: { money: -0.05 } },
+        { l: '에어컨을 켜고 집에서 지낸다', sub: '정전이 잦아 못 쓰는 날도 있습니다', need: (S) => acOn(S) && pwrBad(S) > 0, typ: true, p: (S) => 1 - pwrBad(S),
+          ok: { t: '에어컨을 켜 두고 한낮에는 집 밖에 나가지 않았습니다. 다행히 전기가 버텨 주었습니다.', fx: { money: -0.05 } },
+          no: { t: '하필 가장 더운 날 정전이 되어 에어컨이 멈췄습니다. 그늘에 앉아 물을 마시며 겨우 버텼습니다.', fx: { health: -3, happy: -2 } } },
+        { l: '시원한 피서지로 간다', need: (S) => wellOff(S), typ: (S) => !acOn(S), cost: 1.5,
+          t: (S) => (S.assets && S.assets.some((a) => a.type === 'house' && !a.home) ? '가진 집 가운데 바닷가 쪽 집에 머물며 한여름을 시원하게 났습니다.' : '산 좋고 물 좋은 피서지에 숙소를 잡아 한여름을 시원하게 났습니다.'), fx: { happy: 4, health: 1 } },
+        { l: (S) => (H.dev(S) >= 2 ? '무더위 쉼터로 피한다' : '시원한 공공장소로 피한다'), need: (S) => H.urban(S) && !wellOff(S),
+          t: (S) => (H.dev(S) >= 2 ? '{city}의 무더위 쉼터에서 낮을 보냈습니다. 시원한 물과 말벗이 있었습니다.' : '한낮에는 {city}의 그늘진 사원 마당과 큰 건물 복도를 찾아다니며 더위를 피했습니다.'), fx: { health: 1, social: 2 } },
+        { l: (S) => (pwrBad(S) || noPower(S) ? '그늘에서 물을 자주 마시며 버틴다' : '집에서 젖은 수건을 두르고 버틴다'), need: (S) => !acOn(S), typ: (S) => !wellOff(S), p: 0.7,
           ok: { t: '물을 자주 마시며 버텼습니다. 다행히 무사히 넘겼습니다.', fx: { health: -1 } },
           no: { t: '어지러워 쓰러졌다가 이웃에게 발견되었습니다. 며칠 수액을 맞았습니다.', fx: { health: -9, happy: -3, money: -0.3 } } },
+        { l: '에어컨을 산다', need: canBuyAc, cost: (S) => acPrice(S) / Math.max(1, H.month(S)), t: '에어컨을 들였습니다. 그날부터 집 안이 한결 시원해졌습니다.', fx: { happy: 3 }, run: (S) => { S.flags.ac = true; } },
+        { l: '선풍기를 들여 버틴다', need: (S) => !S.flags.ac && !noPower(S) && !canBuyAc(S), cost: (S) => Wd.tradablePrice(E.iso(S), 30) / Math.max(1, H.month(S)),
+          sub: '에어컨을 살 돈은 모자랍니다', t: '선풍기를 한 대 들였습니다. 더운 바람이라도 도니 한결 나았습니다.', fx: { health: -1 } },
         { l: '하던 일을 쉬지 않는다', need: (S) => H.working(S) || H.rural(S), p: 0.6,
           ok: { t: '해 뜨기 전과 해 진 뒤에만 일하며 버텼습니다.', fx: { money: 0.3, health: -2 } },
           no: { t: (S) => `한낮 ${H.rural(S) || H.jobSec(S) === 'agr' ? '밭에서' : '일터에서'} 쓰러졌습니다. 열사병이었습니다. 겨우 기운을 되찾았습니다.`, fx: { health: -12, happy: -4 } } },
@@ -10496,6 +10695,13 @@ C.metaAch = (lives) => {
       ],
     },
   ]);
+  // typ 이 함수인 선택지를 풀어 준다(o_heat: 에어컨·형편에 따라 '보통의 선택'이 달라짐, 피드백 201번)
+  for (const id of ['x_o_heat']) {
+    const dec = C.DEC[id];
+    if (!dec) continue;
+    const ch0 = dec.choices;
+    dec.choices = (S, ctx) => ch0(S, ctx).map((c) => (typeof c.typ === 'function' ? { ...c, typ: !!c.typ(S, ctx) } : c));
+  }
 })();
 
 /* 80억분의 1 — 세계 사건
@@ -10661,7 +10867,17 @@ C.metaAch = (lives) => {
       text: (S) => (H.dev(S) >= 2
         ? '폭염 특보가 열흘째 이어졌습니다. 에어컨 없이 지내는 이웃 어르신 댁에 물을 가져다드렸습니다.'
         : '기온이 45도를 넘었습니다. 한낮에는 모든 일을 멈추고 그늘에서 물만 들이켰습니다.'),
-      fx: { health: -2, happy: -1 },
+      // 에어컨을 켤 수 있는 집은 더위를 덜 먹는다. 정전이 잦은 나라는 그날 전기가 끊길 수 있다(device.js, 피드백 201번)
+      fx: { happy: -1 },
+      run: (S) => {
+        const ac = typeof Dv !== 'undefined' && Dv.acOK && Dv.acOK(S), pb = ac ? Dv.pwrBad(iso(S)) : 0, cut = pb > 0 && U.chance(pb);
+        // 에어컨이 있어도 더위는 몸에 남는다(손실을 절반으로 — 생명표 보정이 지금의 보급률을 담고 있어 효과를 줄여 둠)
+        if (ac && !cut) H.fx(S, { health: -1 });
+        if (ac && !cut) return H.dev(S) >= 2 ? `폭염 특보가 열흘째 이어졌습니다. 에어컨을 켜 두고 한낮에는 집 밖에 나가지 않았습니다.${U.chance(0.5) ? ' 에어컨 없이 지내는 이웃 어르신 댁에 물을 가져다드렸습니다.' : ''}` : '기온이 45도를 넘었습니다. 에어컨을 켜 둔 방에서 한낮을 보냈습니다.';
+        H.fx(S, { health: -2 });
+        if (cut) return '기온이 크게 오른 날 정전이 되어 에어컨이 멈췄습니다. 그늘에서 물만 들이켜며 버텼습니다.';
+        return null;
+      },
     },
     {
       id: 'w_deepcold', age: [3, 110], rate: 0.2, cd: 2, k: 'bad', mon: (S) => H.coldMons(S), when: (S) => inC(S, COLD) || hz(S, '한파'),
@@ -14508,6 +14724,30 @@ const Cr = {};
     { ko: '국회의원', pay: 48, cost: 24, fame: 18, base: -3.6, term: 48 },
     { ko: '국가 지도자', pay: 72, cost: 60, fame: 35, base: -6.5, term: 60 },
   ];
+  /* 선출직 보수(피드백 193번): [지방의원, 단체장(시장·군수 등), 국회의원, 국가 지도자]의 한 해 보수(그 나라 돈, 수당·상여 포함, 사무실·보좌진 경비 빼고).
+   * 각국 의회·정부 공개 자료(2024~25년 무렵, IPU Parline 등)의 근삿값 — 예: 한국 국회의원 약 1억 5,700만 원·대통령 약 2억 6,000만 원,
+   * 미국 하원의원 17만 4천 달러·대통령 40만 달러, 영국 하원의원 9만 1천 파운드, 케냐 하원의원 월 74만 실링.
+   * 지방의원은 나라마다 전업·겸업이 섞여 있어 대략의 평균. 자료가 없는 칸(null)과 나라는 예전처럼 '보통 일꾼 몇 달 치'(TIERS.pay)를 쓴다.
+   * 보수는 법으로 정해진 금액이라 연차에 따라 오르지 않는다(게임 금액은 물가를 뺀 값). */
+  Cr.OFFICE_PAY = {
+    KOR: [45e6, 120e6, 157e6, 262e6], JPN: [9e6, 15e6, 21.7e6, 40e6], TWN: [1.5e6, 2.5e6, 2.6e6, 6e6],
+    USA: [45000, 150000, 174000, 400000], CAN: [105000, 150000, 203100, 406200], MEX: [700000, 1000000, 1100000, 1600000], BRA: [120000, 300000, 600000, 600000],
+    GBR: [12000, 90000, 91346, 172153], IRL: [27000, 100000, 113679, 250000], DEU: [70000, 110000, 134700, 360000], FRA: [30000, 50000, 91600, 182000],
+    ITA: [60000, 80000, 125000, 160000], ESP: [55000, 80000, 75000, 90000], NLD: [null, null, 130000, null], SWE: [null, null, 984000, 2388000], NOR: [null, null, 1066000, 1880000],
+    RUS: [2500000, 3000000, 5000000, 10000000], AUS: [120000, 150000, 233660, 607516], NZL: [60000, 150000, 168000, 471000], SGP: [null, null, 192500, 2200000],
+    IND: [1500000, 1200000, 2500000, 2600000], IDN: [550e6, 600e6, 1000e6, 750e6], PHL: [1100000, 1500000, 3400000, 5000000], THA: [300000, 600000, 1362720, 1507080],
+    KEN: [2000000, 11100000, 8875000, 17325000], ZAF: [550000, 1200000, 1271000, 3050000], NGA: [null, null, 12000000, 14000000],
+  };
+  /** 그 자리의 한 해 보수(국제달러): 나라 자료가 있으면 그 금액, 없으면 보통 일꾼 몇 달 치 */
+  Cr.officePay = (S, t, iso = E.iso(S)) => {
+    const r = Cr.OFFICE_PAY[iso], v = r ? r[t - 1] : null, c = Wd.c(iso);
+    return v && c && c.ppp ? v / c.ppp : H.pay(S, Cr.TIERS[t].pay);
+  };
+  // 해마다 보수를 그 자리의 정해진 금액으로 맞춘다(일자리의 연차 오름이 선출직에는 붙지 않게)
+  E.hook('year', (S) => {
+    const j = S.work && S.work.job;
+    if (j && j.id === 'politician') j.pay = Cr.officePay(S, j.tier || Cr.tierOfTitle(j.title));
+  });
   const soc = (k, c) => (DATA.soc && DATA.soc[k] ? DATA.soc[k][c] : undefined);
   Cr.elecRule = (S) => {
     const c = E.iso(S);
@@ -14621,7 +14861,7 @@ const Cr = {};
     const title = Cr.tierTitle(S, t);
     if (U.chance(p)) {
       const share = Math.round(t === 4 ? 45 + U.rand() * 15 : 35 + U.rand() * 30);
-      if (incumbent && S.work.job) { S.work.job.termEnd = S.ageM + Cr.TIERS[t].term; S.work.job.pay *= 1.05; H.fameUp(S, 3); E.stat(S, 'happy', 8); }
+      if (incumbent && S.work.job) { S.work.job.termEnd = S.ageM + Cr.TIERS[t].term; S.work.job.pay = Cr.officePay(S, t); H.fameUp(S, 3); E.stat(S, 'happy', 8); }
       else Cr.takeOffice(S, t);
       S.cr.wins = (S.cr.wins || 0) + 1;
       return C.t(S, incumbent ? `득표율 ${share}%로 ${title} 선거에서 다시 당선되었습니다.` : `{N은} 득표율 ${share}%로 ${title} 선거에서 당선되었습니다!`);
@@ -14636,6 +14876,7 @@ const Cr = {};
     const T = Cr.TIERS[t];
     H.setJob(S, 'politician', T.pay);
     const j = S.work.job;
+    j.pay = Cr.officePay(S, t); // 나라 자료의 보수(피드백 193번)
     j.title = Cr.tierTitle(S, t);
     j.tier = t;
     j.termEnd = S.ageM + T.term;
@@ -14650,16 +14891,25 @@ const Cr = {};
     title: () => '다음 선거',
     text: (S) => {
       const j = S.work.job;
-      return C.t(S, `${j && j.id === 'politician' ? j.title : '정치인'} 임기가 끝나 갑니다. 명성 ${Math.round(S.fame)}, 관계 ${Math.round(S.st.social)}, 영향력 ${Math.round(Cr.influence(S))}.`);
+      const a = E.age(S);
+      return C.t(S, `${j && j.id === 'politician' ? j.title : '정치인'} 임기가 끝나 갑니다. 명성 ${Math.round(S.fame)}, 관계 ${Math.round(S.st.social)}, 영향력 ${Math.round(Cr.influence(S))}.${a >= 65 ? ' 나이가 많은 정치인은 대개 임기 중에 물러나기보다 임기를 마치고 다음 선거에 나가지 않는 것으로 물러납니다.' : ''}`);
     },
     choices: (S) => {
       const out = [];
       const j = S.work.job;
+      // 보통의 선택(피드백 197번): 나이가 많고 건강이 나쁠수록 이번을 끝으로 물러난다(같은 사람·같은 나이에는 같은 답)
+      const a = E.age(S);
+      let pq = a < 60 ? 0.08 : a < 70 ? 0.2 : a < 75 ? 0.4 : a < 80 ? 0.6 : 0.85;
+      if (S.st.health < 40) pq = Math.max(pq, 0.7);
+      if (S.flags.scandal) pq = Math.min(0.95, pq + 0.15);
+      let hq = 0;
+      for (const ch of `${S.id}:reelect:${Math.floor(a)}`) hq = (hq * 31 + ch.charCodeAt(0)) % 100003;
+      const quitTyp = hq / 100003 < pq;
       if (j && j.id === 'politician') {
         const t = Cr.curTier(S);
         const e = Cr.electP(S, t, true), cost = e.cost * 0.7;
         const w = Cr.whyText(e.why);
-        out.push({ label: `${j.title} 선거에 다시 나간다`, sub: `당선 가능성 약 ${P(e.p)}%${w ? ` (${w})` : ''} · 선거 비용 약 ${fmt(S, cost)}`, run: (S2) => Cr.runElection(S2, t, e.p, cost, true) });
+        out.push({ label: `${j.title} 선거에 다시 나간다`, sub: `당선 가능성 약 ${P(e.p)}%${w ? ` (${w})` : ''} · 선거 비용 약 ${fmt(S, cost)}`, typ: !quitTyp, run: (S2) => Cr.runElection(S2, t, e.p, cost, true) });
         if (t < 4 && Cr.canRun(S, t + 1) === true) {
           const e2 = Cr.electP(S, t + 1, false);
           const t2 = Cr.tierTitle(S, t + 1);
@@ -14668,7 +14918,23 @@ const Cr = {};
             run: (S2) => { const r = Cr.runElection(S2, t + 1, e2.p, e2.cost, false); if (S2.work.job && S2.work.job.id === 'politician' && S2.work.job.tier === t) E.loseJob(S2, 'quit'); return r; } });
         }
       }
-      out.push({ label: '정치를 그만둔다', run: (S2) => { if (S2.work.job && S2.work.job.id === 'politician') E.loseJob(S2, 'quit'); return C.t(S2, '{N은} 정치를 떠났습니다.'); } });
+      // 불출마: 은퇴 나이가 지났으면 정계 은퇴(연금), 아니면 정치를 그만두고 다른 일을 찾는다
+      const old = a >= Wd.social('retire', E.iso(S), [62, 60])[Wd.si(S.sex)];
+      out.push({ label: a >= 60 ? '이번 임기를 끝으로 정계를 떠난다(불출마)' : '다음 선거에 나가지 않고 정치를 그만둔다', sub: old ? '정계에서 은퇴합니다' : null, typ: quitTyp || !(j && j.id === 'politician'),
+        run: (S2) => {
+          const j2 = S2.work.job;
+          if (!(j2 && j2.id === 'politician')) return C.t(S2, '{N은} 정치를 떠났습니다.');
+          const title = j2.title;
+          if (old) {
+            Ec.retire(S2);
+            S2.flags.retireAsked = true;
+            E.fire('loseJob', S2, 'quit', j2);
+            E.stat(S2, 'happy', 2);
+            return C.t(S2, `{N은} 이번 임기를 끝으로 정계를 떠났습니다. ${U.j(title, '으로')} 일한 마지막 날, 사무실을 정리하며 지지자들과 인사를 나눴습니다.`);
+          }
+          E.loseJob(S2, 'quit');
+          return C.t(S2, '{N은} 다음 선거에 나가지 않고 정치를 떠났습니다.');
+        } });
       return out;
     },
   };
@@ -15026,7 +15292,8 @@ const Cr = {};
   /** 상업 광고·협찬을 받지 않는 자리(피드백 58번): 임기 중인 정치인과 공무원·경찰·직업군인.
    *  대부분의 나라에서 현직 의원·공무원은 겸직·영리 활동이 금지되거나 신고·심사를 받고(한국 국회법 제29조의2, 아일랜드 공직윤리법),
    *  금지가 아니더라도 이해 충돌로 여겨져 실제로는 거의 없는 일이다. 물러난 뒤에는 다시 들어온다. */
-  Cr.noAds = (S) => H.jobIs(S, 'politician', 'civil', 'police', 'soldier');
+  // 피드백 209번: 겸직이 허용되는 시간제 지방의원(Cr.sideOK, media.js)은 신고하고 줄여서 받는다 — 국회의원·단체장·공무원·경찰·군인은 그대로 금지
+  Cr.noAds = (S) => H.jobIs(S, 'civil', 'police', 'soldier') || (H.jobIs(S, 'politician') && !(Cr.sideOK && Cr.sideOK(S)));
 
   C.addEvents([
     /* 명성: 기회 */
@@ -21249,10 +21516,10 @@ const Cm = {};
   const hurt = (S, d) => { S.crm.trauma = clamp(S.crm.trauma + d, 0, 100); };
   const bumpP = (S, d) => { const p = S.fam.partner; if (hasPp() && partnerOn(S) && p.close !== undefined) Pp.bump(S, p, 'partner', d); };
   const bumpPar = (S, d) => { if (!hasPp()) return; for (const k of ['father', 'mother']) { const o = S.fam[k]; if (o.alive && o.close !== undefined) Pp.bump(S, o, k, d); } };
-  /** 잃은 돈: 보통 월급 lo~hi 달 치 + 가진 돈의 share. 독립 전이면 집안 살림에서 빠진다. 돌려주는 값: 현지 통화 문장 */
+  /** 잃은 돈: 보통 월급 lo~hi 달 치 + 가진 돈의 share(capM 이 있으면 그 몫은 보통 월급 capM 달 치까지 — 피드백 201번). 독립 전이면 집안 살림에서 빠진다. 돌려주는 값: 현지 통화 문장 */
   let lastLoss = 0;
-  const lose = (S, lo, hi, share = 0) => {
-    const x = H.pay(S, lo + (hi - lo) * Math.random()) + (S.indep ? Math.max(0, S.money) * share : 0);
+  const lose = (S, lo, hi, share = 0, capM = Infinity) => {
+    const x = H.pay(S, lo + (hi - lo) * Math.random()) + (S.indep ? Math.min(Math.max(0, S.money) * share, H.pay(S, capM)) : 0);
     lastLoss = x;
     E.addMoney(S, -x);
     return Wd.money(E.iso(S), x);
@@ -21716,7 +21983,7 @@ const Cm = {};
       if (H.urban(S) && ['lac', 'ssa'].includes(H.region(S))) o.push(['택시인 줄 알고 탄 차에서 강도를 만나 지갑을 털렸습니다.', 0.2]);
       if (H.urban(S) && H.dev(S) >= 2) o.push(['현금 인출기 앞에서 강도를 만나 막 뽑은 돈을 빼앗겼습니다.', 0.15]);
       const t = U.weighted(o);
-      const amt = lose(S, 0.15, 0.6, 0.02);
+      const amt = lose(S, 0.15, 0.6, 0.02, 1); // 몸에 지닌 돈: 재산 비례는 한 달 치까지
       E.stat(S, 'happy', -4); E.stat(S, 'health', -1);
       return `${t} (잃은 것 약 ${amt})${reportTail(S, 'rob')}`;
     },
@@ -21727,7 +21994,7 @@ const Cm = {};
       if (shopkeeper(S)) o.push(['밤사이 가게 문을 부수고 들어온 도둑이 물건을 털어 갔습니다.', 0.4]);
       if (H.rural(S)) o.push(['밤사이 곳간에 도둑이 들어 거둬 둔 곡식을 훔쳐 갔습니다.', 0.3]);
       const t = U.weighted(o);
-      const amt = lose(S, 0.3, 1.0, 0.02);
+      const amt = lose(S, 0.3, 1.0, 0.02, 6); // 집에 둔 돈·물건: 재산 비례는 여섯 달 치까지
       E.stat(S, 'happy', -3);
       return `${t} (잃은 것 약 ${amt})${reportTail(S, 'theft', 0.25)}`;
     },
@@ -21739,14 +22006,16 @@ const Cm = {};
       return U.weighted(o) + reportTail(S, 'violent', 0);
     },
     fraud: (S) => {
+      // 피해액은 사기 종류에 맞게(피드백 201번: 현금이 많은 사람이 인터넷 장터 사기로 5억 원을 잃었음) — [문장, 보통 월급 lo~hi 달 치, 가진 돈의 몫, 그 몫의 상한(달 치)]
+      // 물건·택배 문자·모바일 머니·중개 수수료·가짜 금붙이는 물건값·수수료 수준(재산과 무관), 계만 맡긴 돈에 비례(상한 2년 치)
       const o = [];
-      if (H.phone(S) && H.internet(S) > 0.4) o.push(['택배 문자 속 링크를 눌렀다가 휴대전화 소액 결제로 돈이 빠져나갔습니다.', 0.25]);
-      if (H.internet(S) > 0.5) o.push(['인터넷 장터에서 산 물건이 끝내 오지 않았습니다. 판 사람은 연락이 끊겼습니다.', 0.3]);
-      if (H.phone(S) && ['ssa', 'sas'].includes(H.region(S))) o.push(['"실수로 돈을 보냈으니 돌려 달라"는 연락에 속아 모바일 머니로 돈을 보냈습니다.', 0.3]);
-      o.push(['일자리를 소개해 준다던 중개인이 수수료만 챙겨 사라졌습니다.', 0.15], ['가짜 금붙이를 진짜라고 속아 비싸게 샀습니다.', H.dev(S) <= 1 ? 0.15 : 0.04]);
-      if (S.indep && H.money(S) > 1) o.push([`높은 이자를 준다던 ${U.j(H.rosca(S), '을')} 굴리던 사람이 ${U.j(H.roscaMoney(S), '을')} 모아 달아났습니다.`, 0.15]);
-      const t = U.weighted(o);
-      const amt = lose(S, 0.2, 1.2, 0.03);
+      if (H.phone(S) && H.internet(S) > 0.4) o.push([['택배 문자 속 링크를 눌렀다가 휴대전화 소액 결제로 돈이 빠져나갔습니다.', 0.05, 0.3], 0.25]);
+      if (H.internet(S) > 0.5) o.push([['인터넷 장터에서 산 물건이 끝내 오지 않았습니다. 판 사람은 연락이 끊겼습니다.', 0.1, 0.8], 0.3]);
+      if (H.phone(S) && ['ssa', 'sas'].includes(H.region(S))) o.push([['"실수로 돈을 보냈으니 돌려 달라"는 연락에 속아 모바일 머니로 돈을 보냈습니다.', 0.1, 0.5], 0.3]);
+      o.push([['일자리를 소개해 준다던 중개인이 수수료만 챙겨 사라졌습니다.', 0.3, 1.5], 0.15], [['가짜 금붙이를 진짜라고 속아 비싸게 샀습니다.', 0.2, 1.0], H.dev(S) <= 1 ? 0.15 : 0.04]);
+      if (S.indep && H.money(S) > 1) o.push([[`높은 이자를 준다던 ${U.j(H.rosca(S), '을')} 굴리던 사람이 ${U.j(H.roscaMoney(S), '을')} 모아 달아났습니다.`, 0.3, 1.5, 0.05, 24], 0.15]);
+      const [t, lo, hi, share, capM] = U.weighted(o);
+      const amt = lose(S, lo, hi, share || 0, capM || Infinity);
       E.stat(S, 'happy', -3);
       return `${t} (잃은 것 약 ${amt})${reportTail(S, 'fraud', 0.3)}`;
     },
@@ -22049,7 +22318,7 @@ const Cm = {};
     cr.kid = cr.kid || [];
     if (Cm.onVictim) Cm.onVictim(S, 'kidnap');
     if (kind === 'express') {
-      const amt = lose(S, 0.3, 1.2, 0.05);
+      const amt = lose(S, 0.3, 1.2, 0.05, 6); // 번개 납치(현금 인출 강요): 하루 인출 한도 수준
       fear(S, 18); hurt(S, 12); E.stat(S, 'happy', -8);
       cr.kid.push({ m: S.ageM, k: 'express', n: 0, end: 'freed' });
       const how = H.urban(S) ? U.pick(['택시인 줄 알고 탄 차에서 흉기를 든 사람들에게 붙잡혀', '밤길에 다가온 승합차에 억지로 태워져']) : '외딴 길에서 차를 세운 무장한 사람들에게 붙잡혀';
@@ -22295,16 +22564,16 @@ const Cm = {};
       title: '강도',
       text: (S) => `${H.urban(S) ? '어두운 골목' : '인적 드문 길'}에서 흉기를 든 사람이 앞을 막아섰습니다. 가진 것을 모두 내놓으라고 합니다. ({country} 살인율은 인구 10만 명당 {homic}명)`,
       choices: [
-        { l: '순순히 내준다', typ: true, run: (S) => { const a = lose(S, 0.15, 0.5, 0.02); E.stat(S, 'happy', -6); return `가진 돈 ${U.j(a, '을')} 내주었습니다. 다친 데는 없었지만 다리가 한참 떨렸습니다.`; } },
+        { l: '순순히 내준다', typ: true, run: (S) => { const a = lose(S, 0.15, 0.5, 0.02, 1); E.stat(S, 'happy', -6); return `가진 돈 ${U.j(a, '을')} 내주었습니다. 다친 데는 없었지만 다리가 한참 떨렸습니다.`; } },
         { l: '내주고 경찰에 신고한다', p: (S) => Cm.policeP(S, 'rob'), sub: (S) => C.t(S, clrNote(S, 'rob')),
           ok: { run: (S) => { tally(S, 'vr', 'rob', true); lose(S, 0.05, 0.15); E.stat(S, 'happy', -2); return '며칠 뒤 경찰이 범인을 붙잡았다고 연락해 왔습니다. 빼앗긴 돈도 일부 돌려받았습니다.'; } },
-          no: { run: (S) => { tally(S, 'vr', 'rob', false); const a = lose(S, 0.15, 0.5, 0.02); E.stat(S, 'happy', -7); return rlOf(S) < -0.4 ? `${U.j(a, '을')} 빼앗겼습니다. 경찰은 서류 한 장만 적고 돌아갔고, 오히려 "수고비"를 바라는 눈치였습니다.` : `${U.j(a, '을')} 빼앗겼습니다. 경찰이 와서 조사했지만 범인은 끝내 찾지 못했습니다. (${clrNote(S, 'rob')})`; } } },
+          no: { run: (S) => { tally(S, 'vr', 'rob', false); const a = lose(S, 0.15, 0.5, 0.02, 1); E.stat(S, 'happy', -7); return rlOf(S) < -0.4 ? `${U.j(a, '을')} 빼앗겼습니다. 경찰은 서류 한 장만 적고 돌아갔고, 오히려 "수고비"를 바라는 눈치였습니다.` : `${U.j(a, '을')} 빼앗겼습니다. 경찰이 와서 조사했지만 범인은 끝내 찾지 못했습니다. (${clrNote(S, 'rob')})`; } } },
         { l: '소리치며 달아난다', p: (S) => clamp(0.45 + (S.st.health - 60) / 150, 0.2, 0.75),
           ok: { t: '있는 힘껏 소리치며 내달렸습니다. 다행히 쫓아오지 않았습니다.', fx: { happy: -3 } },
-          no: { run: (S) => { const a = lose(S, 0.2, 0.6, 0.02); fear(S, 8); E.stat(S, 'health', -6); E.stat(S, 'happy', -8); return `붙잡혀 몇 대 맞고 ${U.j(a, '을')} 빼앗겼습니다.`; } } },
+          no: { run: (S) => { const a = lose(S, 0.2, 0.6, 0.02, 1); fear(S, 8); E.stat(S, 'health', -6); E.stat(S, 'happy', -8); return `붙잡혀 몇 대 맞고 ${U.j(a, '을')} 빼앗겼습니다.`; } } },
         { l: '맞서 싸운다', sub: '다칠 수 있습니다', p: robTalk,
           ok: { t: '몸싸움 끝에 강도가 달아났습니다. 손이 떨려 한참을 그 자리에 서 있었습니다.', fx: { happy: 2 }, val: { risk: 2 } },
-          no: { run: (S) => { const a = lose(S, 0.2, 0.6, 0.03); fear(S, 12); E.stat(S, 'health', -12); E.stat(S, 'happy', -10); return `흉기에 다쳐 병원 신세를 졌습니다. 가진 돈 ${a}도 모두 빼앗겼습니다.`; } } },
+          no: { run: (S) => { const a = lose(S, 0.2, 0.6, 0.03, 1); fear(S, 12); E.stat(S, 'health', -12); E.stat(S, 'happy', -10); return `흉기에 다쳐 병원 신세를 졌습니다. 가진 돈 ${a}도 모두 빼앗겼습니다.`; } } },
       ],
     },
     {
@@ -22375,7 +22644,7 @@ const Cm = {};
       choices: [
         { l: (S, ctx) => (ctx.kind === 'romance' ? '돈을 보낸다' : ctx.kind === 'job' ? '돈을 낸다' : '돈을 맡긴다'), p: 0.12,
           ok: { t: '운이 좋았는지 돈을 돌려받았습니다. 나중에 같은 일로 크게 당한 사람들 이야기를 들었습니다.', fx: { happy: 1 } },
-          no: { run: (S) => { const a = lose(S, 1, 3, 0.15); E.stat(S, 'happy', -10); return `연락이 끊겼습니다. ${U.j(a, '이')} 사라졌습니다. 같은 수법에 당한 사람이 수십 명이었습니다.`; } } },
+          no: { run: (S, ctx) => { const k = ctx && ctx.kind; const a = k === 'job' ? lose(S, 1, 3) : lose(S, 1, 3, 0.15, k === 'romance' ? 24 : 60); E.stat(S, 'happy', -10); return `연락이 끊겼습니다. ${U.j(a, '이')} 사라졌습니다. 같은 수법에 당한 사람이 수십 명이었습니다.`; } } },
         { l: '알아보고 거절한다', typ: true, t: '이것저것 알아보니 전형적인 사기 수법이었습니다. 정중히 거절했습니다.', fx: { smarts: 1 } },
         { l: '경찰에 신고한다', p: (S) => Cm.policeP(S, 'fraud'), sub: (S) => C.t(S, clrNote(S, 'fraud')),
           ok: { t: '수사가 시작되어 사기 일당이 붙잡혔습니다. 피해를 막았다는 인사를 받았습니다.', fx: { happy: 4 }, val: { rep: 2 }, run: (S) => { tally(S, 'vr', 'fraud', true); } },
@@ -26694,14 +26963,17 @@ const Ar = {};
   }
 
   /* ---------------- 단편 소설·시 */
+  // 이미 책을 낸 작가(장편 출간·베스트셀러·전업 작가)는 신춘문예를 거치지 않는다 — 문예지·출판사가 원고를 청한다(피드백 216번)
+  const litKnown = (S) => !!(S.cr.lit.debut || (S.books && S.books.length) || H.jobIs(S, 'writer'));
+  const litStar = (S) => typeof Cr !== 'undefined' && Cr.isBestAuthor && (Cr.isBestAuthor(S) || (S.fame || 0) >= 40);
   C.DEC.ar_short = {
     title: (S, ctx) => (ctx.poem ? '시 한 편' : '단편 소설 한 편'),
-    text: (S, ctx) => C.t(S, `${ctx.poem ? '시' : '단편 소설'} 한 편을 완성했습니다(완성도 ${ctx.q}). ${S.cr.lit.debut ? '등단한 작가라 문예지에 싣자는 곳이 있습니다.' : '신춘문예나 문예지 공모에 당선되면 작가로 등단합니다. 당선은 수천 편 가운데 몇 편뿐입니다.'} 지금까지 모아 둔 원고는 ${S.cr.lit.shorts}편입니다.`),
+    text: (S, ctx) => C.t(S, `${ctx.poem ? '시' : '단편 소설'} 한 편을 완성했습니다(완성도 ${ctx.q}). ${litStar(S) ? '이름난 작가라 문예지와 출판사가 먼저 원고를 청합니다.' : litKnown(S) ? (S.cr.lit.debut ? '등단한 작가라 문예지에 싣자는 곳이 있습니다.' : '이미 책을 낸 작가라 문예지에 싣자는 곳이 있습니다.') : '신춘문예나 문예지 공모에 당선되면 작가로 등단합니다. 당선은 수천 편 가운데 몇 편뿐입니다.'} 지금까지 모아 둔 원고는 ${S.cr.lit.shorts}편입니다.`),
     choices: (S, ctx) => {
       const lit = S.cr.lit, out = [];
       const pD = U.clamp(lucky(S, sig((ctx.q - 70) / 6) * 0.35), 0.002, 0.5);
       const store = (S2, c2) => { S2.cr.lit.shorts++; if (c2.poem) S2.cr.lit.poems = (S2.cr.lit.poems || 0) + 1; };
-      if (!lit.debut) out.push({ label: '신춘문예·문예지 공모에 낸다', sub: `당선 가능성 약 ${Math.max(1, P(pD))}%`, run: (S2, c2) => {
+      if (!litKnown(S)) out.push({ label: '신춘문예·문예지 공모에 낸다', sub: `당선 가능성 약 ${Math.max(1, P(pD))}%`, run: (S2, c2) => {
         store(S2, c2);
         if (U.chance(pD)) {
           S2.cr.lit.debut = true; S2.cr.lit.pieces++;
@@ -26713,9 +26985,11 @@ const Ar = {};
         E.stat(S2, 'happy', -3);
         return '당선작 발표 날, 이름은 없었습니다. 원고는 다음을 위해 모아 두었습니다.';
       } });
-      else out.push({ label: '문예지에 발표한다', sub: '원고료를 조금 받습니다', run: (S2, c2) => {
+      else out.push({ label: '문예지에 발표한다', sub: litStar(S) ? '원고를 청한 곳에 싣습니다 · 이름값만큼 원고료가 높습니다' : '원고료를 조금 받습니다', run: (S2, c2) => {
         store(S2, c2); S2.cr.lit.pieces++;
-        const amt = H.pay(S2, 0.1 + U.rand() * 0.2); earn(S2, amt, 'royalty');
+        if (!S2.cr.lit.debut) S2.cr.lit.debut = true; // 책을 낸 작가는 문단에서도 작가로 대접받는다
+        const star = litStar(S2) ? 1 + Math.min(4, Math.log10(1 + (Cr.bestSold ? Cr.bestSold(S2) : 0) / 1e4) * 1.5 + (S2.fame || 0) / 40) : 1;
+        const amt = H.pay(S2, (0.1 + U.rand() * 0.2) * star); earn(S2, amt, 'royalty');
         if (ctx.q >= 72 && U.chance(0.15)) { H.fameUp(S2, 1); return C.t(S2, `문예지에 실린 ${c2.poem ? '시' : '단편'}가 평론가들 사이에서 화제가 되었습니다. 원고료 ${U.j(fmt(S2, amt), '을')} 받았습니다.`); }
         return C.t(S2, `문예지에 ${c2.poem ? '시' : '단편'}를 실었습니다. 원고료 ${U.j(fmt(S2, amt), '을')} 받았습니다.`);
       } });
@@ -26726,7 +27000,7 @@ const Ar = {};
         E.stat(S2, 'happy', n >= 500 ? 3 : 0);
         return C.t(S2, `인터넷에 올렸습니다. ${U.fmtKo(n)}명이 읽었습니다.`);
       } });
-      if (lit.shorts + 1 >= 6) out.push({ label: `모아 둔 ${lit.shorts + 1}편을 작품집으로 묶는다`, sub: lit.debut ? '등단 작가라 출판사가 관심을 보입니다' : '등단 전이라 책이 되기 어렵습니다', run: (S2, c2) => {
+      if (lit.shorts + 1 >= 6) out.push({ label: `모아 둔 ${lit.shorts + 1}편을 작품집으로 묶는다`, sub: litStar(S) ? '이름난 작가라 출판사가 반깁니다' : litKnown(S) ? '작가로 알려져 있어 출판사가 관심을 보입니다' : '등단 전이라 책이 되기 어렵습니다', run: (S2, c2) => {
         store(S2, c2);
         const q = Math.round((c2.q + Ar.wq(S2, 'short')) / 2 + Math.min(6, S2.cr.lit.shorts / 2));
         S2.cr.lit.collPoem = (S2.cr.lit.poems || 0) * 2 >= S2.cr.lit.shorts;
@@ -28054,7 +28328,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.6.3';
+E.VERSION = '0.6.4';
 E.BUILD_DATE = '26.10.16';
 
 /* ================================================================ 기본 도구 */
@@ -28573,7 +28847,11 @@ E.sysFinance = (S) => {
   let spend = Math.max(disp * (1 - save), Math.min(floor, disp + Math.max(0, S.money) * 0.08));
   // 모은 재산(집 빼고)에서 쓰는 돈: 일하는 동안은 조금, 은퇴하면 남은 여생에 걸쳐 나눠 쓴다
   const fin = Ec.financial(S);
-  if (fin > 0) spend += fin * (retiredLike ? 0.02 + 1 / (Ec.remLife(iso, S.sex, a) + 15) : 0.01) * (SPEND[S.lifestyle] / SPEND.normal);
+  // 갑자기 생긴 큰돈(유산·복권·큰 매각)은 씀씀이에 바로 붙지 않고 몇 해에 걸쳐 따라간다(피드백 185번, Ec.spendBase)
+  const finS = Ec.spendBase(S, fin);
+  const wDraw = finS > 0 ? finS * (retiredLike ? 0.02 + 1 / (Ec.remLife(iso, S.sex, a) + 15) : 0.01) * (SPEND[S.lifestyle] / SPEND.normal) : 0;
+  spend += wDraw;
+  const spend0 = spend;
   // 아주 높은 소득·재산에서는 씀씀이가 소득만큼 늘지 않는다(피드백 144번: UAE 85세 1인 가구가 방송 수입 1640만 디르함에 생활비 1440만 디르함).
   // 그 나라 상위 1% 가구의 소비를 넘는 몫(재산에서 꺼내 쓰는 몫 포함)은 제곱근으로만 는다 — 고소득층 소비의 소득 탄력성 약 0.5, 상위 1% 저축률 35~50%(Saez·Zucman 등)
   const top = Wd.consMoney(iso, 0.99) * Math.sqrt(size) * (SPEND[S.lifestyle] / SPEND.normal);
@@ -28582,14 +28860,16 @@ E.sysFinance = (S) => {
   if (S.money < 0) spend = Math.min(spend, Math.max(disp * (S.lifestyle === 'comfort' ? 0.92 : 0.85), floor * 0.6));
   // 내 집이 있으면 월세가 들지 않는다(관리비·세금은 남는다)
   if (Ec.home(S)) spend *= 0.86;
+  // 생활비 가운데 재산이 있어 더 쓰는 몫(살림 표에 보인다)
+  S.spendW = spend0 > 0 ? wDraw * (spend / spend0) : 0;
+  // 여름 냉방 전기료: 에어컨이 있는 집(device.js, 피드백 201번)
+  if (S.flags.ac && typeof Dv !== 'undefined' && Dv.acCost) spend += Dv.acCost(S);
   S.spend = spend;
   S.money += (disp - spend) / 12;
   Ec.month(S);
   // 현금 이자·물가·빚 이자 (연 단위를 월로)
   if (S.money > 0) {
-    const bank = (c.account || 50) / 100;
-    const real = bank * 0.01 - (1 - bank) * Math.max(0, (c.infl || 3) - 6) / 100 * 0.5;
-    S.money *= 1 + real / 12;
+    S.money *= 1 + Ec.cashReal(iso) / 12;
   } else {
     // 빚 이자: 연봉 2년 치까지의 빚에 붙는다(그보다 깊은 빚에도 이자 상한까지는 붙는다 — 점검: 2년 치를 넘으면 이자가 0이었음)
     S.money -= Math.min(-S.money, 2 * Wd.workerMedian(iso)) * (dev >= 3 ? 0.06 : 0.16) / 12;
@@ -29069,7 +29349,8 @@ E.sysWorkYear = (S, ay) => {
     j.pay *= 1 + g + U.normal(0, 0.035);
     // 은퇴 시점
     const ra = Wd.social('retire', iso, [62, 60])[Wd.si(S.sex)];
-    if (ay >= ra && !S.flags.retireAsked) {
+    // 임기 중인 선출직·작가·예술가는 나이로 '은퇴할까요?'를 묻지 않는다(임기 끝 '다음 선거'·활동이 줄어듦, 피드백 197번 — econ.js Ec.retireAskOK)
+    if (ay >= ra && !S.flags.retireAsked && Ec.retireAskOK(S)) {
       S.flags.retireAsked = true;
       E.ask(S, 'retire', {});
     }
@@ -29089,8 +29370,9 @@ E.sysWorkYear = (S, ay) => {
   }
   // 건강이 크게 나빠진 노인은 일을 놓는다
   if (S.work.job && ay >= 60 && S.st.health < 22 && !S.queue.length) {
+    const pol = S.work.job.id === 'politician';
     C.retireNow(S);
-    E.log(S, C.t(S, '몸이 따라 주지 않아 일을 그만두었습니다.'), 'ev');
+    E.log(S, C.t(S, pol ? '건강이 크게 나빠져 임기 중에 자리에서 물러났습니다. 남은 임기는 보궐 선거로 뽑힌 사람이 잇습니다.' : '몸이 따라 주지 않아 일을 그만두었습니다.'), 'ev');
   }
   // 15세가 되면 학교 밖 아이는 구직
   if (ay >= 15 && S.edu.stage === null && !S.work.job && !S.work.seeking && !S.work.home && !S.work.retired && !S.mil && !S.queue.length && S.edu.retryAt === null) {
@@ -31507,6 +31789,70 @@ const Dv = {};
     if (!o || !o.need) continue;
     const n0 = o.need;
     o.need = (S) => { const r = n0(S); if (r !== true) return r; return S.flags.pc || H.rich(S) ? true : '컴퓨터가 있어야 합니다(할 일 → 컴퓨터 사기)'; };
+  }
+
+  /* ---------------------------------------------------------------- 에어컨(피드백 201번)
+   * 가구 에어컨 보유율(0~1): IEA 'The Future of Cooling'(2018)과 그 뒤 보고서의 근삿값 — 일본·미국 약 90%, 한국 약 86%, 중국 약 60%,
+   * 걸프 국가 대부분, 남유럽 30~60%, 서·북유럽 10% 아래, 멕시코·브라질 약 16%, 인도 약 8%, 인도네시아 약 10%, 남아공 약 6%, 아프리카 대부분 5% 아래.
+   * 표에 없는 나라는 지역·소득 수준으로 어림한다. 해마다 조금씩 늘어난다(소득이 낮은 나라일수록 천천히, 덥지 않은 유럽은 절반쯤에서 멈춤).
+   * 집안 형편이 좋을수록 먼저 장만한다(평균은 보유율 그대로). 전기가 들어오지 않는 집에는 없다.
+   * 쓰임: 폭염 사건에서 '에어컨을 켜고 집에서 지낸다'가 열리고(ev_old.js o_heat·ev_world.js w_heatwave·content.js 폭염 피해),
+   * 여름 냉방 전기료가 생활비에 조금 붙는다(engine.js). 정전이 잦은 나라는 있어도 못 쓰는 날이 있다. */
+  const AC = {
+    JPN: 0.91, USA: 0.9, KOR: 0.86, TWN: 0.9, HKG: 0.95, MAC: 0.95, SGP: 0.8, CHN: 0.6, SAU: 0.9, ARE: 0.95, QAT: 0.95, KWT: 0.95, BHR: 0.95, OMN: 0.85, ISR: 0.85,
+    CYP: 0.6, GRC: 0.6, MLT: 0.6, ITA: 0.4, ESP: 0.38, PRT: 0.2, FRA: 0.25, TUR: 0.2, AUS: 0.75, NZL: 0.4, CAN: 0.6,
+    MEX: 0.16, BRA: 0.16, ARG: 0.45, CHL: 0.1, COL: 0.1, PER: 0.05, DOM: 0.2, CUB: 0.1, VEN: 0.2,
+    IND: 0.08, PAK: 0.1, BGD: 0.03, LKA: 0.05, NPL: 0.02, IDN: 0.1, MYS: 0.3, THA: 0.25, VNM: 0.2, PHL: 0.15, KHM: 0.05, MMR: 0.03, LAO: 0.05, PRK: 0.01,
+    EGY: 0.15, IRN: 0.3, IRQ: 0.5, JOR: 0.3, LBN: 0.4, SYR: 0.1, DZA: 0.25, MAR: 0.1, TUN: 0.25, LBY: 0.5,
+    ZAF: 0.06, NGA: 0.03, KEN: 0.01, ETH: 0.005, GHA: 0.04, RUS: 0.1, KAZ: 0.1, UKR: 0.1, POL: 0.05, DEU: 0.06, GBR: 0.05, NLD: 0.1, BEL: 0.1, SWE: 0.05, NOR: 0.05,
+  };
+  const AC_REG = { mena: [0.05, 0.15, 0.4, 0.85], sas: [0.02, 0.05, 0.15, 0.4], ssa: [0.01, 0.03, 0.08, 0.3], eap: [0.03, 0.1, 0.3, 0.7], lac: [0.03, 0.08, 0.2, 0.4], eca: [0.02, 0.05, 0.1, 0.12], na: [0.05, 0.1, 0.3, 0.7] };
+  /** 그 나라 그 해의 가구 에어컨 보유율 */
+  Dv.acShare = (iso, year) => {
+    const rk = Wd.regionKey(iso), d = Wd.dev(iso);
+    const p0 = AC[iso] !== undefined ? AC[iso] : (AC_REG[rk] || AC_REG.na)[d];
+    const cap = rk === 'eca' && p0 < 0.3 ? 0.5 : 0.95;
+    const t = Math.max(0, (year || 2026) - 2026);
+    return U.clamp(cap - (cap - Math.min(p0, cap)) * Math.exp(-t / [120, 80, 50, 40][d]), 0, 0.97); // 소득이 낮은 나라일수록 천천히 는다
+  };
+  /** 정전이 잦은 나라(만성적인 순환 정전·전력난 — 세계은행 기업 조사의 '한 달 정전 횟수'가 많은 나라 근삿값): 더운 날 가운데 전기가 끊기는 몫 */
+  const PWR_BAD = new Set(['PRK', 'PAK', 'BGD', 'NGA', 'IRQ', 'LBN', 'YEM', 'SYR', 'AFG', 'ZAF', 'ZWE', 'ZMB', 'GHA', 'VEN', 'CUB', 'HTI', 'MMR', 'SDN', 'SSD', 'LBY', 'GIN', 'SLE', 'LBR', 'COD', 'CAF', 'TCD', 'NER', 'BDI', 'MDG', 'MWI', 'ETH', 'TJK', 'KGZ', 'NPL', 'UGA', 'TZA', 'MOZ', 'CMR', 'BEN', 'TGO', 'MLI', 'BFA', 'KEN', 'PNG', 'SLB']);
+  Dv.pwrBad = (iso) => (PWR_BAD.has(iso) ? 0.35 : (Wd.c(iso).elec || 90) < 95 || Wd.dev(iso) === 0 ? 0.2 : 0);
+  /** 에어컨을 켤 수 있는 집인지(있고, 전기가 들어오는 집) */
+  Dv.acOK = (S) => !!(S.flags.ac && !(S.env && S.env.noElec));
+  /** 여름 냉방 전기료(연, 국제달러): 더운 달마다 약 35달러(시장 환율 기준 물건값). 형편이 빠듯한 집은 아껴 틀어 세후 소득의 2%를 넘기지 않는다 */
+  Dv.acCost = (S) => (Dv.acOK(S) ? Math.min(Wd.tradablePrice(E.iso(S), 35) * (H.hotMons ? H.hotMons(S).length : 3) * (1 - Dv.pwrBad(E.iso(S)) * 0.5), 0.02 * Math.max(S.disp || 0, Wd.workerMedian(E.iso(S)) * 0.3)) : 0);
+  // 형편 순위(아이는 집안 형편): 형편이 좋을수록 먼저 장만한다
+  const acRank = (S) => { const w = S.indep || !S.fam || S.fam.famP === undefined ? E.wealthP(S) : S.fam.famP; return isFinite(w) ? U.clamp(w, 0, 1) : 0.5; };
+  const acFit = (S) => !(S.env && S.env.noElec) && hash(S, 'ac') < Dv.acShare(E.iso(S), yearOf(S)) * (0.4 + 1.2 * acRank(S));
+  if (!C.ITEMS.ac) C.ITEMS.ac = { ko: '에어컨', usd: 500, minAge: 18, happy: 3, flag: 'ac', note: '여름 냉방 전기료가 생활비에 조금 붙습니다' };
+  // 처음(예전 저장 포함): 나라 보유율·형편으로 정한다
+  E.hook('ensure', (S) => { if (S.flags && S.flags.ac === undefined) S.flags.ac = acFit(S); });
+  // 다른 나라로 옮기면 살림을 새로 꾸린다
+  E.hook('move', (S, from, to) => { if (from && to && from !== to) S.flags.ac = acFit(S); });
+  // 해마다: 보유율이 오르거나 형편이 나아지면 장만한다
+  E.hook('year', (S, ay) => {
+    if (!S.alive || S.prison || S.captive || S.flags.ac || !acFit(S) || !U.chance(0.3)) return;
+    S.flags.ac = true;
+    if (S.indep && ay >= 18) E.log(S, C.t(S, U.pick(['에어컨을 장만했습니다. 여름밤에도 잠을 설치지 않습니다.', '집에 에어컨을 들였습니다. 한여름 낮에도 집 안이 시원합니다.'])), 'ev');
+  });
+  // 할 일 '에어컨 사기'(기회를 쓰지 않음, 독립한 어른)
+  if (!C.ACTION.buyac) {
+    const a = {
+      id: 'buyac', ko: '에어컨 사기', cat: 'work', age: [18, 120], cd: 6, free: true,
+      need: (S) => {
+        if (S.flags.ac) return '이미 에어컨이 있습니다';
+        if (S.env && S.env.noElec) return '집에 전기가 들어오지 않습니다';
+        if (!S.indep) return '독립한 뒤에 살 수 있습니다';
+        const price = C.itemPrice(S, 'ac');
+        return S.money >= price ? true : `값(약 ${Wd.money(E.iso(S), price)})만큼 모아야 합니다`;
+      },
+      hint: (S) => `값 약 ${Wd.money(E.iso(S), C.itemPrice(S, 'ac'))}${Dv.pwrBad(E.iso(S)) ? ' · 정전이 잦아 못 쓰는 날도 있습니다' : ''}`,
+      run: (S) => { E.ask(S, 'buy', { item: 'ac' }); return null; },
+    };
+    const i = C.ACTIONS.findIndex((x) => x.id === 'buypc');
+    C.ACTIONS.splice(i >= 0 ? i + 1 : C.ACTIONS.length, 0, a);
+    C.ACTION[a.id] = a;
   }
 })();
 
@@ -34504,13 +34850,18 @@ const Id = {};
   };
   Id.lawKo = (iso) => ({ marriage: '동성 결혼 인정', union: '동반자 제도', none: '법적 인정 없음', crim: Id.death(iso) ? '동성 관계 처벌(사형 가능)' : '동성 관계 처벌' })[Id.recog(iso)];
   /** 나라의 법과 분위기 한두 문장 */
-  Id.envLine = (iso) => {
+  /** 받아들임 수치가 조사 자료인가(없으면 지역 평균으로 어림 — 피드백 163번) */
+  Id.acceptSurveyed = (iso) => ACC[iso] !== undefined || typeof (D().accept || {})[iso] === 'number';
+  Id.envLine = (iso, I) => {
     const rec = Id.recog(iso), nm = Wd.name(iso);
+    // 양성애: 다른 성별을 사귀면 드러나지 않고, 같은 성별을 사귀면 동성 커플과 같은 법·시선(피드백 163번)
+    const bi = I && I.orient === 'bi' && I.gender === 'cis' ? '다른 성별을 사귀면 겉으로 드러나지 않지만, 같은 성별을 사귀면 동성 커플과 같은 법과 시선을 겪습니다. ' : '';
+    const est = Id.acceptSurveyed(iso) ? 'Pew 조사 근삿값' : '이 나라는 조사 자료가 없어 지역 평균으로 어림한 값';
     const law = rec === 'marriage' ? '같은 성별끼리의 결혼도 법으로 인정됩니다'
       : rec === 'union' ? '같은 성별 커플은 결혼은 못 하지만 동반자로 등록할 수 있습니다'
       : rec === 'crim' ? (Id.death(iso) ? '동성 관계를 법으로 처벌하고, 법에는 사형까지 적혀 있습니다(실제 집행 기록은 드뭅니다)' : '동성 관계를 법으로 처벌합니다')
       : '같은 성별 커플을 법으로 인정하는 제도는 아직 없습니다';
-    return `${nm}에서는 ${law}. 성소수자(조사에서는 '동성애')를 사회가 받아들여야 한다고 답한 사람은 약 ${R(Id.accept(iso) * 100)}%입니다(Pew 조사 근삿값).`;
+    return `${bi}${nm}에서는 ${law}. 성소수자(조사에서는 '동성애')를 사회가 받아들여야 한다고 답한 사람은 약 ${R(Id.accept(iso) * 100)}%입니다(${est}).`;
   };
   /** 법적 성별·성별 표현에 관한 한 문장 */
   Id.trLine = (iso, nb) => {
@@ -34988,7 +35339,9 @@ const Id = {};
   });
 
   /* ================================================================ 털어놓기 */
-  const whatKo = (I) => (I.gender === 'trans' ? '자신이 트랜스젠더라는 것' : I.gender === 'nb' ? '자신이 논바이너리라는 것' : I.orient === 'ace' ? '연애 감정이 잘 생기지 않는다는 것' : '자신의 성적 지향');
+  // 지향을 분명히: 양성애가 동성애처럼 읽히지 않게(피드백 163번)
+  const whatKo = (I) => (I.gender === 'trans' ? '자신이 트랜스젠더라는 것' : I.gender === 'nb' ? '자신이 논바이너리라는 것' : I.orient === 'ace' ? '연애 감정이 잘 생기지 않는다는 것'
+    : I.orient === 'bi' ? '남녀 모두에게 마음이 끌린다는 것(양성애)' : I.orient === 'gay' ? '같은 성별에게 마음이 끌린다는 것(동성애)' : '자신의 성적 지향');
   const sibsAlive = (S) => (S.fam.sibs || []).some((s) => s.alive);
   /** 털어놓을 가족을 부르는 말 */
   const famWord = (S) => (H.parentsAlive(S) ? C.elders(S) : sibsAlive(S) ? '형제들' : '');
@@ -35098,7 +35451,7 @@ const Id = {};
       const head = mixedM(S) && I.out.sp === undefined
         ? `{N은} ${U.j(S.fam.partner.name, '과')} ${H.kids(S) ? '아이들을 키우며 ' : ''}가정을 꾸려 왔습니다. 그러나 ${late ? '뒤늦게 깨달은' : '오래전부터 알고 있던'} ${U.j(what, '을')} 마음 깊이 숨겨 왔습니다. 이대로 살지, 이제라도 털어놓을지 고민합니다.${told.length ? ` (${told.length === 2 ? '친구와 가족' : told[0]}에게는 이야기했습니다)` : ''}`
         : told.length ? `{N은} ${U.j(what, '을')} ${told.length === 2 ? '친구와 가족' : told[0]}에게는 이야기했습니다. 이제 더 많은 사람에게 말할지 생각해 봅니다.` : `{N은} ${U.j(what, '을')} 아직 누구에게도 말하지 않았습니다. 털어놓고 싶은 마음과 아직은 이르다는 마음이 오갑니다.`;
-      return C.t(S, `${head} ${I.gender !== 'cis' ? Id.trLine(E.iso(S), I.gender === 'nb') : Id.envLine(E.iso(S))}`);
+      return C.t(S, `${head} ${I.gender !== 'cis' ? Id.trLine(E.iso(S), I.gender === 'nb') : Id.envLine(E.iso(S), I)}`);
     },
     choices: (S) => {
       const I = S.idn, iso = E.iso(S), a = Id.accept(iso), crim = Id.crim(iso), out = [];
@@ -41093,7 +41446,7 @@ const Ml = {};
       if (!leave) {
         const fam = S.fam.married || H.kids(S) > 0;
         const ps = clamp(0.2 + (fam ? 0.4 : 0), 0.05, 0.8);
-        out.push({ label: '상근예비역을 신청한다', sub: `18개월 · 집에서 출퇴근하며 복무 · 될 가능성 약 ${pct(ps)}%${fam ? '(가족이 있어 우선)' : ''}`, run: (S2) => (U.chance(ps) ? Ml.enlistTxt(S2, { k: 'alt', alt: 'sangkeun', mo: 18 }) : Ml.enlistTxt(S2, { br: 'army', note: '상근예비역 자리가 없어 육군으로 입대했습니다.' })) });
+        out.push({ label: '상근예비역을 신청한다', sub: `18개월 · 집에서 부대로 다니며 복무 · 될 가능성 약 ${pct(ps)}%${fam ? '(가족이 있어 우선)' : ''}`, run: (S2) => (U.chance(ps) ? Ml.enlistTxt(S2, { k: 'alt', alt: 'sangkeun', mo: 18 }) : Ml.enlistTxt(S2, { br: 'army', note: '상근예비역 자리가 없어 육군으로 입대했습니다.' })) });
       }
       // 생계곤란 병역감면: 나 말고 가족을 부양할 사람이 없을 때(2026 기준 재산·소득 요건, 신청자의 약 9할 인정 — 근삿값)
       const poor = E.wealthP(S) < 0.15 || ((S.fam.married || H.kids(S) > 0) && E.wealthP(S) < 0.35) || ((!S.fam.father.alive && !S.fam.mother.alive) && E.wealthP(S) < 0.3);
@@ -46718,7 +47071,7 @@ const Rx = {};
   const wildcatLead = (S2) => {
     if (U.chance(0.3)) { if (S2.work.job) S2.work.job.pay *= 1.12; E.stat(S2, 'social', 6); E.stat(S2, 'happy', 4); return '버틴 끝에 밀린 임금과 약간의 인상을 받아 냈습니다. 대신 이름이 당국의 감시 명단에 올랐습니다.'; }
     if (U.chance(0.5)) { const m = U.randInt(2, 8); H.jail(S2, m, '불법 파업 주동'); return `'불법 파업 주동' 혐의로 붙잡혀 ${m}달 동안 구금되었습니다.`; }
-    E.loseJob(S2, 'layoff'); E.stat(S2, 'happy', -6); return C.t(S2, '회사는 주동자들부터 내보냈습니다. {N의} 이름도 명단에 있었습니다.');
+    E.loseJob(S2, 'layoff'); E.stat(S2, 'happy', -6); return C.t(S2, '회사는 주동자들부터 내보냈습니다. {N}의 이름도 명단에 있었습니다.');
   };
   const reText = (run, f) => (S2, ctx2) => { const r = run(S2, ctx2); if (typeof r === 'string') return f(r); if (r && typeof r.text === 'string') r.text = f(r.text); return r; };
 
@@ -49892,10 +50245,12 @@ const Nk = {};
       if (!kin.length) return out;
       const cost = 9, can = S.money >= H.pay(S, cost);
       const idx = Math.max(0, out.length - 1);
-      out.splice(idx, 0, { label: '북에 남은 부모님·형제도 데려온다', sub: `비용 약 ${H.amt(S, cost)} · 가능성 약 50%`, disabled: !can,
+      // 살아 계신 사람만 이름에(부모님이 모두 돌아가셨으면 형제만)
+      const who = kin.length === 2 ? '부모님·형제' : kin[0] === 'parents' ? '부모님' : '형제';
+      out.splice(idx, 0, { label: `북에 남은 ${who}도 데려온다`, sub: `비용 약 ${H.amt(S, cost)} · 가능성 약 50%`, disabled: !can,
         run: (S2) => { E.addMoney(S2, -H.pay(S2, cost)); if (!chance(0.5)) { E.stat(S2, 'happy', -10); return T(S2, '국경 근처에서 붙잡혔다는 소식이 왔습니다. 그 뒤로 연락이 끊겼습니다.'); }
           S2.fam.parIso = E.iso(S2); E.stat(S2, 'happy', 15);
-          return T(S2, '몇 달을 마음 졸인 끝에 부모님과 형제가 한국에 도착했습니다. 공항에서 오래도록 서로를 끌어안았습니다.'); } });
+          return T(S2, `몇 달을 마음 졸인 끝에 ${U.j(who === '부모님·형제' ? '부모님과 형제' : who, '이')} 한국에 도착했습니다. 공항에서 오래도록 서로를 끌어안았습니다.`); } });
       return out;
     };
   }
@@ -49923,11 +50278,966 @@ const Nk = {};
   E.Nk = Nk; // 검사 도구용
 })();
 
+/* 지구 어딘가에서 — 방송 수입·아이돌·음악·이름이 알려진 사람의 피해 (피드백 208·209·211·213·214번, v0.6.4)
+ *
+ * 209 방송 수입: 수입원을 광고 / 협찬 / 시청자 후원(라이브) / 멤버십·상품으로 나눈다(Cr.streamIncome 을 바꿔 씀).
+ *   - 한 달 조회수 = 구독자 × (기본 0.1 + 쌓인 옛 영상 st.cat + 1.6 × 꾸준함). 옛 영상 조회는 해마다 16%쯤만 줄어든다.
+ *   - 꾸준함(st.eff)은 한 달에 7%씩 준다(예전 10%: 다른 일을 하며 가끔 올리면 금방 0에 가까워졌음).
+ *   - 광고 단가는 채널 언어권·사는 나라(st.rpm, econ.json cpm). 협찬은 구독자 1만~5만 명부터, 후원은 나라의 라이브 후원 문화(Md.plat),
+ *     멤버십·상품은 구독자 2만~10만 명부터. 협찬 금지는 직책별: 국회의원·장관·공무원·경찰·군인 금지, 겸직이 허용되는 지방의원은 절반.
+ *   - 나라별 플랫폼 문장: 중국 빌리빌리·더우인, 러시아 VK·텔레그램, 한국 유튜브 + 숲·치지직 후원 등.
+ * 211 미성년 수입·아이돌:
+ *   - 미성년이 번 돈: 25%는 내 돈(engine.js), 나머지는 살림·부모님(보호자)이 모아 두는 몫·법으로 묶는 신탁(미국 쿠건법 15% 등)으로 나뉜다.
+ *     열여덟 살(또는 독립)에 '맡겨 둔 돈을 받음'(md_kidFund), 드물게 일부가 살림에 쓰인 갈등.
+ *   - 아이돌: 데뷔 → 정산 전(수당만, 회사가 먼저 쓴 연습·제작비를 갚는 중) → 첫 정산(그룹 인기에 따라) → 7년 계약 끝(md_idolEnd).
+ *     그룹 인기(국내·해외 팬덤)가 수입·명성·음원 재생·개인 채널 구독자의 바탕이다.
+ *   - 개인 채널: 팬덤이 있는 사람(아이돌·배우·운동선수)이 채널을 열면 팬덤 일부가 바로 구독자로 온다. 계약 중인 아이돌은 회사 허락(수익 나눔) 또는 금지.
+ * 213·214 음악:
+ *   - 곡 완성도: 작곡(새 연습 종류 Pr.KINDS.compose) 55% + 가창 45%로 '쓰인 실력', 실력이 높을수록 운의 폭이 줄고 80 위로는 더 오른다.
+ *   - 재생 수: 완성도 75부터 중앙값이 더 가파르게, 78부터 흩어짐이 줄게(잘 만든 곡은 '대개' 어느 정도 퍼지고 히트 가능성도 오름). 발표할 때마다 '청취자층'(S.md.mus.lis)이 남아 다음 곡의 바닥이 된다.
+ *   - 음악 이름값(S.md.mus.rep): 미술·글 이름값(S.art.rep)과 따로. 연예·음악 직업의 명성·활동 햇수가 쌓인다.
+ *   - 프로의 길: 데뷔한 가수·아이돌은 가요제 대신 음원·앨범 발매와 음악 방송·연말 시상식. 노래 실력이 아주 높으면 커버 영상·피처링·OST·오디션 방송.
+ * 208 이름이 알려진 사람의 피해: 선출직·명성 높은 사람·구독자 많은 방송인이 폭행·협박을 당하면 결정(md_vipHurt) — 공개 신고 / 조용히 신고 / 넘어감.
+ *   보통 사람의 폭행 피해는 가벼운 멍 / 병원 치료 / 입원으로 나누고 치료비·신고를 붙인다.
+ * 상태: S.md = { kid: { yNow, yLast, tot, trust, held, hhY, iso }, mus: { rep, lis, yBest }, fan: { n, m }, sym: { v, m } }
+ *       S.work.job.idol = { m0, n, big, dom, intl, debt, a, settled, setM, endM, chPol, ch, hits }  (아이돌 직업에만)
+ *       S.stream.cat(옛 영상 조회 몫) · S.stream.live(라이브 비중)
+ * 실리는 곳: manifest 에서 nklife.js 뒤·history.js 앞. 시험: ONEIN8B_EXTRA=media.js
+ */
+'use strict';
+
+const Md = {};
+(() => {
+  const hasCr = () => typeof Cr !== 'undefined' && !!Cr && typeof Cr.pool === 'function';
+  const hasAr = () => typeof Ar !== 'undefined' && !!Ar && typeof Ar.aq === 'function';
+  const hasPr = () => typeof Pr !== 'undefined' && !!Pr && typeof Pr.lvl === 'function';
+  const hasCm = () => typeof Cm !== 'undefined' && !!Cm && typeof Cm.victim === 'function';
+  const hasPp = () => typeof Pp !== 'undefined' && !!Pp && typeof Pp.bump === 'function';
+  const sig = (x) => 1 / (1 + Math.exp(-x));
+  const fmt = (S, x) => Ec.fmt(S, Math.max(0, x || 0));
+  const fj = (S, x, p) => U.j(fmt(S, x), p);
+  const ko = (n) => U.fmtKo(Math.max(0, Math.round(n || 0)));
+  const MD = (S) => S.md || (S.md = {});
+  const CPM = (c) => (DATA.econ && DATA.econ.cpm && typeof DATA.econ.cpm[c] === 'number' ? DATA.econ.cpm[c] : 0.3);
+  const IDOL_C = ['KOR', 'JPN', 'CHN', 'TWN', 'THA', 'PHL', 'IDN', 'VNM'];
+
+  /* ================================================================ 209 방송 수입 */
+  /** 나라별 플랫폼과 라이브 후원 문화. don: 꾸준히 라이브를 하는 채널이 구독자 1명당 한 해 받는 후원(시장 환율 달러, 어림값)
+   *  - 한국: 유튜브에 숲(옛 아프리카TV)·치지직의 별풍선·치즈 후원 문화가 커서 가장 높게. 중국: 빌리빌리·더우인 라이브 선물(打赏).
+   *  - 러시아: 2022년부터 유튜브 수익 창출이 막혀 VK 비디오·텔레그램 중심(광고 단가는 econ.json cpm 이 이미 낮음). 이란: 아파라트. */
+  const PLAT = {
+    KOR: { main: '유튜브', live: '숲(옛 아프리카TV)·치지직 후원', don: 0.3 },
+    CHN: { main: '빌리빌리·더우인', live: '더우인 라이브 선물', don: 0.22 },
+    JPN: { main: '유튜브·니코니코', live: '슈퍼챗', don: 0.15 },
+    TWN: { main: '유튜브', live: '슈퍼챗·라이브 후원', don: 0.12 },
+    USA: { main: '유튜브·트위치', live: '트위치 구독·슈퍼챗', don: 0.12 },
+    RUS: { main: 'VK 비디오·텔레그램', live: 'VK 라이브 후원', don: 0.04 },
+    BLR: { main: 'VK 비디오·유튜브', live: '라이브 후원', don: 0.02 },
+    IRN: { main: '아파라트', live: '라이브 후원', don: 0.01 },
+  };
+  Md.plat = (S) => {
+    const c = E.iso(S);
+    if (PLAT[c]) return PLAT[c];
+    const d = Wd.dev(c);
+    return { main: '유튜브', live: d >= 3 ? '슈퍼챗·트위치 후원' : '슈퍼챗', don: [0.004, 0.012, 0.03, 0.07][d] };
+  };
+  /** 겸직이 허용되는 시간제 선출직(지방의원): 협찬은 신고하고 줄여서 받는다 */
+  Md.partTimeOffice = (S) => !!(hasCr() && Cr.curTier && Cr.curTier(S) === 1);
+  if (hasCr()) Cr.sideOK = Md.partTimeOffice; // career.js Cr.noAds 가 읽는다
+  /** 협찬을 받을 수 있는 몫: 금지 0 · 지방의원 0.5 · 보통 1 */
+  Md.sponF = (S) => (hasCr() && Cr.noAds && Cr.noAds(S) ? 0 : Md.partTimeOffice(S) ? 0.5 : 1);
+  const LD = () => (DATA.lang && DATA.lang.country) || {};
+  const shareOf = (c, code) => { const x = LD()[c]; if (!x) return 0; let sh = 0; for (const [k, v] of x.native || []) if (k === code) sh += v; for (const [k, v] of x.second || []) if (k === code) sh += v; return Math.min(100, sh); };
+  /** 채널 광고 단가(시청자 나라 구성): 사는 나라 시청자 몫(그 언어권에서 사는 나라가 차지하는 크기에 따라 40~90%) × 그 나라 단가 + 나머지 × 언어권 평균.
+   *  예전에는 언어권 평균과 사는 나라를 반반으로 섞어, 미국 영어 채널이 인도·나이지리아 시청자 단가에 끌려 내려갔음(피드백 209번 4항) */
+  const rpmOf = (S, st) => {
+    const iso = E.iso(S), pl = Cr.pool(st.lang, S), d = DATA.c[iso];
+    const home = d ? (d.pop * (d.internet || 0) / 100) * (shareOf(iso, st.lang) / 100) : 0;
+    if (home < 1000 || !(pl.n > 0)) return pl.rpm;
+    const h = U.clamp(0.35 + 0.55 * Math.sqrt(Math.min(1, home / pl.n)), 0.4, 0.9);
+    return h * CPM(iso) + (1 - h) * pl.rpm;
+  };
+  const stEnsure = (S, st) => {
+    if (st.rpmV !== 2 && st.lang && hasCr()) { st.rpm = rpmOf(S, st); st.rpmV = 2; }
+    if (st.cat === undefined) st.cat = 0.1 + 0.5 * Math.min(1, (st.eff || 0) / 3);
+    if (st.live === undefined) {
+      const c = E.iso(S), b = c === 'KOR' ? 0.4 : ['CHN', 'JPN', 'TWN', 'USA'].includes(c) ? 0.3 : 0.2;
+      st.live = Math.round(U.clamp(b + U.normal(0, 0.1), 0.05, 0.7) * 100) / 100;
+    }
+  };
+  /** 계약 중인 아이돌의 개인 채널에서 회사가 가져가는 몫 */
+  Md.chCut = (S) => { const id = Md.idolOf(S); return id && id.ch === 'share' ? 0.4 : 0; };
+  /** 방송 수입을 나눠 계산(국제달러/년): { ads, spon, don, mem, cut, views } */
+  Md.streamParts = (S, efOverride) => {
+    const st = S.stream, z = { ads: 0, spon: 0, don: 0, mem: 0, cut: 0, views: 0 };
+    if (!st) return z;
+    if (st.rpm === undefined || st.K === undefined || st.pool === undefined) Cr.initStream(S);
+    stEnsure(S, st);
+    if (st.fans < 1000) return z;
+    const ef = efOverride !== undefined ? efOverride : Math.min(1, (st.eff || 0) / 3);
+    const slump = st.slumpM && S.ageM < st.slumpM ? 0.45 : 1;
+    // 어림값을 물을 때(전업 전환 등)는 그만큼 꾸준히 올려 온 채널로 본다
+    const cat = efOverride !== undefined ? Math.max(st.cat, 0.6 * efOverride) : st.cat;
+    // 구독자 1명당 한 달 조회수: 꾸준히 올리는 채널 약 2.3회, 가끔 올리면 0.6~1회, 쉬어도 옛 영상으로 조금
+    z.views = st.fans * (st.on ? 0.1 + cat + 1.6 * ef : 0.05 + cat) * slump;
+    const iso = E.iso(S), pl = Wd.priceLevel(iso);
+    z.ads = (z.views * 12 * st.rpm) / 1000;
+    const ramp = U.clamp((st.fans - 10000) / 40000, 0, 1);
+    z.spon = st.on ? Md.sponF(S) * ramp * st.fans * st.rpm * 0.055 * (0.3 + 0.7 * ef) : 0;
+    z.don = st.on ? st.fans * Md.plat(S).don * st.live * Math.pow(ef, 0.8) * U.clamp((st.fans - 1000) / 9000, 0, 1) : 0;
+    const pp = Math.pow(U.clamp(CPM(iso) / 4.5, 0.05, 1), 0.6); // 시청자의 씀씀이(광고 단가로 어림)
+    z.mem = st.fans * 0.04 * pp * U.clamp((st.fans - 20000) / 80000, 0, 1) * (st.on ? 0.4 + 0.6 * ef : 0.25);
+    for (const k of ['ads', 'spon', 'don', 'mem']) z[k] /= pl; // 시장 환율 달러 → 국제달러
+    const cut = Md.chCut(S);
+    if (cut > 0) { const tot = z.ads + z.spon + z.don + z.mem; z.cut = tot * cut; for (const k of ['ads', 'spon', 'don', 'mem']) z[k] *= 1 - cut; }
+    return z;
+  };
+  if (hasCr()) {
+    Cr.streamIncome = (S, efOverride) => { const z = Md.streamParts(S, efOverride); return z.ads + z.spon + z.don + z.mem; };
+    // 옛 영상 조회(st.cat)와 꾸준함이 주는 속도
+    const sm0 = Cr.streamMonth;
+    Cr.streamMonth = (S) => {
+      const st = S.stream;
+      if (st) {
+        stEnsure(S, st);
+        const ef = st.on && !S.prison && !S.mil ? Math.min(1, (st.eff || 0) / 3) : 0;
+        st.cat = st.cat * 0.985 + 0.009 * ef; // 꾸준히 올리면 옛 영상 몫이 구독자 1명당 한 달 0.6회까지 쌓이고, 쉬면 해마다 16%쯤 준다
+      }
+      sm0(S);
+      if (!st) return;
+      st.eff = (st.eff / 0.9) * 0.93; // career.js 는 한 달 10%씩 줄인다 → 7%(피드백 209번: 가끔 올리면 꾸준함이 금방 0에 가까워졌음)
+      st.inc = Cr.streamIncome(S);
+      const j = S.work.job;
+      if (j && j.id === 'streamer') { j.pay = st.inc; S.inc2.stream = 0; } else S.inc2.stream = st.inc;
+    };
+    // 채널을 열 때: 팬덤이 있는 사람은 팬덤 일부가 바로 구독자로 온다(211번) · 계약 중인 아이돌은 회사 허락
+    const run0 = C.ACTION.stream.run;
+    C.ACTION.stream.run = (S) => {
+      if (S.stream) return run0(S);
+      const id = Md.idolOf(S);
+      if (id && !id.ch) { E.ask(S, 'md_idolCh', {}); return null; }
+      const r = run0(S);
+      const st = S.stream;
+      if (!st) return r;
+      const ff = Md.fandomFans(S);
+      let extra = '';
+      if (ff >= 1000) {
+        st.fans = Math.round(Math.min(Cr.hardCap(st), Math.max(st.fans, ff * (0.3 + 0.2 * U.rand()))));
+        st.K = Math.min(st.pool * Cr.CAP_FRAC, Math.max(st.K || 0, ff * 1.2));
+        st.y0 = st.fans;
+        extra = ` 소식을 들은 팬들이 몰려와 며칠 만에 구독자가 ${ko(st.fans)}명이 되었습니다.`;
+      }
+      const P = Md.plat(S);
+      return `${r}${extra} 주로 ${P.main}에 올립니다.`;
+    };
+    // 할 일 칸: 나라별 플랫폼과 지금 수입
+    C.ACTION.stream.hint = (S) => (S.stream ? `구독자 ${ko(S.stream.fans)}명${S.stream.inc > 0 ? ` · 한 해 약 ${fmt(S, S.stream.inc)}` : ''} · ${Md.plat(S).main}` : `${Md.plat(S).main}에 채널을 엽니다`);
+    const need0 = C.ACTION.stream.need;
+    C.ACTION.stream.need = (S) => {
+      const id = Md.idolOf(S);
+      if (!S.stream && id && id.chPol === 'ban') return '소속사 계약상 개인 채널을 열 수 없습니다(계약이 끝나면 가능)';
+      return need0 ? need0(S) : true;
+    };
+    // 이름이 알려진 사람의 채널에 모이는 구독자: 팬덤(아이돌 그룹 팬, 배우·선수를 아는 사람)도 바탕이 된다
+    const ff0 = Cr.fameFans;
+    Cr.fameFans = (S, st) => Math.max(ff0(S, st), Math.min(st.pool * Cr.CAP_FRAC, Md.fandomFans(S)));
+    // 해외 팬덤이 있으면 자막·번역으로 닿는 시청자가 넓어진다
+    const sp0 = Cr.streamPool;
+    Cr.streamPool = (S, st) => {
+      const n = sp0(S, st), f = Md.fandom(S);
+      if (!f.intl || st.lang === 'en') return n;
+      const sh = f.intl / Math.max(1, f.dom + f.intl);
+      return Math.min(Cr.ABS_MAX / Cr.HARD_FRAC, n + (Cr.pool('en', S).n || 0) * 0.1 * sh);
+    };
+  }
+  C.DEC.md_idolCh = {
+    title: () => '개인 채널',
+    text: (S) => C.t(S, `개인 채널을 열고 싶다고 하자 소속사는 회사가 관리하는 조건으로 허락하겠다고 했습니다. 채널 수익의 40%는 회사 몫이고, 올리는 영상은 회사가 먼저 봅니다. 그룹 팬덤(국내 약 ${ko((Md.idolOf(S) || {}).dom)}명 · 해외 약 ${ko((Md.idolOf(S) || {}).intl)}명) 가운데 상당수가 바로 구독할 것입니다.`),
+    choices: () => [
+      { label: '회사 허락을 받고 연다', sub: '수익의 40%는 회사 몫', typ: true,
+        run: (S2) => { const id = Md.idolOf(S2); if (id) id.ch = 'share'; return C.ACTION.stream.run(S2); } },
+      { label: '지금은 열지 않는다', sub: '쓴 기회는 돌려받습니다', run: () => '개인 채널은 나중으로 미뤘습니다.' },
+    ],
+  };
+  // 협찬 제안: 지방의원은 겸직 신고를 하고 받는다
+  if (C.DEC.x_cr_sponsor) {
+    const tx0 = C.DEC.x_cr_sponsor.text;
+    C.DEC.x_cr_sponsor.text = (S, ctx) => tx0(S, ctx) + (Md.partTimeOffice(S) ? ' 지방의원은 겸직 신고를 하고 받아야 하며, 의정 활동과 이어지는 회사의 협찬은 받을 수 없습니다.' : '');
+  }
+
+  /* ================================================================ 211 팬덤(아이돌 그룹 팬 · 배우·선수를 아는 사람) */
+  /** 지금의 팬덤 { dom, intl } — 아이돌이면 그룹 팬덤, 그룹을 떠났으면 남은 개인 팬덤 */
+  Md.fandom = (S) => {
+    const id = Md.idolOf(S);
+    if (id) return { dom: id.dom, intl: id.intl };
+    const f = S.md && S.md.fan;
+    if (f && f.n > 0) return { dom: f.n * (f.dsh !== undefined ? f.dsh : 0.6), intl: f.n * (1 - (f.dsh !== undefined ? f.dsh : 0.6)) };
+    return { dom: 0, intl: 0 };
+  };
+  /** 채널을 열면 따라올 수 있는 구독자: 아이돌 팬덤 × 1.5(가볍게 좋아하는 사람 포함), 배우·선수는 그 사람을 아는 사람의 4% */
+  Md.fandomFans = (S) => {
+    const f = Md.fandom(S);
+    let n = (f.dom + f.intl) * 1.5;
+    if (H.jobIs(S, 'entertainer', 'athlete') && hasCr() && Cr.fameReach) n = Math.max(n, Cr.fameReach(S) * 0.04);
+    return n;
+  };
+
+  /* ================================================================ 211 아이돌 */
+  Md.idolOf = (S) => { const j = S.work && S.work.job; return j && j.id === 'entertainer' && j.idol ? j.idol : null; };
+  const isIdolJob = (S, j) => !!j && j.id === 'entertainer' && (j.aud === 'idol' || /아이돌/.test(j.title || ''));
+  const ALLOW = 2; // 정산 전 한 해 수당·행사비(보통 일꾼 벌이 몇 달 치)
+  /** 그룹 한 해 매출(앨범·공연·굿즈·광고): 국내 팬 1명당 보통 일꾼 벌이 0.04달 치, 해외 팬 0.03달 치(어림값) */
+  Md.idolRev = (S, id) => H.pay(S, id.dom * 0.04 + id.intl * 0.03);
+  /** 멤버 한 사람의 몫: 매출에서 제작·홍보비(절반)를 빼고 회사 몫(a)을 뺀 나머지를 멤버 수로 */
+  Md.idolShare = (S, id) => (Md.idolRev(S, id) * 0.5 * (1 - id.a)) / id.n;
+  const idolPay = (S, id) => H.pay(S, ALLOW) + (id.settled ? Md.idolShare(S, id) : 0);
+  const idolInit = (S, j) => {
+    const c = Wd.c(E.iso(S)), big = !j.small;
+    const sc = U.clamp(Math.sqrt(((c.pop || 5e7) * (c.internet || 60)) / 100 / 4e7), 0.3, 3);
+    const tal = (H.talent(S, 'music') + H.talent(S, 'charm')) / 2;
+    const dom = Math.round(Math.exp(U.normal(Math.log(big ? 6000 : 1800) + (tal - 65) / 25, 1.0)) * sc);
+    const iF = E.iso(S) === 'KOR' ? Math.exp(U.normal(0, 0.7)) : ['JPN', 'CHN'].includes(E.iso(S)) ? 0.3 * Math.exp(U.normal(0, 0.6)) : 0.5 * Math.exp(U.normal(0, 0.7));
+    j.idol = { m0: S.ageM, n: U.randInt(4, 9), big, dom, intl: Math.round(dom * iF), debt: Math.round(H.pay(S, big ? U.randInt(60, 110) : U.randInt(18, 45))),
+      a: big ? 0.7 : 0.6, settled: false, endM: S.ageM + 84, chPol: U.chance(0.8) ? 'share' : 'ban', ch: null, hits: S.flags.hits || 0, iso: E.iso(S) };
+    j.title = '아이돌 가수';
+    j.aud = 'idol';
+    j.pay = idolPay(S, j.idol);
+    return C.t(S, `${j.idol.n}인조 그룹으로 활동을 시작했습니다. 데뷔 초에는 회사가 먼저 쓴 연습·제작비(약 ${fmt(S, j.idol.debt)}, 한 사람 몫)를 활동 수입으로 갚는 '정산 전' 기간이라 받는 돈은 수당 정도입니다.`);
+  };
+  const idolYear = (S, j) => {
+    const id = j.idol, yrs = (S.ageM - id.m0) / 12;
+    if (id.iso && id.iso !== E.iso(S)) { id.debt = Ec.conv(id.debt, id.iso, E.iso(S)); id.iso = E.iso(S); }
+    // 팬덤: 데뷔 초 몇 해는 커지고, 여섯 해쯤부터 줄어든다. 큰 작품의 성공(core_star_hit)은 팬덤을 크게 키운다
+    const tal = (H.talent(S, 'music') + H.talent(S, 'charm')) / 2;
+    let g = Math.exp(U.normal((yrs < 3 ? 0.18 : yrs < 6 ? 0.02 : -0.15) + (tal - 65) / 200, 0.3));
+    const hits = S.flags.hits || 0;
+    if (hits > id.hits) { g *= 1.6; id.hits = hits; }
+    id.dom = Math.max(200, Math.round(id.dom * g));
+    id.intl = Math.max(0, Math.round(id.intl * g * Math.exp(U.normal(0.03, 0.2))));
+    if (!id.settled) {
+      id.debt = Math.max(0, id.debt - Md.idolShare(S, id));
+      if (id.debt <= 0) {
+        id.settled = true; id.setM = S.ageM;
+        const y = Math.max(1, Math.round((S.ageM - id.m0) / 12));
+        E.log(S, C.t(S, `데뷔 ${y}년 만에 첫 정산을 받았습니다. 회사가 먼저 쓴 연습·제작비를 활동 수입으로 다 갚아, 이제 번 만큼 나눠 받습니다(앞으로 한 해 약 ${fmt(S, idolPay(S, id))}).`), 'milestone');
+        if (hasCr()) Cr.honor(S, 'award', '아이돌 첫 정산');
+      }
+    }
+    j.pay = idolPay(S, id);
+    if (S.ageM >= id.endM && !S.queue.some((q) => q.id === 'md_idolEnd')) E.ask(S, 'md_idolEnd', {});
+  };
+  // 오디션 합격 바로 그 달부터 아이돌 수입으로(practice.js 는 직업을 준 뒤에 aud 를 붙인다)
+  if (hasPr() && Pr.doAudition) {
+    const da0 = Pr.doAudition;
+    Pr.doAudition = (S, aid) => { const r = da0(S, aid); const j = S.work.job; return j && !j.idol && isIdolJob(S, j) ? `${r} ${idolInit(S, j)}` : r; };
+  }
+  C.DEC.md_idolEnd = {
+    title: () => '계약이 끝나 갑니다',
+    text: (S) => {
+      const id = Md.idolOf(S) || {};
+      return C.t(S, `소속사와 맺은 ${Math.round(((S.ageM - (id.m0 || S.ageM)) / 12))}년 계약이 끝나 갑니다. 그룹 팬덤은 국내 약 ${ko(id.dom)}명 · 해외 약 ${ko(id.intl)}명입니다. ${id.settled ? `정산을 받고 있고 회사 몫은 ${Math.round((id.a || 0) * 100)}%입니다.` : `아직 정산 전입니다(남은 연습·제작비 약 ${fmt(S, id.debt)}).`}`);
+    },
+    choices: (S) => {
+      const id = Md.idolOf(S) || {};
+      const big = (id.dom || 0) + (id.intl || 0) >= 30000;
+      return [
+        { label: '재계약한다', sub: '회사 몫이 줄고 계약이 5년 늘어납니다', typ: big,
+          run: (S2) => { const d = Md.idolOf(S2); if (!d) return null; d.a = Math.max(0.3, d.a - 0.2); d.endM = S2.ageM + 60; if (!d.settled) { d.debt *= 0.5; } S2.work.job.pay = idolPay(S2, d); return C.t(S2, `재계약을 맺었습니다. 회사 몫은 ${Math.round(d.a * 100)}%로 줄었습니다.`); } },
+        { label: '그룹 활동을 마무리하고 솔로 가수로 나선다', sub: '팬 일부가 따라옵니다',
+          run: (S2) => {
+            const d = Md.idolOf(S2), j = S2.work.job;
+            if (!d || !j) return null;
+            const n = (d.dom + d.intl) * 0.35;
+            delete j.idol;
+            j.title = '가수'; j.aud = 'singer';
+            j.pay = H.pay(S2, ALLOW) + (H.pay(S2, n * 0.035) * 0.5 * 0.5);
+            MD(S2).fan = { n, m: S2.ageM, dsh: d.dom / Math.max(1, d.dom + d.intl) };
+            return C.t(S2, `그룹 활동을 마무리하고 솔로 가수로 나섰습니다. 그룹 시절 팬 약 ${ko(n)}명이 계속 응원하고 있습니다.`);
+          } },
+        { label: '연예계를 떠난다', sub: '다른 길을 찾습니다', typ: !big,
+          run: (S2) => {
+            const d = Md.idolOf(S2);
+            if (d) MD(S2).fan = { n: (d.dom + d.intl) * 0.2, m: S2.ageM, dsh: d.dom / Math.max(1, d.dom + d.intl) };
+            E.loseJob(S2, 'quit');
+            return C.t(S2, '계약을 끝으로 연예계를 떠났습니다. 무대는 그리울 것입니다.');
+          } },
+      ];
+    },
+  };
+  // 아이돌 명성은 그룹 인기에서: 국내 팬덤 1만 22 · 10만 40 · 100만 58
+  if (hasCr() && Cr.fameTarget) {
+    const ft0 = Cr.fameTarget;
+    Cr.fameTarget = (S) => {
+      const r = ft0(S), id = Md.idolOf(S);
+      if (id) {
+        const v = U.clamp(18 * Math.log10(Math.max(10, id.dom + 0.3 * id.intl)) - 50, 8, 80);
+        r.src.push(['그룹 인기', v]); r.src.sort((a, b) => b[1] - a[1]); r.v = r.src[0][1];
+      }
+      return r;
+    };
+  }
+
+  /* ================================================================ 211 미성년이 번 돈 */
+  /** 미성년 연예인 수입 가운데 법으로 묶어 두는 몫 */
+  const KID_LAW = {
+    USA: { r: 0.15, ko: '미국 쿠건법(캘리포니아·뉴욕 등): 미성년 연예인 수입의 15%를 성인이 될 때까지 신탁 계좌에 묶어 둡니다' },
+    FRA: { r: 0.3, ko: '프랑스 노동법: 미성년 출연료의 일부를 성인이 될 때까지 예금공탁금고에 맡깁니다' },
+  };
+  Md.kidLaw = (S) => KID_LAW[E.iso(S)] || null;
+  const kidOf = (S) => {
+    const m = MD(S);
+    if (!m.kid) m.kid = { yNow: 0, yLast: 0, tot: 0, trust: 0, held: 0, hhY: 0, iso: E.iso(S) };
+    const k = m.kid;
+    if (k.iso !== E.iso(S)) { for (const x of ['yNow', 'yLast', 'tot', 'trust', 'held', 'hhY']) k[x] = Ec.conv(k[x] || 0, k.iso, E.iso(S)); k.iso = E.iso(S); }
+    return k;
+  };
+  const guard = (S) => (S.fam.father.alive || S.fam.mother.alive ? '부모님' : '보호자');
+  /** 이번 달 내 수입의 행방(engine.js 가 25%를 내 돈에 넣은 뒤): 법으로 묶는 몫 · 보호자가 모아 두는 몫 · 살림 */
+  Md.kidSplit = (S, own) => {
+    const wm = Wd.workerMedian(E.iso(S));
+    const rest = own * 0.75;
+    const law = Md.kidLaw(S), j = S.work.job;
+    const show = (j && ['entertainer', 'athlete', 'streamer'].includes(j.id) ? j.pay : 0) + ((S.inc2 && S.inc2.stream) || 0);
+    const tr = law ? Math.min(rest, law.r * show) : 0;
+    const big = U.clamp((own / wm - 0.3) / 2, 0, 0.6) * (0.6 + 0.6 * (S.fam.famP || 0.5));
+    const held = (rest - tr) * Math.min(0.7, big);
+    return { own: own * 0.25, tr, held, hh: rest - tr - held };
+  };
+  const kidMonth = (S) => {
+    const own = S.income || 0;
+    if (!(own > 0)) return;
+    const k = kidOf(S), sp = Md.kidSplit(S, own);
+    k.yNow += own / 12; k.tot += own / 12;
+    k.trust += sp.tr / 12; k.held += sp.held / 12; k.hhY += sp.hh / 12;
+  };
+  const kidYear = (S) => {
+    const k = S.md && S.md.kid;
+    if (!k) return;
+    kidOf(S);
+    k.yLast = k.yNow; k.yNow = 0;
+    // 아이가 번 돈이 살림에 크게 보태지면 집안 형편이 오른다
+    const hhNeed = (S.fam.cons || 1) * Wd.payLvl(E.iso(S)) * Math.max(1, S.fam.size || 1);
+    if (!S.indep && k.hhY > 0.3 * hhNeed) S.fam.famP = Math.min(0.97, (S.fam.famP || 0.5) + Math.min(0.05, 0.015 * Math.log2(k.hhY / (0.3 * hhNeed)) + 0.01));
+    k.hhY = 0;
+    const wm = Wd.workerMedian(E.iso(S));
+    if (!k.bigLog && k.yLast >= wm && E.age(S) < 19) {
+      k.bigLog = true;
+      const sp = Md.kidSplit(S, k.yLast);
+      E.log(S, C.t(S, `한 해 동안 번 돈이 약 ${U.j(fmt(S, k.yLast), '으로')} 이 나라 보통 일꾼의 한 해 벌이를 넘었습니다. 내 몫 ${fmt(S, sp.own)} · 살림 ${fmt(S, sp.hh)} · ${U.j(guard(S), '이')} 모아 두는 몫 ${fmt(S, sp.held)}${sp.tr > 0 ? ` · 신탁 ${fmt(S, sp.tr)}` : ''}.`), 'good');
+    }
+  };
+  const kidFundAsk = (S) => {
+    const k = S.md && S.md.kid;
+    if (!k || S.queue.length) return;
+    kidOf(S);
+    const tot = (k.trust || 0) + (k.held || 0);
+    if (tot <= 0) return;
+    if (tot < H.pay(S, 0.3)) { S.money += tot; k.trust = 0; k.held = 0; return; }
+    const par = S.fam.father.alive || S.fam.mother.alive;
+    const pRow = U.clamp(0.06 * ((S.fam.famP || 0.5) < 0.3 ? 2 : 1) * (k.held > H.pay(S, 12) ? 1.5 : 1), 0, 0.2);
+    const spent = k.held > 0 && U.chance(pRow) ? Math.round(k.held * (0.3 + 0.4 * U.rand())) : 0;
+    const ctx = { tr: Math.round(k.trust), held: Math.round(k.held), spent, par };
+    k.trust = 0; k.held = 0;
+    E.ask(S, 'md_kidFund', ctx);
+  };
+  C.DEC.md_kidFund = {
+    title: () => '맡겨 두었던 돈',
+    text: (S, ctx) => {
+      const g = ctx.par ? '부모님' : '보호자';
+      const law = Md.kidLaw(S);
+      const parts = [];
+      if (ctx.tr > 0) parts.push(`신탁 계좌 ${fmt(S, ctx.tr)}${law ? `(${law.ko})` : ''}`);
+      if (ctx.held > 0) parts.push(`${U.j(g, '이')} 맡아 두신 돈 ${fmt(S, ctx.held)}`);
+      const head = `어릴 때 번 돈 가운데 맡겨 두었던 몫을 받을 때가 되었습니다. ${parts.join(' · ')}.`;
+      if (ctx.spent > 0) return C.t(S, `${head} 그런데 ${U.j(g, '이')} 맡아 두신 돈 가운데 약 ${U.j(fmt(S, ctx.spent), '이')} 집안 빚과 살림에 이미 쓰였다는 것을 알게 되었습니다.`);
+      return C.t(S, head);
+    },
+    choices: (S, ctx) => {
+      const g = ctx.par ? '부모님' : '보호자';
+      const bumpPar = (S2, d) => { if (!hasPp() || !ctx.par) return; for (const k of ['father', 'mother']) { const o = S2.fam[k]; if (o && o.alive && o.close !== undefined) Pp.bump(S2, o, k, d); } };
+      if (ctx.spent > 0) {
+        const left = ctx.tr + ctx.held - ctx.spent;
+        return [
+          { label: '남은 돈만 받고 넘어간다', typ: true, run: (S2) => { S2.money += left; bumpPar(S2, -3); E.stat(S2, 'happy', -4); return C.t(S2, `남은 ${U.j(fmt(S2, left), '을')} 받았습니다. 쓰인 돈은 집안을 위해 쓰였다고 여기기로 했지만 마음 한구석이 서운했습니다.`); } },
+          { label: `${g}께 따져 묻는다`, sub: '일부를 돌려받을 수도 있지만 사이가 멀어질 수 있습니다',
+            run: (S2) => {
+              if (U.chance(0.5)) { const back = Math.round(ctx.spent * 0.5); S2.money += left + back; bumpPar(S2, -6); E.stat(S2, 'happy', -3); return C.t(S2, `한참 이야기한 끝에 쓰인 돈 가운데 ${U.j(fmt(S2, back), '을')} 몇 해에 걸쳐 돌려받기로 했습니다. 한동안 집 안 공기가 무거웠습니다.`); }
+              S2.money += left; bumpPar(S2, -12); E.stat(S2, 'happy', -7);
+              return C.t(S2, '말다툼만 커졌고 돈은 돌려받지 못했습니다. 한동안 서로 말을 아꼈습니다.');
+            } },
+        ];
+      }
+      const out = [{ label: '내 통장으로 옮긴다', typ: true, run: (S2) => { S2.money += ctx.tr + ctx.held; E.stat(S2, 'happy', 3); return C.t(S2, `어릴 때 번 돈 ${U.j(fmt(S2, ctx.tr + ctx.held), '을')} 받았습니다. ${ctx.held > 0 ? `${U.j(g, '이')} 그동안 차곡차곡 모아 두셨습니다.` : '성인이 되어 신탁이 풀렸습니다.'}`); } }];
+      if (ctx.par) out.push({ label: '일부를 부모님께 드린다', sub: '받은 돈의 5분의 1', run: (S2) => { const amt = ctx.tr + ctx.held, give = Math.round(amt * 0.2); S2.money += amt - give; bumpPar(S2, 6); E.stat(S2, 'happy', 4); return C.t(S2, `받은 돈 가운데 ${U.j(fmt(S2, give), '을')} 그동안 고생하신 부모님께 드렸습니다. 부모님이 한참 말을 잇지 못하셨습니다.`); } });
+      return out;
+    },
+  };
+  // 독립하면(결혼 등으로 열여덟 살 전에 독립해도) 맡겨 둔 돈을 받는다
+  if (E.becomeIndependent && !E.becomeIndependent._md) {
+    const bi0 = E.becomeIndependent;
+    const bi = (S) => { const was = S.indep; bi0(S); if (!was && S.indep) kidFundAsk(S); };
+    bi._md = true;
+    E.becomeIndependent = bi;
+  }
+  /** 화면: 독립 전 맨 위 한 줄에 덧붙임(' · 내 돈 … · 올해 번 돈 …') */
+  Md.topKid = (S) => {
+    if (S.indep || E.age(S) < 10) return '';
+    const k = S.md && S.md.kid;
+    const earned = k && k.yNow > 0 ? k.yNow : 0;
+    if (S.money < H.pay(S, 0.05) && !earned) return '';
+    return ` · 내 돈 ${Wd.money(E.iso(S), Math.max(0, S.money))}${earned ? ` · 올해 번 돈 ${Wd.money(E.iso(S), earned)}` : ''}`;
+  };
+  /** 화면: 돈 탭 '부모님 집 살림' 표에 넣는 줄 */
+  Md.kidRows = (S) => {
+    if (S.indep) return '';
+    const k = S.md && S.md.kid, M = (x) => Wd.money(E.iso(S), x), out = [];
+    const own = S.income || 0;
+    if (k && (k.yNow > 0 || k.yLast > 0)) out.push(`<tr><td>올해 번 돈<small>지난해 ${M(k.yLast || 0)}</small></td><td>${M(k.yNow || 0)}</td></tr>`);
+    if (own > 0 && E.age(S) < 18) {
+      const sp = Md.kidSplit(S, own), t = own || 1, P = (x) => Math.round((100 * x) / t);
+      out.push(`<tr><td>번 돈의 행방<small>내 몫 ${P(sp.own)}% · 살림 ${P(sp.hh)}%${sp.held > 0 ? ` · ${U.j(guard(S), '이')} 모아 둠 ${P(sp.held)}%` : ''}${sp.tr > 0 ? ` · 신탁 ${P(sp.tr)}%` : ''}</small></td><td>한 해 ${M(own)}</td></tr>`);
+    }
+    if (k && k.trust + k.held > 0) {
+      const law = Md.kidLaw(S);
+      out.push(`<tr><td>맡겨 둔 돈<small>${k.trust > 0 && law ? `신탁 ${M(k.trust)} — ${law.ko}. ` : ''}${k.held > 0 ? `${U.j(guard(S), '이')} 관리하는 돈 ${M(k.held)}. ` : ''}성인이 되면 받습니다</small></td><td>${M(k.trust + k.held)}</td></tr>`);
+    }
+    return out.join('');
+  };
+
+  /* ================================================================ 213·214 음악 */
+  const musOf = (S) => {
+    const m = MD(S);
+    if (!m.mus) m.mus = { rep: S.art && hasAr() && Ar.mainKind && Ar.mainKind(S) === 'music' ? S.art.rep || 0 : 0, lis: 0, yBest: 0 };
+    return m.mus;
+  };
+  Md.musRep = (S) => (S.md && S.md.mus ? S.md.mus.rep : 0);
+  const musRepUp = (S, n) => { const m = musOf(S); m.rep = U.clamp(m.rep + n, 0, 100); };
+  /** 데뷔한(프로) 음악인: 가수·아이돌·뮤지컬 배우·연주자, 또는 음반사와 계약한 사람 */
+  Md.proMusic = (S) => {
+    const j = S.work && S.work.job;
+    if (j && j.id === 'entertainer' && (['idol', 'singer', 'musical', 'player'].includes(j.aud) || /가수|아이돌|연주자|뮤지컬/.test(j.title || ''))) return true;
+    const dl = hasAr() && Ar.deal ? Ar.deal(S) : null;
+    return !!(dl && dl.k === 'music');
+  };
+  /** 홍보하는 힘(재생 수 배수): 큰 기획사 2.5 · 작은 기획사 1.6 · 그 밖의 데뷔 가수 1.8 */
+  const promoOf = (S) => { const id = Md.idolOf(S); if (id) return id.big ? 2.5 : 1.6; return H.jobIs(S, 'entertainer') ? 1.8 : 1; };
+  /** 청취자층: 지난 곡을 들은 사람 + 팬덤 */
+  Md.listeners = (S) => { const f = Md.fandom(S); return { lis: musOf(S).lis, fan: f.dom + f.intl }; };
+  // 작곡 실력(노래·악기와 따로): 연습하기·레슨에 '작곡'이 생긴다
+  if (hasPr() && !Pr.KINDS.compose) {
+    Pr.KINDS.compose = { ko: '작곡', talent: 'music', hobbies: [] };
+    Pr.USE.compose = '작곡·음원의 완성도(작품 만들기 → 작곡·음원)';
+  }
+  /** 이번 곡에 쓰인 실력: 작곡 55% + 가창 45%. 작곡을 따로 연습하지 않았어도 노래·악기 실력의 4분의 3쯤은 곡을 짓는 데 쓰인다 */
+  Md.songParts = (S) => {
+    const voc = Pr.lvl(S, 'music'), cOwn = Pr.lvl(S, 'compose'), comp = Math.max(cOwn, 0.75 * voc);
+    const tal = H.talent(S, 'music'), ch = H.charm(S);
+    const skill = 0.55 * comp + 0.45 * voc;
+    const e = 0.3 * tal + 0.55 * skill + 0.15 * ch + 3 + 0.3 * Math.max(0, skill - 80);
+    const sd = 9 * (1 - 0.55 * U.clamp((skill - 60) / 40, 0, 1)); // 실력이 높을수록 운의 폭이 준다(실력 97이면 ±4~5)
+    const luck = U.normal(0, sd);
+    return { q: Math.round(U.clamp(e + luck, 1, 100)), comp: Math.round(comp), compOwn: cOwn >= 0.75 * voc, voc: Math.round(voc), tal: Math.round(tal), luck: Math.round(luck), sd: Math.round(sd) };
+  };
+  let lastParts = null;
+  if (hasAr() && hasPr()) {
+    const aq0 = Ar.aq;
+    Ar.aq = (S, k) => { if (k !== 'music') return aq0(S, k); const p = Md.songParts(S); lastParts = p; return p.q; };
+    const step0 = Ar.artStep;
+    Ar.artStep = (S, k) => {
+      if (k === 'music') { Pr.gain(S, 'compose', 2.5); Pr.effortUp(S, 'compose', 0.5); }
+      lastParts = null;
+      const n0 = S.works.length;
+      const r = step0(S, k);
+      if (k === 'music' && S.works.length > n0 - 1 && lastParts) { const w = S.works[S.works.length - 1]; if (w && w.k === 'music' && !w.qp) w.qp = lastParts; }
+      return r;
+    };
+  }
+  /** 첫해 재생 수(언어권·청취자층 빼고): 중앙값은 완성도 75까지 예전과 같고(8마다 e배) 그 위로는 5마다 e배, 흩어짐(로그 표준편차)은 완성도 78~95에서 1.9 → 1.3.
+   *  완성도 83: 중앙값 약 2.4만·100만 회 넘을 확률 약 1.5%(예전 1.3만·1.1%) · 90: 9.8만·약 6%(예전 3.2만·3.5%) · 95: 27만·약 15%(예전 5.9만·6.9%) */
+  const playMu = (q) => Math.log(400) + (q <= 75 ? (q - 55) / 8 : 20 / 8 + (q - 75) / 5);
+  const playSd = (q) => 1.9 - 0.6 * U.clamp((q - 78) / 17, 0, 1);
+  const poolF = (S) => { const pool = hasCr() ? Cr.pool(Cr.nativeLang(S), S).n : 5e7; return { pool, f: U.clamp(Math.pow(pool / 5e7, 0.3), 0.3, 3) }; };
+  /** 재생 수 한 번 굴리기(promo: 홍보 배수) */
+  Md.songPlays = (S, w, promo = 1) => {
+    const { pool, f } = poolF(S);
+    let n = Math.exp(U.normal(playMu(w.q), playSd(w.q))) * f; // 새로 찾아 듣는 사람
+    const L = Md.listeners(S);
+    n += L.lis * (2 + 3 * U.rand()) * (0.6 + w.q / 250); // 지난 곡을 듣던 사람은 새 곡도 몇 번씩
+    n += L.fan * (6 + 12 * U.rand()); // 팬덤은 발표하면 여러 번 듣는다
+    n += (S.stream ? S.stream.fans : 0) * (0.05 + U.rand() * 0.25) + (hasCr() ? Cr.fameReach(S) * 0.002 : 0);
+    n *= (hasAr() ? Ar.dealMult(S) : 1) * promo;
+    return Math.round(Math.min(n, pool * 0.3));
+  };
+  /** 화면용 예상 재생 범위(가운데 절반) */
+  Md.playRange = (S, w, promo = 1) => {
+    const { f } = poolF(S), L = Md.listeners(S), sd = playSd(w.q);
+    const base = (L.lis * 3.5 * (0.6 + w.q / 250) + L.fan * 12 + (S.stream ? S.stream.fans * 0.2 : 0)) * (hasAr() ? Ar.dealMult(S) : 1) * promo;
+    const m = Math.exp(playMu(w.q)) * f * (hasAr() ? Ar.dealMult(S) : 1) * promo;
+    const r = (x) => { const p = Math.pow(10, Math.floor(Math.log10(Math.max(10, x))) - 1); return Math.round(x / p) * p; };
+    return [r(base + m * Math.exp(-0.674 * sd)), r(base + m * Math.exp(0.674 * sd))];
+  };
+  /** 음원 발표(음악만 — 다른 종류의 영상·작품은 arts.js 그대로) */
+  Md.release = (S, w, promo = 1) => {
+    if (!w.out) H.ach(S, 'art_debut');
+    w.out = 'release';
+    const n = Md.songPlays(S, w, promo);
+    w.plays = n;
+    const rpm = hasCr() ? Cr.pool(Cr.nativeLang(S), S).rpm : 1;
+    w.r = (n * 0.004 * U.clamp(rpm / 4.5, 0.08, 1.1)) / Wd.priceLevel(E.iso(S));
+    const id = Md.idolOf(S);
+    if (id) w.r *= 0.3; // 소속사 음원은 회사·작곡가 몫을 빼면 부른 사람 몫이 적다
+    const m = musOf(S);
+    // 들은 사람 가운데 일부가 '내 음악을 듣는 사람'으로 남는다(잘 만든 곡일수록 많이)
+    m.lis = Math.round(m.lis + n * U.clamp(0.03 * Math.pow(w.q / 70, 2), 0.005, 0.08));
+    m.yBest = Math.max(m.yBest || 0, n);
+    H.fameUp(S, U.clamp(Math.log10(Math.max(1, n)) - 4, 0, 4));
+    let t;
+    if (n >= 1e6) {
+      w.hit = true; musRepUp(S, 20); if (S.art) S.art.rep = U.clamp((S.art.rep || 0) + 5, 0, 100); H.fameUp(S, 8); E.stat(S, 'happy', 15);
+      H.ach(S, 'hit_song'); if (hasCr()) Cr.honor(S, 'award', `${Ar.wt(w)} 음원 차트 진입`);
+      t = `노래가 크게 퍼져 음원 차트에 올랐습니다! 첫해에만 ${ko(n)}번 재생되었습니다.`;
+    } else if (n >= 1e5) { musRepUp(S, 6); E.stat(S, 'happy', 10); t = `입소문을 타 ${ko(n)}번 재생되었습니다.`; }
+    else if (n >= 3000) { musRepUp(S, 1); E.stat(S, 'happy', 4); t = `${ko(n)}번 재생되었습니다. 들은 사람 몇몇이 보내 준 응원이 큰 힘이 되었습니다.`; }
+    else { E.stat(S, 'happy', -2); t = `들은 사람은 ${ko(n)}명 남짓이었습니다.`; }
+    return `${Ar.wt(w)}${U.j(w.t, '을').slice(w.t.length)} 음원으로 발표했습니다. ${t}${w.r >= H.pay(S, 0.05) ? ` 음원 수입은 한 해 약 ${fmt(S, w.r)}입니다.` : ''}`;
+  };
+  /** 프로의 발매: 소속사 홍보 + 음악 방송 순위 */
+  Md.proRelease = (S, w) => {
+    let t = Md.release(S, w, promoOf(S));
+    const n = w.plays || 0, f = Md.listeners(S).fan;
+    const p1 = U.clamp(0.25 * (Math.log10(Math.max(1, n + f * 20)) - 5) + (w.q - 70) / 60, 0, 0.75);
+    if (U.chance(p1)) {
+      musRepUp(S, 5); H.fameUp(S, 3); E.stat(S, 'happy', 8);
+      if (hasCr()) Cr.honor(S, 'award', `${Ar.wt(w)} 음악 방송 1위`);
+      t += ' 음악 방송 순위 프로그램에서 1위에 올랐습니다!';
+    } else t += n >= 1e5 ? ' 음악 방송 무대에 여러 번 올랐습니다.' : ' 음악 방송 무대에 한두 번 올랐지만 순위에는 들지 못했습니다.';
+    return t;
+  };
+  /** 음악 작품에는 음악 이름값을 잠시 빌려 쓴다(공모전·공연 — arts.js 는 S.art.rep 하나만 본다). 오른 몫은 음악 이름값으로 */
+  const withMusRep = (S, fn) => {
+    if (!S.art) return fn();
+    const a0 = S.art.rep || 0, mr = Md.musRep(S);
+    S.art.rep = mr;
+    let r;
+    try { r = fn(); } finally {
+      const d = (S.art.rep || 0) - mr;
+      S.art.rep = U.clamp(a0 + Math.max(0, d) * 0.3, 0, 100);
+      musRepUp(S, d);
+    }
+    return r;
+  };
+  if (hasAr()) {
+    const ct0 = Ar.contest, stg0 = Ar.stage, rel0 = Ar.release;
+    Ar.contest = (S, w) => (w && w.k === 'music' ? withMusRep(S, () => ct0(S, w)) : ct0(S, w));
+    Ar.stage = (S, w) => (w && w.k === 'music' ? withMusRep(S, () => stg0(S, w)) : stg0(S, w));
+    Ar.release = (S, w) => (w && w.k === 'music' ? C.t(S, Md.release(S, w)) : rel0(S, w));
+    // 작품 창: 음악은 '이번 곡에 쓰인 실력'·음악 이름값·예상 재생, 데뷔한 사람은 가요제 대신 발매·음악 방송
+    const D = C.DEC.ar_artShow;
+    if (D) {
+      const tx0 = D.text, ch0 = D.choices;
+      const curW = (S, ctx) => S.works[ctx.wi] || S.works[S.works.length - 1];
+      D.text = (S, ctx) => {
+        const w = curW(S, ctx);
+        if (!w || w.k !== 'music') return tx0(S, ctx);
+        const p = w.qp, tl = S.talentSeen && S.talentSeen.music;
+        const used = p ? ` 이번 곡에 쓰인 실력: 작곡 ${p.comp}${p.compOwn ? '' : '(노래·악기 실력에서 빌림 — 연습하기의 작곡으로 따로 키울 수 있음)'} · 가창 ${p.voc} · 재능 ${tl ? p.tal : '아직 모름'} · 운 ${p.luck >= 0 ? '+' : '−'}${Math.abs(p.luck)}.` : '';
+        const mr = Md.musRep(S), L = Md.listeners(S);
+        const base = L.lis + L.fan >= 100 ? ` 내 음악을 찾아 듣는 사람 약 ${ko(L.lis + L.fan)}명.` : '';
+        const tip = Md.proMusic(S) ? '데뷔한 가수는 소속사·음반사를 통해 발매하고 음악 방송·공연으로 알립니다.' : '음원은 재생 수만큼 수입이 들어옵니다. 대부분의 곡은 몇백 번 재생에 그칩니다.';
+        return C.t(S, `작곡·음원 ${Ar.wt(w)}${U.j(w.t, '을').slice(w.t.length)} 완성했습니다. 완성도 ${w.q}${mr >= 1 ? `, 음악 이름값 ${Math.round(mr)}` : ''}.${used}${base} ${tip}`);
+      };
+      D.choices = (S, ctx) => {
+        const w = curW(S, ctx);
+        const out = ch0(S, ctx);
+        if (!w || w.k !== 'music') return out;
+        const net = H.internet(S) > 0.3 && !S.prison;
+        if (Md.proMusic(S)) {
+          const keep = out.filter((c) => /^간직/.test(c.label));
+          const rg = Md.playRange(S, w, promoOf(S));
+          const pro = [{ label: Md.idolOf(S) ? '소속사에서 음원·앨범으로 발매한다' : '음원·앨범으로 발매한다', sub: `${Md.idolOf(S) ? '회사가 홍보를 맡습니다 · ' : ''}예상 재생 약 ${ko(rg[0])}~${ko(rg[1])}회 · 음악 방송 순위`, typ: true, run: (S2, c2) => C.t(S2, Md.proRelease(S2, curW(S2, c2))) },
+            { label: '공연에서 먼저 선보인다', sub: '관객 반응 · 이름값', run: (S2, c2) => Ar.stage(S2, curW(S2, c2)) }];
+          return (net ? pro : pro.slice(1)).concat(keep.map((c) => ({ ...c, typ: false })));
+        }
+        // 아마추어: 음원 발표에 예상 재생 범위를 보여 준다
+        return out.map((c) => {
+          if (!/^음원으로 발표/.test(c.label)) return c;
+          const rg = Md.playRange(S, w);
+          return { ...c, sub: `재생 수만큼 수입 · 예상 약 ${ko(rg[0])}~${ko(rg[1])}회` };
+        });
+      };
+    }
+    // 작품 목록 요약에 음악 이름값·청취자층
+    const av0 = Ar.view;
+    Ar.view = (S) => {
+      const v = av0(S) || {};
+      const m = S.md && S.md.mus;
+      if (m && (m.rep >= 1 || m.lis >= 100)) (v.sum = v.sum || []).push(`음악 이름값 ${Math.round(m.rep)}${m.lis >= 100 ? ` · 청취자층 약 ${ko(m.lis)}명` : ''}`);
+      return v;
+    };
+  }
+
+  /* ---------------- 노래하는 사람의 길(곡을 쓰지 않아도): 커버 영상·피처링·OST·오디션 방송 */
+  const voc = (S) => (hasPr() ? Pr.lvl(S, 'music') : 0);
+  const free = (S) => !S.prison && !S.mil && !(H.incap && H.incap(S));
+  C.addEvents([
+    {
+      id: 'md_cover', age: [12, 75], cd: 2,
+      rate: (S) => (S.stream && S.stream.on && S.stream.fans >= 50 && voc(S) >= 65 ? 0.12 + (voc(S) - 65) / 150 : 0),
+      when: (S) => !!S.stream && free(S),
+      text: '', fx: { happy: 2 },
+      run: (S) => {
+        const st = S.stream, v = voc(S);
+        let views = Math.round(Math.max(50, st.fans * (0.2 + 0.8 * U.rand()) * (1 + (v - 65) / 15)));
+        let viral = false;
+        if (v >= 85 && U.chance(0.12 + (v - 85) / 100)) { views *= U.randInt(8, 20); viral = true; }
+        const gain = Math.max(0, Math.round(Math.min(Cr.hardCap(st) - st.fans, views * 0.01 * Math.pow(v / 80, 2))));
+        st.fans += Math.max(0, gain);
+        const m = musOf(S); m.lis = Math.round(m.lis + views * 0.01);
+        if (viral) { H.fameUp(S, 2); musRepUp(S, 4); return `직접 부른 커버 영상이 크게 퍼졌습니다. ${ko(views)}번 재생되었고, 노래 실력이 화제가 되어 구독자가 ${ko(gain)}명 늘었습니다.`; }
+        return `직접 부른 커버 영상을 올렸습니다. ${ko(views)}번 재생되었고 구독자가 ${ko(gain)}명 늘었습니다.`;
+      },
+    },
+    {
+      id: 'md_feature', age: [16, 75], cd: 3,
+      rate: (S) => (voc(S) >= 80 && (Md.musRep(S) >= 15 || (S.fame || 0) >= 20 || (S.stream && S.stream.fans >= 30000)) ? 0.1 + (voc(S) - 80) / 100 : 0),
+      when: (S) => free(S) && H.internet(S) > 0.2,
+      init: (S, ctx) => { ctx.amt = Math.round(H.pay(S, U.clamp(0.4 + Md.musRep(S) / 25 + (S.fame || 0) / 40, 0.4, 6) * (0.7 + 0.6 * U.rand()))); },
+      title: '피처링 제안',
+      text: (S, ctx) => `노래를 잘 부른다는 이야기를 들은 한 프로듀서가 새 곡에 객원 보컬로 참여해 달라고 합니다. 사례는 약 ${fmt(S, ctx.amt)}입니다.`,
+      choices: [
+        { l: '참여한다', typ: true,
+          run: (S, ctx) => {
+            Ec.earn(S, 'gig', ctx.amt || H.pay(S, 0.5));
+            const plays = Math.round(Math.exp(U.normal(Math.log(3e4) + (voc(S) - 80) / 8 + Md.musRep(S) / 30, 1.2)));
+            const m = musOf(S); m.lis = Math.round(m.lis + plays * 0.02);
+            musRepUp(S, 4); H.fameUp(S, 1); E.stat(S, 'happy', 5);
+            if (plays >= 1e6) { musRepUp(S, 10); H.fameUp(S, 4); if (hasCr()) Cr.honor(S, 'award', '피처링 곡 음원 차트 진입'); return `객원 보컬로 참여한 곡이 크게 퍼졌습니다. 첫해 ${ko(plays)}번 재생되었고, 목소리의 주인공이 누구냐는 말이 돌았습니다.`; }
+            return `객원 보컬로 참여한 곡이 ${ko(plays)}번 재생되었습니다. 크레디트에 이름이 실렸습니다.`;
+          } },
+        { l: '지금은 사양한다', t: '정중히 사양했습니다.' },
+      ],
+    },
+    {
+      id: 'md_ost', age: [16, 75], cd: 4,
+      rate: (S) => (voc(S) >= 85 && H.dev(S) >= 2 && ((S.fame || 0) >= 25 || Md.musRep(S) >= 25) ? 0.08 : 0),
+      when: (S) => free(S),
+      init: (S, ctx) => { ctx.amt = Math.round(H.pay(S, U.clamp(1 + (S.fame || 0) / 20 + Md.musRep(S) / 25, 1, 8))); },
+      title: 'OST 제안',
+      text: (S, ctx) => `드라마 제작사에서 주제곡을 불러 달라고 합니다. 사례는 약 ${fmt(S, ctx.amt)}입니다.`,
+      choices: [
+        { l: '부른다', typ: true,
+          run: (S, ctx) => {
+            Ec.earn(S, 'gig', ctx.amt || H.pay(S, 1));
+            const plays = Math.round(Math.exp(U.normal(Math.log(2e5) + (voc(S) - 85) / 10 + (S.fame || 0) / 60, 1.0)));
+            const m = musOf(S); m.lis = Math.round(m.lis + plays * 0.02);
+            musRepUp(S, 6); H.fameUp(S, 2); E.stat(S, 'happy', 6);
+            if (plays >= 1e6) { musRepUp(S, 10); H.fameUp(S, 5); if (hasCr()) Cr.honor(S, 'award', '드라마 주제곡 음원 차트 진입'); return `드라마가 방영되자 주제곡도 함께 퍼졌습니다. 첫해 ${ko(plays)}번 재생되어 음원 차트에 올랐습니다.`; }
+            return `드라마 주제곡을 불렀습니다. 첫해 ${ko(plays)}번 재생되었습니다.`;
+          } },
+        { l: '지금은 사양한다', t: '일정이 맞지 않아 사양했습니다.' },
+      ],
+    },
+    {
+      id: 'md_audshow', age: [15, 32], cd: 6,
+      rate: (S) => (voc(S) >= 80 && !H.jobIs(S, 'entertainer') && H.dev(S) >= 1 ? 0.05 + (voc(S) - 80) / 200 : 0),
+      when: (S) => free(S) && !H.jobIs(S, 'politician', 'soldier', 'police'),
+      title: '오디션 방송 출연 제안',
+      text: '노래 오디션 방송 제작진이 노래 영상을 보고 출연을 제안했습니다. 몇 달 동안 방송 일정에 매여 지내야 합니다.',
+      choices: [
+        { l: '출연한다', p: (S) => U.clamp(sig((voc(S) * 0.7 + H.charm(S) * 0.3 - 85) / 5), 0.05, 0.85),
+          ok: { fx: { happy: 12 }, run: (S) => { H.fameUp(S, 12); musRepUp(S, 15); H.reveal(S, 'music'); if (hasCr()) Cr.honor(S, 'contest', '노래 오디션 방송 결승 진출'); E.ask(S, 'md_singerOffer', {}); return '결승까지 올랐습니다! 방송이 나갈 때마다 이름이 널리 알려졌습니다.'; } },
+          no: { fx: { happy: -2 }, run: (S) => { H.fameUp(S, 3); musRepUp(S, 4); return '중간에 떨어졌지만 무대 영상이 꽤 퍼졌습니다.'; } } },
+        { l: '지금은 사양한다', typ: true, t: '카메라 앞에 설 준비가 되지 않았다며 사양했습니다.' },
+      ],
+    },
+  ]);
+  C.DEC.md_singerOffer = {
+    title: () => '데뷔 제안',
+    text: (S) => C.t(S, `오디션 방송이 끝나자 기획사 몇 곳이 가수로 데뷔하자고 연락해 왔습니다.${S.work.job ? ` 지금 하는 ${S.work.job.title} 일은 그만두어야 합니다.` : ''}`),
+    choices: (S) => [
+      { label: '기획사와 계약하고 가수로 데뷔한다', typ: true,
+        run: (S2) => { H.setJob(S2, 'entertainer', 12 * Math.exp(U.normal(0.4, 0.9))); if (S2.work.job) { S2.work.job.title = '가수'; S2.work.job.aud = 'singer'; } H.ach(S2, 'star_debut'); if (hasCr()) Cr.honor(S2, 'audition', '가수 데뷔(오디션 방송)'); return C.t(S2, '기획사와 계약하고 가수로 데뷔했습니다.'); } },
+      { label: '지금 하던 대로 지낸다', run: () => '데뷔 제안은 고맙게 사양했습니다. 노래는 좋아하는 일로 남겨 두기로 했습니다.' },
+    ],
+  };
+
+  /* ================================================================ 208 이름이 알려진 사람의 피해 */
+  /** 이름이 알려진 사람인가: 선출직 · 구독자 10만 명 넘는 방송인 · 명성 35 이상 */
+  Md.known = (S) => {
+    if (E.age(S) < 16) return null;
+    const j = S.work && S.work.job;
+    if (j && j.id === 'politician') return { k: 'pol', who: j.title || '정치인', t: (hasCr() && Cr.curTier(S)) || 1 };
+    if (S.stream && S.stream.fans >= 100000) return { k: 'cast', who: `구독자 ${ko(S.stream.fans)}명 방송인`, t: 0 };
+    if ((S.fame || 0) >= 35) return { k: 'star', who: hasCr() && Cr.fameLabel ? Cr.fameLabel(S.fame) : '이름이 알려진 사람', t: 0 };
+    return null;
+  };
+  const oopF = (S) => U.clamp((Wd.c(E.iso(S)).oop || 40) / 100, 0.05, 0.9);
+  /** 다친 정도: 1 가벼운 멍(68%) · 2 병원 치료(27%) · 3 입원(5%). 치료비(본인 부담)를 빼고 몸·마음에 남긴다 */
+  const injure = (S, sev) => {
+    let cost = 0;
+    if (sev === 2) cost = H.pay(S, 0.15 + 0.2 * U.rand()) * (0.3 + oopF(S));
+    if (sev === 3) cost = H.pay(S, 1 + 1.5 * U.rand()) * (0.15 + oopF(S));
+    if (cost > 0) E.addMoney(S, -cost);
+    E.stat(S, 'health', [0, -2, -4, -9][sev]); E.stat(S, 'happy', [0, -3, -4, -7][sev]);
+    if (S.crm) { S.crm.fear = U.clamp((S.crm.fear || 0) + 11, 0, 100); if (sev === 3) S.crm.trauma = U.clamp((S.crm.trauma || 0) + 8, 0, 100); }
+    return Math.round(cost);
+  };
+  const sevRoll = () => { const r = U.rand(); return r < 0.68 ? 1 : r < 0.95 ? 2 : 3; };
+  /** 보통 사람의 폭행 피해 한 줄(다친 정도·치료비·신고) */
+  const assaultLine = (S) => {
+    const sev = sevRoll(), cost = injure(S, sev), m = H.male(S);
+    let t;
+    if (sev === 1) t = m ? U.pick(['길에서 시비가 붙은 사람에게 맞아 얼굴에 멍이 들었습니다.', '술에 취한 사람이 이유 없이 주먹을 휘둘러 며칠 동안 몸이 쑤셨습니다.']) : U.pick(['밤길에 낯선 사람이 따라오며 위협해 겨우 가게 안으로 피했습니다.', '술에 취한 사람이 시비를 걸며 팔을 거칠게 붙잡아 한참을 떨었습니다.', '정류장에서 낯선 사람에게 거칠게 밀쳐 넘어져 손목에 멍이 들었습니다.']);
+    else if (sev === 2) t = `${m ? '길에서 시비가 붙은 사람에게 맞아' : '낯선 사람에게 거칠게 밀쳐 넘어져'} 병원에서 상처를 꿰매고 치료를 받았습니다(치료비 약 ${fmt(S, cost)}).`;
+    else t = `낯선 사람에게 폭행을 당해 크게 다쳤습니다. 며칠 동안 입원해 치료를 받았습니다(치료비 약 ${fmt(S, cost)}).`;
+    const L = Cm.law(E.iso(S));
+    const rp = U.clamp(((L.rep && L.rep.violent) || 30) / 100 * [0, 0.8, 1.3, 1.8][sev], 0.02, 0.95);
+    if (!U.chance(rp)) return t;
+    if (Cm.solved(S, 'violent')) { if (cost > 0) E.addMoney(S, cost * 0.5); return t + ' 신고한 지 며칠 만에 범인이 잡혔습니다.' + (cost > 0 ? ' 치료비 일부를 돌려받았습니다.' : ''); }
+    return t + ` 경찰에 신고했지만 범인은 잡히지 않았습니다. (${Cm.clrNote(S, 'violent')})`;
+  };
+  /** 정치적 동기 가능성: 집회 억압 정도(restrict.js assem)·살인율·자리 높이 */
+  const polMotiveP = (S, kn) => {
+    if (kn.k !== 'pol') return 0.05;
+    const assem = H.rx ? H.rx(S, 'assem') || 0 : 0;
+    return U.clamp(0.25 + 0.07 * assem + ((Wd.c(E.iso(S)).homic || 0) >= 10 ? 0.08 : 0) + (kn.t >= 3 ? 0.12 : 0), 0.15, 0.7);
+  };
+  Md.attackCtx = (S, kind, kn) => {
+    const ctx = { kind, k: kn.k, who: kn.who, t: kn.t, pol: U.chance(polMotiveP(S, kn)), sev: 0, cost: 0 };
+    if (kind === 'assault') { ctx.sev = sevRoll(); ctx.cost = injure(S, ctx.sev); }
+    else { E.stat(S, 'happy', -4); if (S.crm) S.crm.fear = U.clamp((S.crm.fear || 0) + 6, 0, 100); }
+    return ctx;
+  };
+  if (hasCm()) {
+    const v0 = Cm.victim;
+    Cm.victim = (S, k) => {
+      if (k !== 'assault' || !S.crm) return v0(S, k);
+      const kn = Md.known(S);
+      const book = () => { S.crm.v = S.crm.v || {}; S.crm.v.assault = (S.crm.v.assault || 0) + 1; if (Cm.onVictim) Cm.onVictim(S, 'assault'); };
+      if (kn && !S.queue.length && !S.prison) {
+        book();
+        E.ask(S, 'md_vipHurt', Md.attackCtx(S, 'assault', kn));
+        S.nextMajorM = S.ageM + 8;
+        return;
+      }
+      // 보통 사람: 큰 결정(시비 — crime.js)은 그대로, 기록 한 줄은 다친 정도를 나눈다
+      if (!S.queue.length && S.ageM >= (S.nextMajorM || 0) && U.chance(0.3) && C.DEC.x_cm_v_assault) {
+        book(); S.crm.fear = U.clamp((S.crm.fear || 0) + 11, 0, 100);
+        E.ask(S, 'x_cm_v_assault', {});
+        S.nextMajorM = S.ageM + 8;
+        return;
+      }
+      book();
+      E.log(S, C.t(S, assaultLine(S)), 'bad');
+    };
+  }
+  C.addEvents([
+    {
+      id: 'md_threat', age: [18, 95], cd: 6,
+      rate: (S) => { const kn = Md.known(S); if (!kn) return 0; if (kn.k === 'pol') return (0.04 + Math.min(0.06, (Wd.c(E.iso(S)).homic || 0) / 400)) * (kn.t >= 3 ? 2 : 1); return kn.k === 'cast' ? 0.03 + Math.min(0.03, S.stream.fans / 1e8) : 0.02; },
+      when: (S) => !!Md.known(S) && !S.prison,
+      text: '',
+      run: (S) => { const kn = Md.known(S); if (kn) E.ask(S, 'md_vipHurt', Md.attackCtx(S, 'threat', kn)); return ''; },
+    },
+  ]);
+  const WHERE = {
+    pol: ['지역 행사를 마치고 걸어서 돌아가던 길에', '거리에서 주민들에게 인사를 하던 중에', '사무실 앞에서'],
+    cast: ['촬영을 마치고 돌아가던 길에', '길에서 알아보고 다가온'],
+    star: ['일정을 마치고 차로 걸어가던 길에', '길에서 알아보고 다가온'],
+  };
+  C.DEC.md_vipHurt = {
+    title: (S, ctx) => (ctx.kind === 'threat' ? '협박' : '폭행 피해'),
+    text: (S, ctx) => {
+      const tail = ' 이름이 알려진 사람의 일이라 어떻게 하느냐에 따라 뒤따르는 일이 달라집니다.';
+      if (ctx.kind === 'threat') {
+        return C.t(S, (ctx.k === 'pol'
+          ? `${ctx.who}인 {N}의 사무실로 본인과 가족을 해치겠다는 협박 편지가 왔습니다. 집 주소까지 적혀 있었습니다.`
+          : `${ctx.who}인 {N}에게 집 주소를 안다며 해치겠다는 댓글과 메시지가 며칠째 이어졌습니다.`) + tail);
+      }
+      const w = U.pick(WHERE[ctx.k] || WHERE.star);
+      const hit = /다가온$/.test(w) ? `${w} 낯선 사람이 갑자기 휘두른 주먹에 맞았습니다.` : `${w} 낯선 사람이 휘두른 주먹에 맞았습니다.`;
+      const hurt = ctx.sev === 3 ? `크게 다쳐 며칠 동안 입원했습니다(치료비 약 ${fmt(S, ctx.cost)}).` : ctx.sev === 2 ? `넘어지며 다쳐 응급실에서 상처를 꿰맸습니다(치료비 약 ${fmt(S, ctx.cost)}).` : '얼굴에 멍이 들었습니다.';
+      return C.t(S, `${ctx.who}인 {N이} ${hit} ${hurt}${tail}`);
+    },
+    choices: (S, ctx) => {
+      const iso = E.iso(S);
+      const base = hasCm() && Cm.clearP ? Cm.clearP(iso, 'violent') : 0.4;
+      // 이름이 알려진 사람의 사건은 더 공들여 수사한다(공개하면 그 나라 검거율과 100% 사이의 3분의 1쯤, 조용히 신고하면 10분의 1쯤 더). 협박은 범인을 찾기가 더 어렵다
+      const pPub = U.clamp(base + (1 - base) * 0.35, 0.05, 0.92) * (ctx.kind === 'threat' ? 0.8 : 1);
+      const pQuiet = U.clamp(base + (1 - base) * 0.1, 0.03, 0.9) * (ctx.kind === 'threat' ? 0.8 : 1);
+      return [
+        { label: '경찰에 신고하고 공개한다', sub: `범인 검거 가능성 약 ${Math.round(pPub * 100)}% · 언론 보도`, typ: ctx.k === 'pol', run: (S2) => Md.vipOutcome(S2, ctx, 'public', pPub) },
+        { label: '조용히 신고만 한다', sub: `범인 검거 가능성 약 ${Math.round(pQuiet * 100)}%`, typ: ctx.k !== 'pol', run: (S2) => Md.vipOutcome(S2, ctx, 'quiet', pQuiet) },
+        { label: '그냥 넘어간다', sub: '일을 키우지 않습니다', run: (S2) => Md.vipOutcome(S2, ctx, 'pass', 0) },
+      ];
+    },
+  };
+  const motive = (ctx) => (ctx.pol
+    ? (ctx.kind === 'threat' ? ' 수사 결과, 정치적 반감을 품은 사람이 보낸 것으로 드러났습니다.' : ' 수사 결과, 정치적 반감을 품고 일부러 노린 범행으로 드러났습니다.')
+    : (ctx.kind === 'threat' ? ' 수사 결과, 앙심을 품은 사람이 보낸 것으로 드러났습니다.' : ' 술에 취한 사람의 우발적인 범행이었습니다.'));
+  Md.vipOutcome = (S, ctx, mode, pCatch) => {
+    const t = [], m = MD(S);
+    const natl = ctx.t >= 3 || (S.fame || 0) >= 50;
+    if (mode === 'pass') {
+      if (S.crm) { S.crm.fear = U.clamp((S.crm.fear || 0) + 6, 0, 100); S.crm.trauma = U.clamp((S.crm.trauma || 0) + 3, 0, 100); }
+      E.stat(S, 'happy', -4);
+      t.push('일을 키우고 싶지 않아 그냥 넘어갔습니다. 한동안 밤길이 두려웠습니다.');
+      if (ctx.k === 'pol' && ctx.kind === 'assault' && U.chance(0.2)) { H.fameUp(S, 1); t.push('그런데 지나가던 사람이 찍은 영상이 퍼져 결국 알려졌습니다. 걱정하는 말과 왜 신고하지 않았느냐는 말이 함께 나왔습니다.'); }
+      return C.t(S, t.join(' '));
+    }
+    const caught = U.chance(pCatch);
+    if (hasCm() && Cm.solved) { /* 통계는 crime.js 의 검거 기록과 따로 둔다 */ }
+    if (mode === 'public') {
+      t.push(`경찰에 신고하고 피해 사실을 알렸습니다. ${natl ? '전국 뉴스에' : '지역 신문과 방송에'} 사건이 보도되었습니다.`);
+      if (ctx.k === 'pol') t.push(ctx.pol ? '여러 정당이 한목소리로 정치 폭력을 규탄하는 성명을 냈고, 지지자와 동료 의원들의 위로가 이어졌습니다.' : '주민들과 동료 의원들의 위로 연락이 이어졌습니다.');
+      else t.push(ctx.k === 'cast' ? '구독자들의 걱정과 응원 댓글이 이어졌습니다.' : '팬들의 응원 글이 이어졌습니다.');
+      H.fameUp(S, ctx.pol ? 3 : 2); E.stat(S, 'social', 3); E.stat(S, 'happy', -2);
+      if (ctx.k === 'pol') m.sym = { v: ctx.pol ? 0.4 : 0.25, m: S.ageM };
+      if (ctx.k === 'cast' && S.stream) S.stream.fans = Math.round(Math.min(Cr.hardCap(S.stream), S.stream.fans * 1.02));
+    } else {
+      t.push('경찰에 조용히 신고만 했습니다.');
+      E.stat(S, 'happy', -3);
+      if (U.chance(ctx.k === 'pol' ? 0.3 : 0.15)) { t.push('며칠 뒤 이 일이 알려져 짧게 기사가 났습니다.'); H.fameUp(S, 1); if (ctx.k === 'pol') m.sym = { v: 0.1, m: S.ageM }; }
+    }
+    if (caught) {
+      t.push(`${mode === 'public' ? '며칠 만에' : '얼마 뒤'} ${ctx.kind === 'threat' ? '보낸 사람이' : '범인이'} 붙잡혔습니다.${motive(ctx)}`);
+      if (ctx.cost > 0) { E.addMoney(S, ctx.cost * 0.5); t.push('치료비 일부를 돌려받았습니다.'); }
+      if (S.crm) S.crm.fear = U.clamp((S.crm.fear || 0) - 5, 0, 100);
+    } else t.push(ctx.kind === 'threat' ? '보낸 사람은 아직 찾지 못했습니다.' : `범인은 아직 잡히지 않았습니다. (${hasCm() && Cm.clrNote ? Cm.clrNote(S, 'violent') : ''})`);
+    if (mode === 'public' && (ctx.pol || ctx.sev >= 2 || ctx.kind === 'threat' || !caught)) E.ask(S, 'md_vipSafe', { k: ctx.k, t: ctx.t });
+    else if (mode === 'quiet' && ctx.k === 'pol' && (ctx.pol || ctx.sev >= 2) && !caught) E.ask(S, 'md_vipSafe', { k: ctx.k, t: ctx.t });
+    return C.t(S, t.join(' '));
+  };
+  C.DEC.md_vipSafe = {
+    title: () => '안전 대책',
+    text: (S, ctx) => C.t(S, ctx.k === 'pol' ? '경찰이 신변 보호 방법을 함께 의논하자고 연락해 왔습니다. 주민들을 만나는 일을 멈출 수는 없지만, 가족도 불안해합니다.' : '경찰이 신변 보호 방법을 함께 의논하자고 연락해 왔습니다. 집 앞을 지나는 사람만 봐도 마음이 쓰입니다.'),
+    choices: (S, ctx) => {
+      const free = ctx.k === 'pol' && ctx.t >= 3; // 국회의원·국가 지도자는 국가가 경호를 붙인다
+      const cost = free ? 0 : U.clamp(H.dev(S) >= 2 ? 3 : 2, 1, 4);
+      return [
+        { label: '경찰에 집 앞 순찰을 요청한다', sub: '비용 없음', typ: true, run: (S2) => { if (S2.crm) S2.crm.fear = U.clamp(S2.crm.fear - 4, 0, 100); return C.t(S2, '한동안 집 앞에 경찰차가 서 있었습니다. 조금은 마음이 놓였습니다.'); } },
+        { label: free ? '경호를 받는다' : '사설 경호원을 둔다', sub: free ? '국가가 붙여 주는 경호 · 비용 없음' : `비용 약 ${H.amt(S, cost)}(한 해)`, disabled: !free && S.indep && Ec.liquid(S) < H.pay(S, cost),
+          run: (S2) => { if (!free) E.addMoney(S2, -H.pay(S2, cost)); if (S2.crm) S2.crm.fear = U.clamp(S2.crm.fear - 8, 0, 100); E.stat(S2, 'happy', -1); return C.t(S2, '경호원과 함께 다니기 시작했습니다. 마음은 놓이지만 자유가 줄었습니다.'); } },
+        { label: '하던 대로 지낸다', run: (S2) => C.t(S2, ctx.k === 'pol' ? '일정을 바꾸지 않았습니다. 주민들을 만나는 일을 멈출 수는 없다고 생각했습니다.' : '평소처럼 지내기로 했습니다.') },
+      ];
+    },
+  };
+  // 다음 선거: 피해를 공개한 뒤의 동정 여론(4~5년에 걸쳐 사라짐)
+  if (hasCr() && Cr.electP) {
+    const ep0 = Cr.electP;
+    Cr.electP = (S, t, incumbent) => {
+      const r = ep0(S, t, incumbent);
+      const s = S.md && S.md.sym;
+      if (!s || !(s.v > 0)) return r;
+      const v = s.v * Math.max(0, 1 - (S.ageM - s.m) / 60);
+      if (v <= 0.01) return r;
+      const lg = Math.log(Math.max(1e-4, r.p) / Math.max(1e-4, 1 - r.p)) + v;
+      r.p = U.clamp(sig(lg), 0.01, t === 4 ? 0.35 : t === 3 ? 0.8 : 0.95);
+      r.why = (r.why || []).concat([['피해 뒤 동정 여론', v]]);
+      return r;
+    };
+  }
+
+  /* ================================================================ 매달·해마다 */
+  E.hook('month', (S) => {
+    const j = S.work.job;
+    // 아이돌: 오디션·연습생 데뷔(한국 등에서 어린 나이에 가수로 데뷔하면 대개 아이돌 그룹)
+    if (j && j.id === 'entertainer' && !j.idol) {
+      if (!j.aud && !j.idolChk) { j.idolChk = true; if (IDOL_C.includes(E.iso(S)) && E.age(S) <= 22 && j.title === '가수') j.aud = 'idol'; }
+      if (isIdolJob(S, j)) E.log(S, idolInit(S, j), 'ev');
+    }
+    // 음악 이름값: 연예·음악 일을 하는 동안 명성과 활동 햇수가 쌓인다(214번)
+    if (Md.proMusic(S)) {
+      const m = musOf(S), id = Md.idolOf(S);
+      const yrs = j && j.since !== undefined ? (S.ageM - j.since) / 12 : 0;
+      const tgt = Math.min(85, 0.55 * (S.fame || 0) + 2.5 * yrs + (id ? Math.max(0, 5 * Math.log10(Math.max(1, id.dom + id.intl)) - 15) : 0));
+      if (m.rep < tgt) m.rep += (tgt - m.rep) * 0.03;
+    }
+    if (!S.indep && E.age(S) < 18) kidMonth(S);
+    else if (S.md && S.md.kid && (S.md.kid.trust > 0 || S.md.kid.held > 0) && !S.prison) kidFundAsk(S);
+  });
+  E.hook('year', (S) => {
+    if (!S.md) return;
+    kidYear(S);
+    const j = S.work.job;
+    if (j && j.idol) idolYear(S, j);
+    const m = S.md.mus;
+    if (m) {
+      // 연말 시상식(데뷔한 음악인): 올해 가장 많이 재생된 곡·팬덤
+      if (Md.proMusic(S)) {
+        const f = Md.listeners(S).fan, sc = Math.log10(Math.max(1, Math.max(m.yBest || 0, f * 10)));
+        const p = U.clamp((sc - 5.5) * 0.3, 0, 0.8);
+        if (U.chance(p)) {
+          const rookie = j && j.since !== undefined && S.ageM - j.since < 24;
+          const big = sc >= 7.3 && U.chance(0.3);
+          const prize = rookie ? '신인상' : big ? '대상' : '본상';
+          musRepUp(S, big ? 12 : 6); H.fameUp(S, big ? 8 : 4); E.stat(S, 'happy', 8);
+          if (hasCr()) Cr.honor(S, 'award', `연말 가요 시상식 ${prize}`);
+          E.log(S, C.t(S, `연말 가요 시상식에서 ${U.j(prize, '을')} 받았습니다. 무대에서 그동안 응원해 준 사람들의 이름을 불렀습니다.`), 'good');
+        }
+      }
+      m.yBest = 0;
+      m.lis = Math.round(m.lis * 0.88);
+      m.rep = Math.max(0, m.rep * 0.97 - 0.2);
+    }
+    const f = S.md.fan;
+    if (f && f.n > 0) { f.n = Math.round(f.n * 0.85); if (f.n < 50) delete S.md.fan; }
+  });
+  // 처음 보는 아이(옛 저장 포함)도 미성년 수입을 셀 수 있게
+  E.hook('ensure', (S) => { if (!S.md) S.md = {}; });
+  E.hook('move', (S) => { if (S.md && S.md.kid) kidOf(S); });
+  // 그룹을 떠나도(병·이직 등) 팬 일부는 남는다
+  E.hook('loseJob', (S, why, j) => {
+    if (!j || !j.idol) return;
+    const m = MD(S);
+    if (m.fan && m.fan.m === S.ageM) return;
+    m.fan = { n: (j.idol.dom + j.idol.intl) * 0.2, m: S.ageM, dsh: j.idol.dom / Math.max(1, j.idol.dom + j.idol.intl) };
+  });
+
+  /* ================================================================ 화면: 일과 활동 카드 */
+  if (hasCr() && Cr.view) {
+    const cv0 = Cr.view;
+    Cr.view = (S) => {
+      const v = cv0(S) || {};
+      const M = (x) => Wd.money(E.iso(S), x), rows = [];
+      const st = S.stream;
+      if (st && st.fans >= 1000) {
+        const z = Md.streamParts(S), P = Md.plat(S);
+        rows.push(['방송 수입', `광고 ${M(z.ads)} · 협찬 ${M(z.spon)}${Md.sponF(S) === 0 ? '(직책상 받지 않음)' : Md.sponF(S) < 1 ? '(겸직 신고 뒤 일부만)' : ''} · 후원 ${M(z.don)} · 멤버십·상품 ${M(z.mem)}${z.cut > 0 ? ` · 회사 몫 ${M(z.cut)}` : ''} (한 해)`]);
+        rows.push(['플랫폼', `${P.main} · 후원: ${P.live} · 한 달 조회 약 ${ko(z.views)}회`]);
+      }
+      const id = Md.idolOf(S), j = S.work.job;
+      if (id && j) {
+        rows.push(['그룹 인기', `${id.n}인조 · 국내 팬덤 약 ${ko(id.dom)}명 · 해외 약 ${ko(id.intl)}명`]);
+        rows.push(['아이돌 수입', `한 해 ${M(j.pay)} · ${id.settled ? `정산 후(회사 몫 ${Math.round(id.a * 100)}%)` : `정산 전 — 회사가 먼저 쓴 연습·제작비 ${M(id.debt)} 남음`} · 계약 ${Math.max(0, Math.ceil((id.endM - S.ageM) / 12))}년 남음`]);
+      } else if (j && E.age(S) < 18 && !S.indep && j.pay > 0) {
+        const sp = Md.kidSplit(S, S.income || j.pay), t = S.income || j.pay || 1, P = (x) => Math.round((100 * x) / t);
+        rows.push(['한 해 수입', `${M(j.pay)} · 내 몫 ${P(sp.own)}% · 살림 ${P(sp.hh)}%${sp.held > 0 ? ` · 모아 둠 ${P(sp.held)}%` : ''}${sp.tr > 0 ? ` · 신탁 ${P(sp.tr)}%` : ''}`]);
+      }
+      const ms = S.md && S.md.mus;
+      if (ms && (ms.rep >= 1 || ms.lis >= 100)) rows.push(['음악', `음악 이름값 ${Math.round(ms.rep)} · 청취자층 약 ${ko(ms.lis + Md.listeners(S).fan)}명`]);
+      v.media = rows;
+      return v;
+    };
+  }
+  /** 화면: 살림 표의 수입 줄에 붙이는 작은 설명(방송 수입 나눔) */
+  Md.incNote = (S, k) => {
+    const st = S.stream;
+    if (!st || st.fans < 1000) return '';
+    if (!(k === 'stream' || (k === 'job' && H.jobIs(S, 'streamer')))) return '';
+    const z = Md.streamParts(S), M = (x) => Wd.money(E.iso(S), x);
+    return `<small>광고 ${M(z.ads)} · 협찬 ${M(z.spon)} · 후원 ${M(z.don)} · 멤버십·상품 ${M(z.mem)}</small>`;
+  };
+})();
+
+if (typeof module !== 'undefined') module.exports = Md;
+
 /* 80억분의 1 — 업데이트 기록(게임 정보 → 업데이트 기록). 새 판을 낼 때 맨 위에 한 줄 더한다.
  * v: 판, d: 날짜(YY.MM.DD), t: 한 줄 제목, items: 바뀐 것(짧게)
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.6.4', d: '26.10.17', t: '살림 표·에어컨·방송 수입·아이돌·음악·정치인', items: ["살림 표: '재산에서 생긴 돈(이자·배당·값 오름)'·'모아 둔 돈에서 꺼내 쓴 생활비' 줄과 설명 문장 — 재산이 늘고 있는데 적자처럼 보이던 문제, 유산·복권 같은 목돈은 씀씀이가 몇 해에 걸쳐 천천히 따라감", "에어컨: 나라별 보급률로 처음 보유, '에어컨 사기' 할 일, 여름 전기료, 정전이 잦은 나라는 못 쓰는 날. 폭염 때 형편에 맞는 선택(에어컨·피서지·쉼터·선풍기), 한파 난방도 형편대로", "사기·강도·빈집털이 피해액: 택배·장터·중개 사기는 물건값·수수료 수준, 계·투자·로맨스 사기만 재산에 비례(상한 있음)", "선출직 보수를 나라별 실제 근삿값으로(한국 국회의원 약 1억 5,700만 원 등)", "정치인은 임기 중 나이로 은퇴 질문을 받지 않고 임기 끝에 '불출마'로, 임기 중 그만두면 '사퇴'. 자영업은 가게 정리·물려주기, 농부는 농사 줄이기, 작가·예술가는 질문 없이 활동이 차츰 줄어듦", "방송 수입: 광고·협찬·시청자 후원·멤버십으로 나눠 보여 주고 나라별 광고 단가·플랫폼(숲·치지직·빌리빌리·VK 등), 오래된 영상 조회수, 지방의원은 신고하고 협찬 일부", "아이돌: 정산 전 수당 → 첫 정산 → 팬덤(국내·해외)에 따른 수입, 소속사 몫·7년 계약, 개인 채널을 열면 팬덤이 구독자로", "미성년이 번 돈: 내 몫·살림·부모님이 모아 두는 몫·신탁(미국 쿠건법 등)으로 나뉘고 어른이 되면 받음, 화면 맨 위에 '내 돈·올해 번 돈'", "음악: 작곡 실력을 따로 두고 실력이 높을수록 완성도가 고르게, 발표할수록 쌓이는 청취자층, 음악 이름값이 연예 경력과 함께 쌓임, 데뷔한 가수는 가요제 대신 음원·음악 방송·연말 시상식, 노래를 잘하면 커버 영상·피처링·OST·오디션 방송", "이름이 알려진 사람(선출직·방송인)이 폭행·협박을 당하면 신고·공개 여부를 고르고 보도·검거·안전 대책·동정 여론으로, 보통 사람의 폭행은 다친 정도에 따라 치료비", "'털어놓을까요?' 창: 양성애는 '남녀 모두에게 마음이 끌린다는 것(양성애)'으로 분명히 쓰고 '다른 성별을 사귀면 드러나지 않지만 같은 성별을 사귀면 동성 커플과 같은 법과 시선을 겪는다'는 줄을 더함, 조사 자료가 없는 나라는 '지역 평균으로 어림한 값'으로 표시", "이미 책을 낸 작가·베스트셀러 작가는 단편을 신춘문예에 내지 않고 문예지·출판사가 먼저 원고를 청함(이름값만큼 원고료)"] },
   { v: '0.6.3', d: '26.10.16', t: '나라별 제한·북한의 삶·탈북·출국', items: ["나라별 제한 표: 선거 형태(자유·부분·관리·단일 정당·선거 없음)·집회·노동조합·인터넷·종교·술·음악·연애·여성 규칙·주식·신용카드·연금·성탄 풍습을 나라마다 정해 사건·할 일을 거르거나 그 나라 문장으로 바꿈", "선거가 없는 나라에는 선거 날·매표가 없고, 단일 정당 나라는 '정해진 후보에게 찬성표'와 '대의원 후보 추천(당 심사)', 걸프 국가는 파업·노조가 없고 국민은 공공 부문 일자리 위주", "인터넷이 막힌 나라는 개인 방송·온라인 일·단톡방이 없고, 아프가니스탄 여성은 카페 일·야간 강좌·유학·방송·휴가·운동 대회가 막힘, 아주 가난한 나라의 휴가·생일 파티는 세계 기준 형편으로", "성탄: 러시아·중앙아시아는 제드 모로즈, 에티오피아·에리트레아는 1월 7일 겐나, 쿠바·스페인은 동방박사의 날, 콜롬비아·베네수엘라는 아기 예수", "북한 어린이: 꼬마계획·집단 체조·수령 생일 선물·학교 땔감·정전 속 숙제·장마당 돕기·꽃제비, 생일은 국수·떡·달걀로 조촐하게", "북한의 할 일: 카페 일·창업·복권·상담·기부 등은 막고 배치 변경 청탁·입사증 거래·예술단·체육단 선발·지하 신앙으로, 외국어는 영어·러시아어·중국어·일본어만, 드물게 국가가 뽑아 보내는 중국·러시아 연수", "국가가 시키는 불법 활동(북한·러시아·이란 등)과 그 피해(해킹·사기 단지 강제 노동·위조지폐)", "가족과 함께 탈북(배우자·자녀·부모님·형제자매 — 인원에 따라 비용·위험), 어려서 부모님을 따라 탈북, 두고 온 부모·형제 데려오기", "탈북민은 '귀화한 시민'이 아니라 국적 확인으로 국민(선거 감점 없음 — '탈북민 출신'은 작게), 정착 뒤 방송·강연·수기 제안", "출국 확인을 한 곳에서: 복무·수감·입원·하나원 교육 중·나라의 출국 제한이면 해외로 가는 선택지가 이유와 함께 막힘, 북한으로는 돌아갈 수 없음", "명성은 알려진 나라의 것: 다른 나라로 옮기면 명성이 크게 줄고(세계적 유명인은 대부분 남음), 돌아가면 되살아남. 옮긴 직후·하나원 교육 중에는 광고 제안이 오지 않음", "북한 인생의 재산 순위가 위로 쏠리던 문제(입사증 집값·재산 분포)"] },
   { v: '0.6.2', d: '26.10.16', t: '군 복무 — 병사·군의관·직업군인·북한 인민군', items: ["복무 중 할 일: 부대 안 병사도 운동·공부·글쓰기·외국어·친구 만나기에 더해, 휴대폰을 쓸 수 있는 나라에서는 재산 관리·자격증·종교·기부·건강 관리 등을 할 수 있음(영리 활동·출국은 막힘)", "의사와 군 복무: 복무 중에는 면허 시험·첫 일자리를 미뤘다가 전역 뒤에 물음. 한국 의대 졸업생은 의무사관후보생으로 입영을 미루고 군의관(중위·38개월)이나 공중보건의사로 복무, 다른 나라 의사는 군의관(의무 장교)", "한국 병역 선택지: 상근예비역·생계곤란 감면·학군장교(ROTC)·학사장교, 공군은 추첨(2026년부터), 복무 중 포상휴가·분대장·해외 파병(동명·한빛·청해부대)", "직업군인: 회사 직급 대신 계급(하사~원사·소위~대장), 근속과 진급 심사, 나라별 정년(한국 연령·근속 정년, 미국 근속 상한·대위 이하 진급 누락 전역), 군인연금(한국 19년 6개월·미국 20년 등)과 못 채우면 일시금", "직업군인이 되는 길: 한국 병장의 전문하사·부사관 지원, 대학 졸업 뒤 장교 후보생, 사관학교(학비 없음·의무 복무), 지원제 나라의 사병·부사관 모집, 러시아 계약병, 프랑스 외인부대(3년 뒤 귀화 기회), 미국 GI Bill", "북한 인민군: 계급(전사·초급병사·중급병사·상급병사·하사…), 대학을 마친 사람 3년·의대 졸업생은 3년 군의, 초모 때 진단서·숨기·서류상 이혼·이른 결혼, 부대 배치(최전연·후방·건설·특수·호위사령부)", "북한 복무 생활: 허약(영양실조)과 허약 치료 귀가, 군인 건설자 동원, 가을 옥수수밭, 고참의 담배 요구, 모범 병사 표창, 입당 심사, 군관 추천과 군관학교, 휴가·면회는 드묾", "북한 제대: 만기·감정제대·생활제대·영예군인, 만기 제대 뒤 집단배치(탄광·농장·건설장)나 고향 배치 청원, 의사는 성분에 따라 평양 큰 병원부터 리 진료소까지 국가가 배치", "취미와 처지: 복무·수감·투병 중에는 그곳에서 할 수 있는 취미만 고를 수 있고, 하지 못하는 취미는 '쉬는 중'(효과가 멈췄다가 다시 이어짐)", "부대 안 병사는 혼담을 전역 뒤로 미루고, 면회·전화·포상휴가가 가족과의 가까움을 올림"] },
   { v: '0.6.1', d: '26.10.16', t: '나라 옮기기 — 재산·형편·체류·언어', items: ['탈북·난민·몰래 국경을 넘을 때는 몸에 지닌 돈만 가져가고 집·예금은 두고 감(탈북 전에 집과 살림을 몰래 팔아 돈을 마련하는 선택지)', '피난은 대개 이웃 나라로(국경 너머 난민촌), 형편이 아주 좋은 집안은 재산을 옮겨 비행기로 망명하는 길', '부모님을 따라 옮긴 아이의 집안 형편을 새 나라 기준으로 다시 정함(난민은 하위권, 일하러 옮긴 가족은 중하위~중위, 재산을 옮긴 망명은 중위 언저리) · 혼자 떠난 유학은 부모님 형편 그대로', '교환학생·어학연수·워킹홀리데이·해외 현장·해외 법인·평화유지군·해외 봉사 동안은 그 나라에서 살다가 돌아옴, 순환 근무·지방 발령은 실제로 그곳에서 지냄', '임기 중인 선출직은 해외 이주 불가, 이름이 알려졌거나 높은 공직을 지낸 사람은 초청·특별 재능 비자, 큰 재산이 있으면 투자 이민', '일곱 살 전에 옮겨 와 2년 넘게 자란 아이는 그 나라 말이 모국어가 됨(열두 살 전에는 "현지 말 익히기" 대신 학교에서 저절로)', '오래 산 나라의 말은 "능숙" 밑으로 잊히지 않음'] },
@@ -50388,7 +51698,7 @@ UI.render = (full) => {
   const wp = E.wealthP(S);
   $('#p-money').textContent = S.indep
     ? `${S.assets.length || S.loans.length ? `쓸 수 있는 돈 ${Wd.money(iso, Ec.liquid(S))} · 순자산 ${Wd.money(iso, Ec.netWorth(S))}` : '가진 돈 ' + Wd.money(iso, S.money)} · 생활수준 국내 ${U.rankText(wp)}`
-    : `부모님 집 · 생활수준 국내 ${U.rankText(wp)}`;
+    : `부모님 집${typeof Md !== 'undefined' && Md.topKid ? Md.topKid(S) : ''} · 생활수준 국내 ${U.rankText(wp)}`; // 미성년도 내 돈·올해 번 돈(피드백 211번, media.js)
   const tl = Object.keys(S.talentSeen || {}).filter((k) => S.talentSeen[k]).map((k) => `${C.TALENT_KO[k]} 재능`);
   if (S.dream && C.DREAM[S.dream]) tl.push(S.dreamDone ? `꿈(${C.DREAM[S.dream].ko})을 이룸` : `꿈: ${C.DREAM[S.dream].ko}`);
   if ((S.power || 0) >= 1) tl.unshift(`권력 ${Math.round(S.power)}`);
@@ -50571,6 +51881,7 @@ UI.moneyHTML = (S) => {
   if (S.flags.pc) own.push('컴퓨터');
   if (S.flags.motorbike) own.push('오토바이');
   if (S.flags.car) own.push('자동차');
+  if (S.flags.ac) own.push('에어컨');
   let html = `<div class="card"><h3>생활수준</h3>${rank(Wd.name(iso) + ' 안에서', wp)}${rank('세계 82억 명 중에서', gp)}`;
   if (S.indep) {
     html += rank('재산 순위 (나라 안 성인 1인 기준)', Ec.wealthRank(S));
@@ -50585,6 +51896,7 @@ UI.moneyHTML = (S) => {
       <tr><td>함께 사는 가족</td><td>${S.fam.size}명</td></tr>
       ${Object.entries(inc).filter(([, v]) => v > 0).map(([k, v]) => `<tr><td>내 ${esc(Ec.SRC_KO[k] || k)}<small>${E.age(S) >= 18 ? '대부분 내 몫으로 모읍니다' : '대부분 살림에 보탭니다'}</small></td><td>${M(v)}</td></tr>`).join('')}
       ${typeof Bg !== 'undefined' ? Bg.moneyRows(S) : ''}
+      ${typeof Md !== 'undefined' && Md.kidRows ? Md.kidRows(S) : ''}
       <tr><td>내 돈(용돈·저금)</td><td>${M(S.money)}</td></tr>
       ${S.trust > 0 ? `<tr><td>맡겨 둔 유산<small>독립할 때 받습니다</small></td><td>${M(S.trust)}</td></tr>` : ''}
     </table>${UI.envLine(S)}<div class="budget">${bar}</div><ul class="budget-legend">${leg}</ul>
@@ -50598,15 +51910,26 @@ UI.moneyHTML = (S) => {
   const loanPay = S.loans.reduce((t, l) => t + Ec.conv(l.pay, l.iso, iso), 0) * 12;
   const auto = S.autoSave && S.work.job ? S.work.job.pay * S.autoSave : 0;
   const left = (S.disp || 0) - (S.spend || 0) - loanPay - auto;
+  // 재산 쪽 돈의 흐름(피드백 185번: 재산이 늘고 있는데 '한 해 남는 돈'만 빨간색으로 보여 손해 보는 것처럼 읽혔음)
+  // spendW: 생활비 가운데 재산이 있어 더 쓰는 몫(engine.js), gain: 재산에서 보통 한 해에 생기는 돈(econ.js Ec.assetGain — 임대료는 소득 쪽)
+  const spendW = Math.min(S.spend || 0, S.spendW || 0), gain = Ec.assetGain ? Ec.assetGain(S) : 0;
+  const drawn = left < 0 ? -left : 0, covered = drawn > 0 && Ec.financial(S) > 0, grow = left + gain;
+  const flowRow = left >= 0 ? `<tr class="sum"><td>한 해 남는 돈</td><td class="up">+${M(left)}</td></tr>`
+    : covered ? `<tr class="sum"><td>모아 둔 돈에서 꺼내 쓴 생활비<small>소득보다 더 쓴 몫은 모아 둔 재산에서 나갑니다</small></td><td>−${M(drawn)}</td></tr>`
+    : `<tr class="sum"><td>한 해 모자라는 돈<small>모아 둔 돈이 없어 빚이 됩니다</small></td><td class="down">−${M(drawn)}</td></tr>`;
+  const gainRows = Math.abs(gain) >= 1 ? `<tr><td>재산에서 생긴 돈(이자·배당·값 오름)<small>예금 이자·주식 배당·투자 수익·세 준 집과 땅의 값 오름을 물가를 빼고 어림한 보통 한 해 값입니다(사는 집 빼고, 해마다 오르내림).${(inc.rent || 0) > 0 ? ' 임대·소작료는 위 소득에 넣었습니다.' : ''}</small></td><td class="${gain >= 0 ? 'up' : 'down'}">${gain >= 0 ? '+' : '−'}${M(Math.abs(gain))}</td></tr>
+    <tr class="sum"><td>재산이 한 해에 늘어나는 돈(근삿값)</td><td class="${grow >= 0 ? 'up' : 'down'}">${grow >= 0 ? '+' : '−'}${M(Math.abs(grow))}</td></tr>` : '';
   html += `<div class="card"><h3>올해 우리 집 살림</h3><table class="tbl">
-    ${Object.entries(inc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${esc(Ec.SRC_KO[k] || k)}</td><td>${M(v)}</td></tr>`).join('') || '<tr><td>정기적으로 들어오는 돈이 없습니다</td><td>0</td></tr>'}
+    ${Object.entries(inc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${esc(Ec.SRC_KO[k] || k)}${typeof Md !== 'undefined' && Md.incNote ? Md.incNote(S, k) : ''}</td><td>${M(v)}</td></tr>`).join('') || '<tr><td>정기적으로 들어오는 돈이 없습니다</td><td>0</td></tr>'}
     <tr class="sum"><td>한 해 소득</td><td>${M(gross)}</td></tr>
     <tr><td>세금·사회보험</td><td>−${M(tax)}</td></tr>
-    <tr><td>생활비 (${E.householdSize(S)}인 가구${Ec.home(S) ? ', 내 집이라 월세 없음' : ''})</td><td>−${M(S.spend || 0)}</td></tr>
+    <tr><td>생활비 (${E.householdSize(S)}인 가구${Ec.home(S) ? ', 내 집이라 월세 없음' : ''})${spendW >= 1 && spendW >= (S.spend || 0) * 0.05 ? `<small>그 가운데 약 ${M(spendW)}은 모아 둔 재산이 있어 더 쓰는 몫입니다</small>` : ''}</td><td>−${M(S.spend || 0)}</td></tr>
     ${loanPay > 0 ? `<tr><td>대출 갚기</td><td>−${M(loanPay)}</td></tr>` : ''}
     ${auto > 0 ? `<tr><td>연금 저축(자동)</td><td>−${M(auto)}</td></tr>` : ''}
-    <tr class="sum"><td>한 해 남는 돈</td><td class="${left >= 0 ? 'up' : 'down'}">${left >= 0 ? '+' : '−'}${M(Math.abs(left))}</td></tr>
+    ${flowRow}
+    ${gainRows}
   </table>`;
+  if (covered && (S.spend || 0) > 0) html += `<p class="src">생활비가 소득보다 많아, 생활비 가운데 ${M(Math.min(S.spend, drawn))}은 모아 둔 재산에서 썼습니다.${gain > drawn ? ' 재산에서 생기는 돈이 이보다 많아 재산은 줄지 않고 늘어납니다.' : ''}</p>`;
   const last = S.yr && S.yr.last ? Object.entries(S.yr.last).filter(([k, v]) => k !== 'loanPay' && Math.abs(v) > 1) : [];
   html += UI.envLine(S);
   if (last.length) html += `<p class="src">지난해 따로 들어온 돈: ${last.map(([k, v]) => `${esc(Ec.SRC_KO[k] || k)} ${M(v)}`).join(', ')}</p>`;
@@ -51086,6 +52409,7 @@ UI.moreHTML = (S) => {
       if (v.office) rows.push(['맡은 자리', v.office]);
       if (v.self) rows.push(['하는 일', typeof v.self === 'string' ? v.self : '스스로 하는 일']);
       if (v.stream && v.stream.fans > 0) rows.push(['구독자', `${U.fmtKo(v.stream.fans)}명${v.stream.cap ? ` (이 언어권 상한 약 ${U.fmtKo(v.stream.cap)}명)` : ''}${v.stream.incYear ? ` · 한 해 ${M(v.stream.incYear)}` : ''}`]);
+      for (const x of v.media || []) rows.push(x); // 방송 수입 나눔·플랫폼·아이돌 그룹·음악(media.js, 피드백 209·211·213번)
       if (v.books && v.books.n) rows.push(['낸 책', `${v.books.n}권 · 누적 ${U.fmtKo(v.books.sales || 0)}부${v.books.royaltyYear ? ` · 인세 한 해 ${M(v.books.royaltyYear)}` : ''}`]);
       if (v.wskill) rows.push(['글솜씨', Math.round(v.wskill)]);
       for (const x of v.side || []) rows.push([x.ko, M(x.amt)]);
