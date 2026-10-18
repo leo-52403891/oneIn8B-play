@@ -2554,7 +2554,7 @@ C.DEC.promotion = {
   choices: (S) => {
     const p = U.clamp(0.25 + S.st.skill / 150 + (S.st.smarts - 50) / 300 + (typeof Ab !== 'undefined' && Ab.promoX ? Ab.promoX(S) : 0), 0.1, 0.85); // 사람을 이끄는 힘(stats2.js, 피드백 150번)
     return [
-      { label: '도전한다', sub: `성공 가능성 약 ${pct0(p)}%`, run: (S) => { if (!S.work.job) return null; if (U.chance(p)) { H.promote(S); E.stat(S, 'happy', 6); if (S.work.job.lv >= 4) H.ach(S, 'exec'); return C.t(S, `{N은} ${U.j(C.LEVELS[S.work.job.lv], '으로')} 승진했습니다! 월급이 25% 올랐습니다.`); } E.stat(S, 'happy', -4); return C.t(S, '이번에는 다른 사람이 뽑혔습니다.'); } },
+      { label: '도전한다', sub: `성공 가능성 약 ${pct0(p)}%`, run: (S) => { if (!S.work.job) return null; if (U.chance(p)) { H.promote(S); E.stat(S, 'happy', 6); if (S.work.job.lv >= 4) H.ach(S, 'exec'); return C.t(S, `{N은} ${U.j(H.lvName(S), '으로')} 승진했습니다! 월급이 25% 올랐습니다.`); } E.stat(S, 'happy', -4); return C.t(S, '이번에는 다른 사람이 뽑혔습니다.'); } },
       { label: '지금 자리에 만족한다', run: () => null },
     ];
   },
@@ -2798,7 +2798,7 @@ H.jobIs = (S, ...ids) => !!S.work.job && ids.includes(S.work.job.id);
 H.jobSec = (S) => (S.work.job && C.JOB[S.work.job.id] ? C.JOB[S.work.job.id].sec : null);
 H.formal = (S) => !!(S.work.job && S.work.job.formal);
 /** 회사에 고용되어 직급이 있는 일인지(사장·자영업·특별 직업은 승진·연봉 협상이 없다, 피드백 27번) */
-H.ladder = (S) => { const j = S.work.job, d = j && C.JOB[j.id]; return !!(j && j.formal && d && !d.self && !d.special && j.id !== 'entrepreneur'); };
+H.ladder = (S) => { const j = S.work.job, d = j && C.JOB[j.id]; return !!(j && j.formal && d && !d.self && !d.special && !j.self && !(j.id === 'doctor' && /개원/.test(j.title || '')) && j.id !== 'entrepreneur'); }; // j.self: 개원의처럼 같은 직업이라도 자기 일을 하는 경우(피드백 233번)
 H.retired = (S) => !!S.work.retired;
 H.indep = (S) => !!S.indep;
 H.married = (S) => !!S.fam.married;
@@ -3062,10 +3062,24 @@ H.jail = (S, months, why) => {
 
 /* ---------------------------------------------------------------- 직급 */
 C.LEVELS = ['', '선임', '팀장', '부장', '임원'];
+/** 직업마다 고유한 직급 이름(피드백 233번 — 의사에게 '팀장'이 붙던 것). 없으면 회사 직급 */
+C.LV_JOB = {
+  doctor: ['', '전임의', '과장', '부장', '병원장'], nurse: ['', '책임간호사', '수간호사', '간호부장', '간호이사'],
+  teacher: ['', '부장교사', '교감', '교장', '교육장'], lawyer: ['', '시니어 변호사', '파트너', '대표 파트너', '대표 변호사'],
+  researcher: ['', '선임연구원', '책임연구원', '연구소장', '원장'], civil: ['', '주무관', '사무관', '서기관', '국장'],
+  police: ['', '경사', '경위', '경감', '총경'], firefighter: ['', '소방장', '소방위', '소방경', '소방서장'],
+  journalist: ['', '차장', '부장', '부국장', '편집국장'],
+};
+/** 지금 직업의 직급 이름 */
+H.lvName = (S, lv) => { const j = S.work.job, L = j && C.LV_JOB[j.id]; return (L || C.LEVELS)[Math.max(0, Math.min(4, lv === undefined ? (j && j.lv) || 0 : lv))] || ''; };
 H.jobTitle = (S) => {
   const j = S.work.job;
   if (!j) return '';
-  return j.lv ? `${j.title} (${C.LEVELS[j.lv]})` : j.title;
+  if (!j.lv || j.self) return j.title;
+  // 전공의·개원의처럼 직함이 곧 자리인 경우, 또는 직급 이름이 직함과 같으면 붙이지 않는다
+  const n = H.lvName(S, j.lv);
+  if (!n || (j.id === 'doctor' && /전공의|개원|인턴|군의/.test(j.title)) || j.title.indexOf(n) >= 0) return j.title;
+  return `${j.title} (${n})`;
 };
 H.promote = (S, mult = 1.25) => {
   const j = S.work.job;
@@ -4548,6 +4562,7 @@ Ec.withdrawBank = (S, need) => {
   if (S.money >= need) return;
   for (const a of S.assets.filter((x) => x.type === 'bank')) {
     const v = Ec.conv(a.value, a.iso, E.iso(S));
+    if (!(v > 0)) continue; // 다 꺼내 쓴 예금(0원)은 건너뜀 — 0/0 으로 돈이 NaN 이 되던 일(v0.6.9 점검: 카드로 충동구매)
     const take = Math.min(v, need - S.money);
     Ec.sell(S, a, take / v);
     if (S.money >= need) return;
@@ -5002,6 +5017,8 @@ if (typeof module !== 'undefined') module.exports = Ec;
 const A = {};
 const sig = (x) => 1 / (1 + Math.exp(-x));
 const reason = (ok, why) => (ok ? true : why);
+/** 할 일 단추의 '얻음 · 위험' 설명(피드백 219·226번 — vice.js 의 gh 와 같은 형식을 모든 할 일이 함께 쓴다). 위험이 없으면 '얻음'만 */
+C.gh = (g, r) => (r ? `얻음: ${g} · 위험: ${r}` : `얻음: ${g}`);
 
 C.ACT_CATS = [
   ['body', '몸과 마음'], ['learn', '배우기'], ['people', '사람'], ['work', '돈과 일'],
@@ -18014,6 +18031,19 @@ const Pp = {};
       const find = (name) => pool.find((o) => o.name === name && o.alive === false);
       const put = (rows, hon) => { for (const x of rows || []) if (x && !x.alive) { const o = find(x.name); if (o) x.gone = Pp.goneTxt(S, o, hon); } };
       put(v.parents, true); put(v.sibs, false); put(v.kids, false);
+      // 자녀마다 다른 쪽 부모(피드백 231번): 함께 낳은 사람이 둘 이상이거나 지금 배우자가 아닐 때 '어머니 지민(사실혼)'
+      {
+        const kids = S.fam.kids.filter((k) => !k.adopted && !k.step);
+        const names = new Set(kids.map((k) => k.op).filter(Boolean));
+        const cur = S.fam.partner && S.fam.partner.alive !== false && !S.fam.partner.left ? S.fam.partner.name : null;
+        const REL = { mar: '결혼', cohab: '사실혼', out: '혼인 밖' };
+        for (const x of v.kids || []) {
+          const k = kids.find((y) => y.name === x.name);
+          if (!k || !k.op || (names.size < 2 && k.op === cur)) continue;
+          const t = `${S.sex === 'm' ? '어머니' : '아버지'} ${k.op}${REL[k.opRel] ? `(${REL[k.opRel]})` : ''}`;
+          x.note = x.note ? `${t} · ${x.note}` : t;
+        }
+      }
       const t = v.tree || {};
       put(t.grandparents, true); put(t.uncles, true); put(t.step, false);
       for (const f of t.kidsFamilies || []) put(f.gk, false);
@@ -24512,7 +24542,7 @@ const Cm = {};
     text: '은행 대출로 작은 의원을 열 수 있습니다. 내 병원이 생기지만, 환자가 모이지 않으면 빚만 남습니다.',
     choices: [
       { l: '개원한다', cost: 6, p: (S) => U.clamp(0.45 + (S.st.social - 50) / 200 + (H.talent(S, 'biz') - 50) / 200, 0.25, 0.8),
-        ok: { t: '동네 의원이 자리를 잡았습니다. 아침마다 대기실이 찹니다.', fx: { happy: 6 }, run: (S) => { raise(S, 1.5); if (S.work.job) S.work.job.title = '개원의'; } },
+        ok: { t: '동네 의원이 자리를 잡았습니다. 아침마다 대기실이 찹니다.', fx: { happy: 6 }, run: (S) => { raise(S, 1.5); if (S.work.job) { S.work.job.title = '개원의'; S.work.job.self = true; delete S.work.job.lv; } } }, // 자기 의원 — 직급 없음(피드백 233번)
         no: { t: '환자가 모이지 않아 2년 만에 의원을 정리하고 다시 병원에 들어갔습니다. 대출만 남았습니다.', fx: { money: -6, happy: -10 } } },
       { l: '병원에 남는다', typ: true, t: '큰 병원에 남아 하던 진료를 이어 가기로 했습니다.' },
     ],
@@ -28899,7 +28929,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.6.8';
+E.VERSION = '0.6.9';
 E.BUILD_DATE = '26.10.16';
 
 /* ================================================================ 기본 도구 */
@@ -29601,6 +29631,9 @@ E.birthOfChild = (S) => {
   const childName = H.uniqName(S, () => Wd.makeName(iso, sx, dadFi, dadGiven).given) || childNm.given;
   // 혼인 밖에서 태어난 아이인지(사실혼·동거 커플이거나 혼자 낳은 아이), 어머니 나이
   const born = { nonmar: !(fam.married && !fam.cohab), cohab: !!(fam.married && fam.cohab), momAge: Math.floor(womanAge) };
+  // 다른 쪽 부모(누구와 낳은 아이인지 — 피드백 231번): 이름과 그때의 관계(결혼 mar · 사실혼 cohab · 혼인 밖 out)
+  const opP = S.sex === 'm' ? fam.partner : dad;
+  if (opP && opP.name) { born.op = opP.name; born.opRel = fam.married && !fam.cohab && opP === fam.partner ? 'mar' : fam.married && fam.cohab && opP === fam.partner ? 'cohab' : 'out'; }
   delete fam.pregDad;
   const stillborn = U.chance(0.012 * (Wd.dev(iso) < 2 ? 1.5 : 0.4));
   if (U.chance(mm)) {
@@ -30317,6 +30350,10 @@ if (typeof module !== 'undefined') module.exports = E;
  *    시험 부정행위(새 할 일, 대학 입학시험 '잘 봄'), 도핑(새 할 일, 한 해 동안 Sp.eff +6~10, 검사·출전 정지·심장 위험은 기존 사인 배수),
  *    탈세(그해 세금의 15~35% — 월급쟁이는 3~8%), 횡령(돈을 만지는 자리 내 월급 6~24달 치·일반 1~4달 치, 클수록 잘 걸림),
  *    인맥 효과 2배(구직 로짓 +0.6·승진 뒤집기 25%, 사람 탭 '인맥' 카드), 연봉 협상 부풀리기(인상 ×1.5), 사치(매력이 한 해 동안 받쳐짐·사교 모임·인맥, 달마다 유지비).
+ *  - 이어지는 득과 숫자(피드백 219번): 누를 때 한 번만 득이 있고 그 뒤에는 위험만 남던 습관에 '이어지는 작은 득'(Vc.ongoing — 안전띠·헬멧 안 함 행복 +1~2,
+ *    과속 오가는 시간 단축 행복 +1·스트레스 −2, 할 일로 시작한 담배·술 관계 +1, 외도 설렘 행복 +2~3, 연락 끊기 스트레스 −2~4, 문신 행복 +0.5·외모 +1),
+ *    잠깐의 위로뿐이던 할 일에 '분명한 한 번의 득'(야식·게임 스트레스 −3, 무단결근 −5, 아이 내버려 두기 −3 — 제자리보다 8 넘게는 내려가지 않음, 친구와 한 낙서 관계·우정).
+ *    모든 단추 설명의 '얻음 · 위험'을 숫자로(붙잡힐 확률은 crime.js Cm.catchP, 사망 위험은 지금 나이의 E.hazardInput 으로 견준 값). 사망 위험 배수는 그대로다.
  *
  * 기존 체계와의 연결
  *  - 습관: S.habit.smoke·drink(사망 모형의 smoke·drink 위험 배수), 중독: values.js S.rap.addict(H.vlUse·Vl.addictUp), 사채: S.rap.debtShark(v_shark),
@@ -30460,8 +30497,36 @@ const Vc = {};
     || !!(S.pp && S.pp.widowM !== undefined && S.ageM - S.pp.widowM < 24) || !!(S.crm && S.crm.trauma >= 30);
   /** 당장의 위로(행복과 그 여운 boost.happy). 힘든 시기에는 두 배 — 사람들이 이럴 때 담배·술·폭식에 기대는 까닭. 돌려주는 값: 힘든 시기였는지 */
   const relief = (S, d) => { const k = hardTime(S) ? 2 : 1; E.stat(S, 'happy', d * k); S.boost.happy = Math.min(10, S.boost.happy + d * 0.6 * k); return k > 1; };
-  /** 할 일 단추 설명: '얻음: … · 위험: …' */
-  const gh = (g, r) => `얻음: ${g} · 위험: ${r}`;
+  /** 할 일 단추 설명: '얻음: … · 위험: …' (모든 할 일이 함께 쓰는 actions.js C.gh 가 있으면 그것으로 — 형식은 같다) */
+  const gh = (g, r) => (typeof C.gh === 'function' ? C.gh(g, r) : `얻음: ${g} · 위험: ${r}`);
+  /* ---------------------------------------------------------------- 단추 설명의 숫자(피드백 219번) */
+  /** 확률 문구: 1% 미만은 '1% 미만' */
+  const pctKo = (p) => (p < 0.01 ? '1% 미만' : `${R(p * 100)}%`);
+  /** 위로(relief)의 행복: 힘든 시기에는 두 배 */
+  const hapKo = (S, d) => (hardTime(S) ? `행복 +${2 * d}(힘든 때라 두 배)` : `행복 +${d}`);
+  /** 붙잡힐 확률(busted 와 같은 값) */
+  const bustP = (S, ck, scale, fb) => (hasCm() && typeof Cm.catchP === 'function' ? clamp(Cm.catchP(S, ck) * scale, 0.002, 0.97) : fb);
+  /** 지금 나이(또는 at 세)에서 전체 사망 위험이 몇 배가 되나: 위험 요인(risks)을 바꾸거나 사인 배수(mult)를 곱해 견준다 */
+  const hzX = (S, risks, mult, at) => {
+    try {
+      const p0 = E.hazardInput(S), p = at ? { ...p0, age: at } : p0;
+      const tot = (out, m) => out.reduce((s, k) => s + k.h * ((m && m[k.id]) || 1), 0);
+      const base = Wd.causeHazards(p), b = tot(base);
+      const a = risks ? tot(Wd.causeHazards({ ...p, risks: { ...p.risks, ...risks } }), mult) : tot(base, mult);
+      return b > 0 ? a / b : 1;
+    } catch (e) { return 1; }
+  };
+  /** '사망 위험 +n%' 문구(지금 나이) */
+  const hzKo = (x) => (x < 1.005 ? '+1% 미만' : x < 1.95 ? `+${R((x - 1) * 100)}%` : `약 ${R(x * 10) / 10}배`);
+  /** 스트레스를 한 번 덜어 준다(stats2.js S.ab.str). 이 할 일로는 스트레스가 제자리(목표값)보다 8 넘게 내려가지 않아, 자주 해도 쌓이지 않는다 */
+  const calm = (S, d) => {
+    const ab = S.ab;
+    if (!ab || typeof ab.str !== 'number') return 0;
+    const fl = typeof Ab !== 'undefined' && Ab && typeof Ab.stressTarget === 'function' ? Ab.stressTarget(S) - 8 : 0;
+    const nv = Math.max(Math.min(ab.str, fl), ab.str - d), x = ab.str - nv;
+    ab.str = clamp(nv, 0, 100);
+    return x;
+  };
   /** 술자리 문화가 강해 술자리 인맥이 일자리·승진으로 이어지기 쉬운 나라(회식·접대 문화, 어림값) */
   const DRINK_CULTURE = new Set(['KOR', 'JPN', 'CHN', 'TWN', 'VNM', 'MNG', 'RUS', 'UKR', 'BLR', 'KAZ', 'GBR', 'IRL', 'POL', 'LTU', 'LVA', 'CZE']);
   /** 술자리·흡연실·뒷말로 쌓는 인맥 S.vc.net(0~20): 일하거나 대학에 다닐 때만 쌓이고 해마다 30%씩 옅어진다.
@@ -30487,6 +30552,51 @@ const Vc = {};
     if (!v || !(v.net >= 0.5)) return null;
     const k = netK(S);
     return { t: `인맥 ${R(v.net)}`, s: `술자리·흡연실·사교 모임에서 쌓은 인맥입니다. 구직 합격 가능성이 오르고(로짓 +${(0.6 * k).toFixed(2)}), 승진 도전에서 떨어져도 ${R(25 * k)}% 확률로 뒤집힙니다. 일하거나 대학에 다닐 때만 쌓이고, 해마다 30%씩 옅어집니다.` };
+  };
+
+  /* ---------------------------------------------------------------- 이어지는 작은 득(피드백 219번)
+   * 습관·처지가 이어지는 할 일은 누를 때 한 번만 득이 있고 그 뒤에는 위험만 남았다(예: 안전띠 안 매기).
+   * 이어지는 동안 달마다 그 능력치가 제자리(목표값)로 돌아가는 빠르기만큼 더해 '목표 +x'와 같게 한다
+   * (행복 4%·관계 2.5% — engine.js E.sysStats, 스트레스 8% — stats2.js). 몇 달이면 그만큼 높은(낮은) 자리에 머물고, 그만두면 제자리로 돌아간다.
+   *   안전띠 안 맴: 행복 +1(매고 풀 일 없는 편함) · 헬멧 안 씀: 행복 +1, 더운 나라는 +2(헬멧 속 더위)
+   *   과속(운전 일이 아닐 때): 행복 +1, 일·학교에 오가면 스트레스 −2(출퇴근 시간 단축) — 운전 일이면 지금처럼 벌이 +8%
+   *   담배·술(할 일로 시작): 관계 +1(함께 피우고 마시는 무리) — 일하거나 대학에 다니면 해마다 인맥도
+   *   몰래 만나는 사람: 행복 +2(부부 사이가 차가우면 +3) · 가족과 연락 끊음: 스트레스 −2(사이가 나빴으면 −4) · 문신: 행복 +0.5(보수적이지 않은 곳은 외모 +1)
+   * 사망 위험 배수(Vc.MULT·담배·술)는 그대로다. 보통 선택 인생은 이 할 일을 하지 않으므로 평균 수명·행복은 그대로. */
+  const ON_RATE = { happy: 0.04, social: 0.025, str: 0.08 };
+  /** 더운 나라(헬멧 속 더위): place.js 의 아주 더운 나라(더운 철 6달) 또는 수도가 열대(위도 24도 안) */
+  const hotLand = (S) => {
+    if (H.hotMons && H.hotMons(S).length >= 6) return true;
+    const cap = typeof DATA !== 'undefined' && DATA.geo && DATA.geo.cap ? DATA.geo.cap[E.iso(S)] : null;
+    return !!cap && Math.abs(cap[0]) < 24;
+  };
+  /** 운전으로 먹고사는 일(과속하면 건수가 늘어 벌이가 오름) */
+  const driveJob = (S) => H.jobIs(S, 'driver', 'rider', 'platform');
+  /** 일터·학교에 오가는 사람 */
+  const commutes = (S) => H.working(S) || H.inSchool(S);
+  /** 지금 이어지는 작은 득: { happy, social, str(덜어 주는 스트레스), looks } — 목표값으로 치면 얼마나 옮기는지 */
+  Vc.ongoing = (S) => {
+    const v = S.vc, o = { happy: 0, social: 0, str: 0, looks: 0 };
+    if (!v || !S.alive || S.prison || (H.incap && H.incap(S))) return o;
+    if (drives(S)) {
+      if (v.noBelt) o.happy += bike(S) && hotLand(S) ? 2 : 1;
+      if (v.speed && !driveJob(S)) { o.happy += 1; if (commutes(S)) o.str += 2; }
+    }
+    if (v.smokeNet && S.habit.smoke) o.social += 1;
+    if (v.drinkNet && S.habit.drink >= 1 && !H.alcoholBanned(S)) o.social += 1;
+    if (v.affairM !== undefined && S.flags.affair && partnerOn(S)) o.happy += v.affairCold ? 3 : 2;
+    if (v.cutoffM !== undefined) o.str += v.cutoffHard ? 4 : 2;
+    if (v.tattoo) { o.happy += 0.5; if (!tradHigh(S)) o.looks += 1; }
+    return o;
+  };
+  /** 달마다 이어지는 득을 더한다(Vc.month) */
+  const ongoingMonth = (S) => {
+    const g = Vc.ongoing(S);
+    if (g.happy) S.st.happy = clamp(S.st.happy + ON_RATE.happy * g.happy, 0, 100);
+    if (g.social) S.st.social = clamp(S.st.social + ON_RATE.social * g.social, 0, 100);
+    if (g.str && S.ab && typeof S.ab.str === 'number') S.ab.str = clamp(S.ab.str - ON_RATE.str * g.str, 0, 100);
+    // 외모: 꾸밈(boost.charm)의 바닥값으로(외모 목표 = … + 꾸밈 × 2, stats2.js)
+    if (g.looks && S.boost) S.boost.charm = Math.max(S.boost.charm || 0, g.looks / 2);
   };
 
   /* ---------------------------------------------------------------- 실제 자원으로 주는 이득(피드백 122번) */
@@ -30558,13 +30668,19 @@ const Vc = {};
   };
   /** 거친 동네: 범죄가 가까운 동네에서 자라 그곳에 살거나, 갱단 문제가 큰 나라, 살인율이 높은 나라(인구 10만 명당 10 이상) */
   const roughHood = (S) => !!(S.crm && S.crm.hood && E.iso(S) === S.born.iso) || (typeof H.gangLand === 'function' && H.gangLand(S)) || (Wd.c(E.iso(S)).homic || 0) >= 10;
+  /** 주먹다짐에서 이길 확률: 건강·운동 재능·성별 */
+  const brawlWin = (S) => clamp(0.45 + (S.st.health - 60) / 150 + (H.talent(S, 'sport') - 50) / 200 + (S.sex === 'm' ? 0.05 : -0.1), 0.15, 0.8);
 
   /* ================================================================ 할 일 */
   const ACTS = [
     /* ---------------------------------------------------------------- 유혹과 나쁜 습관 */
     { id: 'startsmoke', ko: '담배 피우기', cat: 'vice', age: [13, 100], cd: 3, ap: 1,
       where: (S) => !S.habit.smoke,
-      hint: (S) => gh(`${netHint(S, 2, 'smoke')}·사교 +2·피우는 동안 해마다 인맥 +1`, '폐암·심장병(사망 위험 ×1.3~1.5), 끊기 어려움'),
+      hint: (S) => {
+        const net = H.working(S) || H.college(S);
+        return gh(`${hapKo(S, 3)}${net || minor(S) ? '·관계 +2' : ''}${minor(S) ? '' : `·${netHint(S, 2, 'smoke')}`}·피우는 동안 관계 +1${net ? '·해마다 인맥 +1' : ''}`,
+          `사망 위험 지금 ${hzKo(hzX(S, { smoke: true, smokeEx: null }))}${age(S) < 60 ? `·65세에 ${hzKo(hzX(S, { smoke: true, smokeEx: null }, null, 65))}` : ''}(폐암 18배·심장병 2.4배)·건강 −1·끊기 어려움`);
+      },
       run: (S) => {
         const again = !!S.habit.everSmoke;
         S.habit.smoke = true; S.habit.everSmoke = true; vcOf(S).smokeM = S.ageM; vcOf(S).smokeNet = true;
@@ -30584,8 +30700,9 @@ const Vc = {};
       } },
     { id: 'startdrink', ko: '술 마시기 시작', koS: (S) => (H.alcoholBanned(S) ? '몰래 술 구해 마시기' : '술 마시기 시작'), cat: 'vice', age: [15, 100], cd: 6, ap: 1,
       where: (S) => S.habit.drink === 0 && alcoholOK(S),
-      hint: (S) => (H.alcoholBanned(S) ? gh('어울림·즐거움', '이 나라에서는 불법(단속·구류)')
-        : gh(`${netHint(S, 3, 'drink')}·사교 +3·마시는 동안 해마다 인맥 더`, '자주 취하면 간 질환·사고')),
+      hint: (S) => (H.alcoholBanned(S) ? gh(`${hapKo(S, 2)}·관계 +3`, `이 나라에서는 불법 — 걸릴 확률 약 ${pctKo(bustP(S, 'drug', 0.3, clamp(0.08 * enforce(S), 0.03, 0.2)))}(벌금, 30%는 1~3개월 구류)`)
+        : gh(`${hapKo(S, 2)}·관계 +3${minor(S) ? '' : `·${netHint(S, 3, 'drink')}`}·마시는 동안 관계 +1${H.working(S) || H.college(S) ? '·해마다 인맥 +1.2' : ''}`,
+          `자주 취하게 되면(진탕 2년에 3번) 사망 위험 ${hzKo(hzX(S, { drink: true }))}(간경변 5배·교통사고 2배)·중독`)),
       run: (S) => {
         S.habit.drink = 1; delete S.flags.drinkAt; vcOf(S).drinkNet = true;
         E.stat(S, 'social', 3); relief(S, 2); vadd(S, { trad: -1 });
@@ -30601,7 +30718,8 @@ const Vc = {};
       } },
     { id: 'binge', ko: '술 진탕 마시기', koS: (S) => (H.alcoholBanned(S) ? '몰래 술판 벌이기' : '술 진탕 마시기'), cat: 'vice', age: [16, 100], cd: 1, ap: 1,
       where: (S) => alcoholOK(S),
-      hint: (S) => gh(`${netHint(S, 2, 'drink')}·사교 +3·친구와 가까워짐`, '다침·싸움(체포)·알코올 중독, 2년에 3번이면 과음 습관'),
+      hint: (S) => gh(`${hapKo(S, 4)}·관계 +3·친구 가까움 +5${minor(S) ? '' : `·${netHint(S, 2, 'drink')}`}`,
+        `건강 −1·다침 8%·싸움 6%(체포 위험)·지갑 분실 5%·${S.habit.drink >= 2 ? '자주 취하는 습관이 굳어짐' : `2년에 3번이면 자주 취함(사망 위험 ${hzKo(hzX(S, { drink: true }))})`}·중독`),
       run: (S) => {
         if (S.habit.drink === 0) { S.habit.drink = 1; delete S.flags.drinkAt; }
         vcOf(S).drinkNet = true;
@@ -30631,7 +30749,11 @@ const Vc = {};
         return out.join(' ');
       } },
     { id: 'drugs', ko: '약물에 손대기', cat: 'vice', age: [15, 75], cd: 3, ap: 0,
-      hint: (S) => gh('일상 기회 +1 · 석 달 동안 연습·창작·공부 효과 1.5배', DRUG_STRICT.has(E.iso(S)) ? '중독이 빠르게 오름·과다 복용·이 나라는 아주 무거운 처벌' : '중독이 빠르게 오름·과다 복용·체포'),
+      hint: (S) => {
+        const strict = DRUG_STRICT.has(E.iso(S)), bp = age(S) >= 16 ? bustP(S, 'drug', strict ? 0.3 : 0.15, clamp((strict ? 0.06 : 0.02) * enforce(S), 0.005, 0.15)) : 0;
+        return gh('일상 기회 +1·석 달 동안 연습·창작·공부 효과 1.5배·행복 +6',
+          `약값 ${H.amt(S, 0.2)}·건강 −3·응급실 5%·${bp ? `체포 약 ${pctKo(bp)}${strict ? '(이 나라는 아주 무거운 처벌)' : ''}·` : ''}중독이 빠르게 오름(중독되면 사고 사망 8배·자살 5배)`);
+      },
       run: (S) => {
         const first = !S.flags.drugTry, strict = DRUG_STRICT.has(E.iso(S));
         S.flags.drugTry = true; vcOf(S).drugM = S.ageM;
@@ -30655,9 +30777,11 @@ const Vc = {};
       } },
     { id: 'junkfood', ko: '야식·폭식', cat: 'vice', age: [10, 110], cd: 1, ap: 1, cost: 0.05,
       where: (S) => !H.destitute(S),
-      hint: (S) => gh(hardTime(S) ? '큰 위로·포만감' : '위로·포만감', '자주 하면 비만 → 당뇨·고혈압'),
+      hint: (S) => { const f = R((S.vc && S.vc.fat) || 0); return gh(`${hapKo(S, 4)}·스트레스 −3(먹는 동안 긴장이 풀림)`, `건강 −1·몸무게 경향 +9(지금 ${f}, 50이면 비만 → 당뇨 3배·고혈압 1.8배)`); },
       run: (S) => {
         const eased = relief(S, 4); E.stat(S, 'health', -1); S.boost.health -= 1;
+        // 얻는 것(피드백 219번): 쉬기와 달리 스트레스를 덜어 준다(달고 기름진 음식의 위로 — 자주 해도 제자리보다 8 넘게 내려가지는 않음)
+        calm(S, 3);
         const t = U.pick([`밤늦게 ${U.j(C.ctx(S).food, '을')} 잔뜩 먹고 바로 잠들었습니다.`,
           H.dev(S) >= 2 && H.urban(S) ? '기름진 배달 음식을 시켜 혼자 다 먹었습니다.' : '기름에 튀긴 간식을 배가 터지도록 먹었습니다.',
           '단 과자와 달콤한 음료로 끼니를 때웠습니다.']);
@@ -30665,9 +30789,10 @@ const Vc = {};
       } },
     { id: 'gaming', ko: '틀어박혀 게임만 하기', cat: 'vice', age: [10, 90], cd: 2, ap: 1,
       where: (S) => H.internet(S) > 0.3 && (!!S.flags.phone || H.rich(S) || H.dev(S) >= 2),
-      hint: () => gh('즐거움·두뇌 겨루기 실력 조금', '운동 부족·관계 소홀'),
+      hint: (S) => gh(`${hapKo(S, 4)}·스트레스 −3·두뇌 겨루기 실력 +3까지`, '관계 −2·운동 부족(건강 여운 −3)·몸무게 경향 +4'),
       run: (S) => {
         relief(S, 4); E.stat(S, 'social', -2); S.boost.health -= 3;
+        calm(S, 3); // 얻는 것(피드백 219번): 머리를 비우고 쉬어 스트레스가 조금 풀린다
         if (S.edu.stage !== null) S.edu.dropRisk = Math.min(0.6, (S.edu.dropRisk || 0) * 1.1);
         // 수 싸움·전략 게임은 두뇌 겨루기 실력을 조금 올린다(practice.js)
         const pg = typeof Pr !== 'undefined' && Pr.gain ? Pr.gain(S, 'mind', 3) : 0;
@@ -30675,7 +30800,12 @@ const Vc = {};
           + (pg >= 0.5 ? ' 수 싸움이 늘어 두뇌 겨루기 실력이 조금 올랐습니다.' : ' 머릿속이 텅 빈 채로 실컷 쉬었습니다.') + addFat(S, 4);
       } },
     { id: 'allnight', ko: '밤새우기', cat: 'vice', age: [12, 100], cd: 2, ap: 0,
-      hint: (S) => { const n = recent(vcOf(S).sleep, S, 6); return gh(`일상 기회 +1${n >= 1 ? `(연달아 하면 줄어 약 ${R(100 * NIGHT_AP[Math.min(n, 3)])}%)` : ''}`, `건강 −${NIGHT_HP[Math.min(n, 3)]}${n >= 2 ? '·사고 위험↑' : ''}`); },
+      hint: (S) => {
+        const n = recent(vcOf(S).sleep, S, 6);
+        const plus = H.inSchool(S) ? '지식 +2·행복 −1' : H.working(S) ? '경력 +1·행복 −2' : (S.flags.novel || 0) > 0 ? '글 실력 +1' : '행복 +2';
+        return gh(`일상 기회 +1${n >= 1 ? `(연달아 하면 줄어 약 ${R(100 * NIGHT_AP[Math.min(n, 3)])}%)` : ''}·${plus}`,
+          `건강 −${NIGHT_HP[Math.min(n, 3)]}${n >= 2 ? `·6달에 3번이면 잠 부족${drives(S) ? '(교통사고 사망 1.3배)' : ''}` : ''}`);
+      },
       run: (S) => {
         const n0 = recent(vcOf(S).sleep, S, 6), n = pushRecent(S, 'sleep', 6);
         const k = Math.min(n0, 3);
@@ -30694,13 +30824,15 @@ const Vc = {};
       } },
     { id: 'speeding', ko: '과속·난폭 운전', koS: (S) => (bike(S) ? '오토바이 난폭 운전' : '과속·난폭 운전'), cat: 'vice', age: [18, 95], cd: 6, ap: 1,
       where: (S) => drives(S) && !vcOf(S).speed,
-      hint: (S) => gh(H.jobIs(S, 'driver', 'rider', 'platform') ? '건수가 늘어 벌이↑' : '시간 절약·짜릿함', '교통사고 사망 약 1.8배·범칙금'),
+      hint: (S) => gh(driveJob(S) ? `${hapKo(S, 3)}·건수가 늘어 벌이 +8%(습관이 이어지는 동안)` : `${hapKo(S, 3)}·이어지는 동안 행복 +1${commutes(S) ? '·스트레스 −2(출퇴근 시간 단축)' : '(오가는 시간 단축)'}`,
+        `교통사고 사망 ${Vc.MULT.speed}배(지금 나이 사망 위험 ${hzKo(hzX(S, null, { road: Vc.MULT.speed }))})·크게 다침 4%·범칙금 12%(그 뒤에도 가끔)`),
       run: (S) => {
         vcOf(S).speed = true; relief(S, 3); vadd(S, { risk: 2 });
         const out = [bike(S) ? '오토바이로 차 사이를 비집고 내달리는 맛에 빠졌습니다.' : '길이 비면 가속 페달을 끝까지 밟고, 앞차를 아슬아슬하게 추월하는 맛에 빠졌습니다.'];
         // 운전으로 먹고사는 사람은 건수가 늘어 벌이가 오른다(운전 습관을 바로잡으면 되돌아감)
-        if (H.jobIs(S, 'driver', 'rider', 'platform') && S.work.job) { vcOf(S).speedPay = `${S.work.job.id}|${S.work.job.since}`; S.work.job.pay *= 1.08; out.push('하루에 뛰는 건수가 늘어 벌이가 8%쯤 늘었습니다.'); }
-        else out.push('길에서 버리던 시간이 눈에 띄게 줄었습니다.');
+        if (driveJob(S) && S.work.job) { vcOf(S).speedPay = `${S.work.job.id}|${S.work.job.since}`; S.work.job.pay *= 1.08; out.push('하루에 뛰는 건수가 늘어 벌이가 8%쯤 늘었습니다.'); }
+        // 그 밖의 사람은 오가는 시간이 줄어 습관이 이어지는 동안 조금 여유롭다(Vc.ongoing: 행복 +1, 출퇴근하면 스트레스 −2 — 피드백 219번)
+        else out.push(commutes(S) ? '출퇴근길이 짧아져 아침에 조금 더 잘 수 있게 되었습니다.' : '길에서 버리던 시간이 눈에 띄게 줄었습니다.');
         const r = Math.random();
         if (r < 0.04) { E.stat(S, 'health', -10); E.stat(S, 'happy', -6); E.addMoney(S, -H.pay(S, 1)); out.push('굽은 길에서 미끄러져 크게 다쳤습니다. 수리비도 만만치 않았습니다.'); }
         else if (r < 0.16) { H.fine(S, H.dev(S) >= 2 ? 0.3 : 0.15); out.push('과속 단속에 걸려 범칙금을 냈습니다.'); }
@@ -30709,17 +30841,26 @@ const Vc = {};
       } },
     { id: 'nobelt', ko: '안전띠 안 매기', koS: (S) => (bike(S) ? '헬멧 안 쓰기' : '안전띠 안 매기'), cat: 'vice', age: [18, 100], cd: 6, ap: 1,
       where: (S) => drives(S) && !vcOf(S).noBelt,
-      hint: (S) => gh(bike(S) ? '덥고 답답한 헬멧에서 해방' : '답답함·귀찮음 덜기', `사고 때 사망 약 ${bike(S) ? '1.7' : '1.6'}배·범칙금`),
+      hint: (S) => {
+        const b = bike(S), m = b ? Vc.MULT.helmet : Vc.MULT.belt;
+        return gh(`${hapKo(S, 2)}·이어지는 동안 행복 +${b && hotLand(S) ? '2(더운 날씨에 헬멧 없는 편함)' : b ? '1(헬멧 없는 편함)' : '1(매고 풀 일 없는 편함)'}`,
+          `사고 때 사망 약 ${m}배(지금 나이 사망 위험 ${hzKo(hzX(S, null, { road: m }))})${H.dev(S) >= 2 ? '·범칙금 10%' : ''}`);
+      },
       run: (S) => {
         vcOf(S).noBelt = true; relief(S, 2); vadd(S, { risk: 1 });
-        let t = bike(S) ? '덥고 답답하다며 헬멧을 벗고 다니기 시작했습니다. 바람이 시원합니다. (헬멧을 바르게 쓰면 오토바이 사고로 죽을 위험이 약 42% 줄어듭니다 · 세계보건기구)'
-          : '답답하다며 안전띠를 매지 않고 다니기 시작했습니다. 타고 내리기가 편해졌습니다. (안전띠는 사고 때 운전자가 죽을 위험을 45~50% 줄입니다 · 세계보건기구)';
+        // 얻는 것: 습관이 이어지는 동안 달마다 작은 편함(Vc.ongoing: 행복 +1, 더운 나라의 헬멧은 +2 — 피드백 219번)
+        let t = bike(S) ? `덥고 답답하다며 헬멧을 벗고 다니기 시작했습니다. 바람이 시원합니다.${hotLand(S) ? ' 땀에 젖은 헬멧을 쓰고 벗을 일이 없어 한결 편합니다.' : ''} (헬멧을 바르게 쓰면 오토바이 사고로 죽을 위험이 약 42% 줄어듭니다 · 세계보건기구)`
+          : '답답하다며 안전띠를 매지 않고 다니기 시작했습니다. 타고 내릴 때마다 매고 풀 일이 없어 편합니다. (안전띠는 사고 때 운전자가 죽을 위험을 45~50% 줄입니다 · 세계보건기구)';
         if (H.dev(S) >= 2 && U.chance(0.1)) { H.fine(S, 0.1); t += ' 첫 주에 단속에 걸려 범칙금을 냈습니다.'; }
         return t;
       } },
     { id: 'drunkdrive', ko: '술 마시고 운전하기', cat: 'vice', age: [18, 95], cd: 2, ap: 1,
       where: (S) => drives(S) && S.habit.drink >= 1,
-      hint: () => gh('대리비·택시비 아낌·편함', '단속·사고, 거듭하면 징역'),
+      hint: (S) => {
+        const pc = clamp(0.1 + 0.06 * rl(S) + 0.03 * H.dev(S), 0.04, 0.35), n = recent(vcOf(S).dd, S, 24);
+        return gh(`대리비·택시비 ${H.amt(S, H.dev(S) >= 2 ? 0.05 : 0.02)} 아낌·행복 +1`,
+          `단속·사고 ${pctKo(pc)}(그중 30%는 크게 다침, 벌금·면허 정지${S.crm && S.crm.dui >= 1 ? '·또 걸리면 징역 50%' : ''})·2년 동안 교통사고 사망 ${n >= 1 ? Vc.MULT.dd2 : Vc.MULT.dd1}배`);
+      },
       run: (S) => {
         pushRecent(S, 'dd', 24); vadd(S, { honest: -2, risk: 1 });
         const veh = bike(S) ? '오토바이' : '차';
@@ -30739,7 +30880,12 @@ const Vc = {};
       } },
     { id: 'saferide', ko: '운전 습관 바로잡기', cat: 'vice', age: [18, 120], cd: 6, ap: 1,
       where: (S) => !!(vcOf(S).speed || vcOf(S).noBelt || recent(vcOf(S).dd, S, 24)),
-      hint: () => gh('교통사고 위험이 예전 수준으로', '조금 느려지고 답답함'),
+      hint: (S) => {
+        const v = vcOf(S), dr = drives(S), lost = [];
+        if (v.noBelt && dr) lost.push(`${bike(S) ? '헬멧' : '안전띠'} 없는 편함 행복 +${bike(S) && hotLand(S) ? 2 : 1}`);
+        if (v.speed && dr) lost.push(v.speedPay ? '과속 벌이 +8%' : `오가는 시간 단축 행복 +1${commutes(S) ? '·스트레스 −2' : ''}`);
+        return gh(`교통사고 사망 위험이 제자리로(지금 약 ${R(Vc.riskMult(S).road * 10) / 10}배)`, `실패 25%${lost.length ? `·이어지던 득이 끝남(${lost.join(', ')})` : ''}`);
+      },
       run: (S) => {
         const parts = [], v = vcOf(S);
         if (v.speed) parts.push('제한 속도를 지키고');
@@ -30756,8 +30902,10 @@ const Vc = {};
       } },
     { id: 'tattoo', ko: '문신하기', cat: 'vice', age: [18, 85], cd: 12, ap: 1, cost: 0.3,
       where: (S) => !(S.rel === 'mus' && vl(S, 'faith') >= 60),
-      hint: (S) => (tradHigh(S) ? gh('개성·만족감', '평판↓·정식 일자리 구직에 불리') : gh('개성·매력 조금', '돈·지우기 어려움')),
+      hint: (S) => (tradHigh(S) ? gh(`${hapKo(S, 4)}·남는 동안 행복 +0.5(나다움)`, '평판 −3·정식 일자리 합격이 조금 어려워짐(이 나라는 문신을 곱지 않게 봄)·덧남 3%·지우기 어려움')
+        : gh(`${hapKo(S, 4)}·외모 +2·남는 동안 행복 +0.5·외모 +1(나다움·멋)`, '덧남 3%·지우기 어려움')),
       run: (S) => {
+        // 얻는 것: 새길 때의 만족과, 문신이 남는 동안의 작은 만족(Vc.ongoing: 행복 +0.5, 보수적이지 않은 곳은 외모 +1 — 피드백 219번)
         vcOf(S).tattoo = (vcOf(S).tattoo || 0) + 1;
         relief(S, 4); vadd(S, { risk: 2, trad: -2 });
         let t = `${U.pick(['팔목', '어깨', '등', '발목'])}에 ${U.pick(['작은 별', '이름 첫 글자', '꽃 한 송이', '파도', '새 한 마리', '좋아하는 글귀'])} 문신을 새겼습니다.`;
@@ -30768,7 +30916,11 @@ const Vc = {};
       } },
     { id: 'surgery', ko: '성형 수술', cat: 'vice', age: [18, 75], cd: 24, ap: 2, cost: (S) => (H.dev(S) >= 3 ? 3 : 4),
       where: (S) => H.dev(S) >= 2 || (H.urban(S) && H.rich(S)),
-      hint: () => gh('매력↑(오디션·외모가 중요한 일에 유리)', '큰돈·부작용(8%부터, 할수록↑)'),
+      hint: (S) => {
+        const n = ((S.vc && S.vc.surg) || 0) + 1;
+        return gh(`외모 +${2 * Math.max(1, R(6 / n))}(몇 해에 걸쳐 조금씩 줄어듦)·타고난 외모 +${Math.max(1, R(4 / n))}(오래 남음, 오디션·외모가 중요한 일에 유리)·행복 +6`,
+          `큰돈·부작용 ${8 + 3 * (n - 1)}%(건강 −8·행복 −8·외모 −4)`);
+      },
       run: (S) => {
         const n = (vcOf(S).surg = (vcOf(S).surg || 0) + 1);
         const part = age(S) >= 45 ? U.pick(['눈가 주름', '처진 눈꺼풀', '얼굴 주름']) : U.pick(['쌍꺼풀', '코', '턱선', '눈매']);
@@ -30779,7 +30931,7 @@ const Vc = {};
         return `${part} 수술을 받았습니다. ${n >= 3 ? '주변에서 이제 그만해도 된다고 말립니다.' : '붓기가 빠지자 첫인상이 좋아졌다는 말을 자주 듣습니다.'}`;
       } },
     { id: 'crashdiet', ko: '굶어서 살 빼기', cat: 'vice', age: [14, 85], cd: 6, ap: 2,
-      hint: () => gh('빠른 감량·매력 조금', '건강↓·요요'),
+      hint: (S) => { const f = R((S.vc && S.vc.fat) || 0); return gh(`외모 +2·꾸밈 +3(몇 달)${f > 0 ? `·몸무게 경향 −20(지금 ${f})` : ''}`, '건강 −4(12%는 −9)·행복 −2·한 해 안에 요요 50%'); },
       run: (S) => {
         pushRecent(S, 'diet', 24);
         E.stat(S, 'health', -4); E.stat(S, 'happy', -2); E.stat(S, 'charm', 1); S.boost.charm = Math.min(10, (S.boost.charm || 0) + 3);
@@ -30792,10 +30944,15 @@ const Vc = {};
     /* ---------------------------------------------------------------- 선을 넘는 일: 사람 */
     { id: 'affair', ko: '바람피우기', cat: 'dark', age: [20, 85], cd: 12, ap: 2,
       where: (S) => partnerOn(S) && !S.flags.affair,
-      hint: (S) => gh(coldMarriage(S) ? '큰 설렘(부부 사이가 차가움)' : '설렘', H.adulteryCrime(S) ? '들키면 이혼 위기·처벌' : '들키면 이혼 위기'),
+      hint: (S) => {
+        const cold = coldMarriage(S);
+        return gh(`행복 +${cold ? 10 : 6}·만나는 동안 행복 +${cold ? 3 : 2}(설렘${cold ? ', 부부 사이가 차가움' : ''})`,
+          `바로 들킴 20%·그 뒤 해마다 들킬 수 있음(이혼 위기${H.adulteryCrime(S) ? '·간통죄 처벌' : ''})·정직 −6·만나는 동안 배우자 가까움 −8`);
+      },
       run: (S) => {
         const cold = coldMarriage(S);
-        S.flags.affair = true; vcOf(S).affairM = S.ageM;
+        // 얻는 것: 몰래 만나는 동안 이어지는 설렘(Vc.ongoing: 행복 +2, 부부 사이가 차가우면 +3 — 피드백 219번)
+        S.flags.affair = true; vcOf(S).affairM = S.ageM; vcOf(S).affairCold = cold;
         E.stat(S, 'happy', cold ? 10 : 6); S.boost.happy = Math.min(10, S.boost.happy + (cold ? 6 : 4)); vadd(S, { honest: -6, risk: 2 });
         const t = `${H.working(S) ? '일터에서 알게 된' : '동네 모임에서 만난'} 사람과 배우자 몰래 만나기 시작했습니다.`;
         if (U.chance(0.2)) {
@@ -30809,14 +30966,18 @@ const Vc = {};
       } },
     { id: 'endaffair', ko: '몰래 만나던 사람과 끝내기', cat: 'dark', age: [20, 120], cd: 3, ap: 1,
       where: (S) => !!S.flags.affair && partnerOn(S),
-      hint: () => gh('들킬 위험이 사라짐·배우자와 가까워질 여지', '설렘이 끝남'),
+      hint: (S) => {
+        const v = S.vc || {}, own = v.affairM !== undefined;
+        return gh('들킬 위험이 사라짐·정직 +3·배우자 가까움이 제자리로(+8)', `행복 −2·${own ? `만나는 동안의 행복 +${v.affairCold ? 3 : 2}이 끝남` : '설렘이 끝남'}`);
+      },
       run: (S) => {
         delete S.flags.affair; E.stat(S, 'happy', -2); vadd(S, { honest: 3 });
         return '몰래 만나던 사람에게 이제 그만 만나자고 했습니다. 아무 일 없었던 것처럼 집으로 돌아왔지만, 비밀은 마음속에 남았습니다.';
       } },
     { id: 'runaway', ko: '집 나가기(가출)', cat: 'dark', age: [12, 17.99], cd: 12, ap: 2,
       where: (S) => !S.indep && !S.fam.married,
-      hint: (S) => gh(harshHome(S) ? '매질·학대에서 벗어나 숨 돌림' : '잔소리에서 벗어난 자유', '거리의 위험·패거리·학업 중단'),
+      hint: (S) => gh(harshHome(S) ? '행복 +7·마음의 상처 −10(매질에서 벗어나 숨 돌림)' : '행복 +3(잔소리에서 벗어난 자유)',
+        `부모님 가까움 ${harshHome(S) ? '−4' : '−8'}·몇 주 떠돎 28%(학업·패거리 ${(S.crm && S.crm.hood) || H.poor(S) ? '40%' : '15%'})·험한 일 12%`),
       run: (S) => {
         const harsh = harshHome(S);
         const out = [harsh ? '매를 피해 짐 몇 가지만 챙겨 집을 나왔습니다.' : `${U.j(C.elders(S), '과')} 크게 다툰 끝에 짐 몇 가지만 챙겨 집을 나왔습니다.`];
@@ -30846,10 +31007,12 @@ const Vc = {};
       } },
     { id: 'cutoff', ko: '가족과 연락 끊기', cat: 'dark', age: [18, 110], cd: 60, ap: 2,
       where: (S) => vcOf(S).cutoffM === undefined && (H.parentsAlive(S) > 0 || sibsAlive(S).length > 0),
-      hint: (S) => gh(hardFamily(S) ? '마음의 평화(가족과 사이가 나쁨)' : '간섭에서 벗어남', '가족과 멀어짐·외로움(부모님 찾아뵙기로 되돌림)'),
+      hint: (S) => (hardFamily(S) ? gh('행복 +10·마음의 상처 −10·끊은 동안 스트레스 −4(가족과 사이가 나쁨)', '부모님 가까움 −35·형제 −20, 끊은 동안 해마다 더 멀어짐(부모님 찾아뵙기로 되돌림)')
+        : gh('행복 +2·끊은 동안 스트레스 −2(간섭에서 벗어남)', '부모님 가까움 −35·형제 −20·관계 −3, 끊은 동안 해마다 더 멀어짐(부모님 찾아뵙기로 되돌림)')),
       run: (S) => {
         const hard = hardFamily(S);
-        vcOf(S).cutoffM = S.ageM;
+        // 얻는 것: 끊은 동안 이어지는 마음의 평화(Vc.ongoing: 스트레스 −2, 사이가 나빴으면 −4 — 피드백 219번)
+        vcOf(S).cutoffM = S.ageM; vcOf(S).cutoffHard = hard;
         let t = '{N은} 가족과 연락을 끊었습니다. 전화번호를 바꾸고 명절에도 찾아가지 않습니다.' + bumpPar(S, -35);
         if (hasPp()) for (const s of sibsAlive(S)) if (s.close !== undefined) Pp.bump(S, s, 'sib', -20);
         if (!S.indep) { E.becomeIndependent(S); if (!S.work.job && !S.work.retired && S.edu.stage === null && !S.mil) S.work.seeking = true; t += ' 집을 나와 혼자 살기 시작했습니다.'; }
@@ -30860,13 +31023,20 @@ const Vc = {};
       } },
     { id: 'divorceask', ko: '이혼하자고 하기', koS: (S) => (noDiv(S) ? '갈라서자고 하기' : '이혼하자고 하기'), cat: 'dark', age: [18, 120], cd: 24, ap: 3,
       where: (S) => partnerOn(S),
-      hint: (S) => gh(coldMarriage(S) ? '불행한 결혼에서 벗어남' : '새 출발', '가진 현금 40% 나눔·자녀와 멀어짐'),
+      hint: (S) => {
+        const lo = partnerOn(S) && S.fam.partner.close !== undefined && S.fam.partner.close < 35;
+        return gh(lo ? '불행한 결혼에서 벗어남(행복 +6)' : '새 출발', `가진 현금 40% 나눔${H.kids(S) ? '·25세 아래 자녀 가까움 −8' : ''}${lo ? '' : '·사이가 아주 나쁘지 않으면 행복 −10'}${H.strictF(S) ? '·배우자가 거부 50%' : '·배우자가 거부 8%'}`);
+      },
       run: (S) => { E.ask(S, 'x_vc_divorce', { act: true }); return null; } },
     { id: 'brawl', ko: '시비 걸고 주먹다짐', cat: 'dark', age: [13, 75], cd: 3, ap: 1,
-      hint: (S) => gh(roughHood(S) ? '체면·만만히 보이지 않음' : '분풀이', '부상·폭행 체포'),
+      hint: (S) => {
+        const w = brawlWin(S), bp = age(S) >= 16 ? bustP(S, 'violent', 2, clamp(0.25 * enforce(S), 0.05, 0.45)) : 0;
+        return gh(`이기면(약 ${R(w * 100)}%) 분풀이 ${hapKo(S, 3)}${roughHood(S) ? '·평판 +7·관계 +2(거친 동네라 만만히 보이지 않음)' : ''}`,
+          `평판 −3·지면 건강 −6~−14·치료비${bp ? `·이겨도 신고 약 ${pctKo(bp)}(폭행 체포)` : ''}`);
+      },
       run: (S) => {
         vadd(S, { risk: 2, rep: -3, honest: -1 });
-        const win = U.chance(clamp(0.45 + (S.st.health - 60) / 150 + (H.talent(S, 'sport') - 50) / 200 + (S.sex === 'm' ? 0.05 : -0.1), 0.15, 0.8));
+        const win = U.chance(brawlWin(S));
         const where = minor(S) ? '동네 골목에서' : H.drinks(S) && U.chance(0.5) ? '술집 앞에서' : '길에서';
         const out = [`${where} 어깨를 부딪친 사람에게 먼저 시비를 걸어 주먹다짐을 벌였습니다.`];
         if (win) {
@@ -30881,7 +31051,7 @@ const Vc = {};
         return out.join(' ');
       } },
     { id: 'gossip', ko: '거짓말·뒷담화', cat: 'dark', age: [10, 120], cd: 2, ap: 1,
-      hint: (S) => gh(`들키지 않으면 사교 +3·평판 +2${H.working(S) || H.college(S) ? '·인맥 +1.5' : ''}`, '들통나면(약 35%) 친구·평판 잃음'),
+      hint: (S) => gh(`들키지 않으면(65%) 행복 +2·관계 +3·평판 +2${H.working(S) || H.college(S) ? '·인맥 +1.5' : ''}`, '정직 −3·들통나면(35%) 친구 가까움 −25·평판 −6·관계 −4'),
       run: (S) => {
         vadd(S, { honest: -3 });
         const f = H.friend(S);
@@ -30897,10 +31067,12 @@ const Vc = {};
       } },
     { id: 'neglect', ko: '아이 내버려 두고 놀기', koS: (S) => (youngKids(S).length ? '아이 내버려 두고 놀기' : '동생 돌보기 내팽개치기'), cat: 'dark', age: [10, 100], cd: 2, ap: 1,
       where: (S) => youngKids(S).length > 0 || (!S.indep && age(S) < 18 && youngSibs(S).length > 0),
-      hint: () => gh('쉴 틈·놀 시간', '아이가 다칠 수 있음·가족과 멀어짐·신고'),
+      hint: (S) => (youngKids(S).length ? gh(`${hapKo(S, 4)}·스트레스 −3(혼자만의 시간)`, `아이 가까움 −6·배우자 −4·아이가 크게 다침 7%${H.dev(S) >= 2 ? '·2년에 3번째부터 신고 30%' : ''}`)
+        : gh(`${hapKo(S, 4)}·스트레스 −3(친구와 실컷 놂)`, '동생 가까움 −5·혼남 40%(부모님 가까움 −3)')),
       run: (S) => {
         const n = pushRecent(S, 'neglect', 24);
         relief(S, 4);
+        calm(S, 3); // 얻는 것(피드백 219번): 돌봄에서 잠시 벗어나 숨을 돌린다
         if (youngKids(S).length) {
           const k = U.pick(youngKids(S));
           let t = `${U.j(k.name, '을')} 집에 혼자 두고 밤늦게까지 놀다 들어왔습니다. 오랜만에 혼자만의 시간을 누렸습니다.`;
@@ -30918,7 +31090,7 @@ const Vc = {};
       } },
     { id: 'sponge', ko: '부모님께 손 벌리기', cat: 'dark', age: [18, 90], cd: 6, ap: 1,
       where: (S) => S.indep && H.parentsAlive(S) > 0,
-      hint: () => gh('돈(부모님 형편만큼, 최대 월급 3달 치)', '부모님과 멀어짐·물려받을 몫 줄어듦'),
+      hint: (S) => { const n = recent(vcOf(S).sponge, S, 36); return gh('돈(부모님 형편만큼 월급 1~3달 치, 형편이 어려우시면 0.3달 치)·행복 +1', `부모님 가까움 −${3 + 2 * Math.min(3, n)}(거듭할수록 커짐)·물려받을 몫 줄어듦`); },
       run: (S) => {
         const fam = S.fam, n = pushRecent(S, 'sponge', 36), iso = E.iso(S), w = C.elders(S);
         const cap = hasEc() ? Math.max(0, Ec.conv((fam.nw || 0) * 0.08, S.born.iso, iso)) : 0;
@@ -30936,10 +31108,15 @@ const Vc = {};
     /* ---------------------------------------------------------------- 선을 넘는 일: 일·학교 */
     { id: 'skipwork', ko: '무단결근하기', koS: (S) => (selfJob(S) ? '일 내팽개치고 놀기' : '무단결근하기'), cat: 'dark', age: [15, 90], cd: 2, ap: 1,
       where: (S) => !!S.work.job && !crimeJob(S) && !(C.JOB[S.work.job.id] || {}).special,
-      hint: (S) => gh(hardTime(S) ? '지친 몸과 마음의 쉼(크게)' : '쉼', selfJob(S) ? '벌이·손님 줄어듦' : '거듭하면 해고'),
+      hint: (S) => {
+        const n = recent(vcOf(S).skip, S, 24) + 1;
+        return gh(`${hapKo(S, 4)}·스트레스 −5(하루 쉼)`, selfJob(S) ? `그동안 못 번 돈 ${H.amt(S, 0.25)}${n >= 3 ? '·단골이 줄어 벌이 −3%' : ''}`
+          : `잘릴 확률 ${R(100 * clamp((H.formal(S) ? 0.05 : 0.1) * n, 0, 0.6))}%(2년 안에 거듭할수록 커짐)${n >= 2 ? '·관계 −2' : ''}`);
+      },
       run: (S) => {
         const n = pushRecent(S, 'skip', 24);
         const eased = relief(S, 4); vadd(S, { honest: -1 });
+        calm(S, 5); // 얻는 것(피드백 219번): 일에서 하루 벗어나 스트레스가 풀린다
         const rest = eased ? ' 지친 몸과 마음이 조금 쉬었습니다.' : ' 오랜만에 늦잠을 실컷 잤습니다.';
         if (selfJob(S)) {
           E.addMoney(S, -H.pay(S, 0.25));
@@ -30952,7 +31129,7 @@ const Vc = {};
       } },
     { id: 'truant', ko: '학교 빼먹기', koS: (S) => (H.college(S) ? '수업 빼먹기' : '학교 빼먹기'), cat: 'dark', age: [8, 40], cd: 2, ap: 1,
       where: (S) => S.edu.stage !== null,
-      hint: () => gh('놀 시간·친구와 어울림', '성적↓·자퇴 위험'),
+      hint: (S) => { const n = recent(vcOf(S).truant, S, 24) + 1; return gh(`${hapKo(S, 3)}·관계 +2·친구 가까움 +4`, `지식 −1·자퇴 위험 1.25배${atHome(S) && !H.college(S) ? `·부모님께 알려짐 ${R(100 * Math.min(1, 0.35 + 0.1 * (n - 1)))}%(가까움 −3)` : ''}`); },
       run: (S) => {
         const n = pushRecent(S, 'truant', 24);
         relief(S, 3); E.stat(S, 'social', 2); E.stat(S, 'smarts', -1);
@@ -30967,7 +31144,7 @@ const Vc = {};
     { id: 'dropout', ko: '학교 그만두기', koS: (S) => (H.college(S) ? '학교 그만두기(중퇴)' : '학교 그만두기(자퇴)'), cat: 'dark', age: [13, 50], cd: 12, ap: 2,
       where: (S) => S.edu.stage !== null && S.edu.stage >= 1,
       need: (S) => reason(age(S) >= 15 || H.dev(S) <= 1, '의무 교육 나이라 아직 그만둘 수 없습니다'),
-      hint: () => gh('바로 돈벌이를 시작함·학비 부담이 사라짐', '학력이 멈춤(검정고시로 만회 가능)'),
+      hint: (S) => gh(`${hapKo(S, 3)}·바로 일자리를 찾아 돈벌이·학비 부담이 사라짐${H.student(S) && age(S) >= 15 && age(S) < 19 ? '·입시 스트레스 −5' : ''}`, `학력이 멈춤(검정고시로 만회 가능)${atHome(S) ? '·부모님 가까움 −8' : ''}`),
       run: (S) => {
         const nm = C.STAGE_NAME[S.edu.stage];
         const home = atHome(S);
@@ -30980,11 +31157,11 @@ const Vc = {};
     /* ---------------------------------------------------------------- 선을 넘는 일: 돈 */
     { id: 'examcheat', ko: '시험 부정행위', cat: 'dark', age: [15, 22], cd: 12, ap: 1,
       where: (S) => cheatWindow(S),
-      hint: (S) => gh("대학 입학시험 '잘 봄'(대학 합격 가능성 크게↑)", `걸리면 0점·정학·퇴학 기록(${cheatWatchKo(S)})`),
+      hint: (S) => gh("대학 입학시험 '잘 봄'(대학 합격 가능성 크게↑)", `걸릴 확률 쪽지 ${R(100 * cheatP(S, CHEAT_BASE.note))}%·정답 사기 ${R(100 * cheatP(S, CHEAT_BASE.buy))}%·대리 시험 ${R(100 * cheatP(S, CHEAT_BASE.proxy))}%(${cheatWatchKo(S)} — 걸리면 0점·정학, 대리는 퇴학 60%)`),
       run: (S) => { E.ask(S, 'x_vc_cheat', { act: true }); return null; } },
     { id: 'doping', ko: '금지 약물 쓰기(도핑)', cat: 'dark', age: [15, 45], cd: 12, ap: 1, cost: (S) => (H.jobIs(S, 'athlete') ? 1.5 : 0.6),
       where: (S) => typeof Sp !== 'undefined' && !!Sp.eff && (H.jobIs(S, 'athlete') || (!!Sp.main && !!Sp.main(S)) || S.hobbies.includes('sport')),
-      hint: (S) => gh('한 해 동안 경기·입단 테스트 실력 +6~10', `검사에 걸리면 2년 출전 정지·계약 해지·명성↓(한 해 약 ${R(100 * dopeTestY(S))}%), 심장 질환 위험`),
+      hint: (S) => gh('한 해 동안 경기·입단 테스트 실력 +6~10', `검사에 걸리면 2년 출전 정지·계약 해지·명성↓(한 해 약 ${R(100 * dopeTestY(S))}%)·건강 −2·심장병 사망 ${DOPE_MULT.ihd}배·뇌졸중 ${DOPE_MULT.stroke}배(쓰는 동안과 그 뒤 1년)`),
       run: (S) => {
         const v = vcOf(S), b = U.randInt(6, 10), sp = Sp.mainOrNat(S);
         v.dope = { until: S.ageM + 12, b }; v.dopeM = S.ageM;
@@ -30993,7 +31170,8 @@ const Vc = {};
       } },
     { id: 'splurge', ko: '카드로 펑펑 쓰기', cat: 'dark', age: [18, 110], cd: 3, ap: 1,
       where: (S) => S.indep && H.dev(S) >= 1,
-      hint: (S) => gh(`매력이 한 해 동안 오름(멋)·사교 모임 초대·인맥`, `한 번에 월급 ${R(1.5 * (1 + H.wealth(S)))}~${R(3 * (1 + H.wealth(S)))}달 치 + 한 해 동안 달마다 유지비, 빚`),
+      hint: (S) => gh(`행복 +6·관계 +3·한 해 동안 외모가 받쳐짐(꾸밈 +${LUX_CHARM}, 한 해 뒤 외모 약 +3)·새 친구 40%${H.working(S) || H.college(S) ? '·인맥 +2' : ''}`,
+        `한 번에 월급 ${R(1.5 * (1 + H.wealth(S)) * 10) / 10}~${R(3 * (1 + H.wealth(S)) * 10) / 10}달 치 + 한 해 동안 달마다 ${LUX_UPKEEP}달 치(유지비)·빚`),
       run: (S) => {
         const m = (U.randInt(15, 30) / 10) * (1 + H.wealth(S)), before = S.money, v = vcOf(S);
         E.addMoney(S, -H.pay(S, m));
@@ -31011,7 +31189,7 @@ const Vc = {};
       } },
     { id: 'loanshark', ko: '사채 빌리기', cat: 'dark', age: [19, 100], cd: 6, ap: 1,
       where: (S) => S.indep && !!S.rap && (S.rap.debtShark || 0) < 30,
-      hint: () => gh('급전(월급 2~5달 치, 빚 독촉을 막음)', '해마다 이자 25%·불법 추심'),
+      hint: () => gh('급전(월급 2~5달 치, 당장의 빚 독촉을 막음)', '갚을 돈은 빌린 돈의 1.3배부터·해마다 이자 25%·불법 추심'),
       run: (S) => {
         const m = U.randInt(2, 5), short = S.money < 0;
         E.addMoney(S, H.pay(S, m));
@@ -31021,7 +31199,8 @@ const Vc = {};
       } },
     { id: 'mlm', ko: '다단계 판매 뛰어들기', cat: 'dark', age: [20, 85], cd: 36, ap: 2, cost: 1,
       where: (S) => S.indep && H.dev(S) >= 1 && !H.jobIs(S, 'mlm'),
-      hint: () => gh('드물게 큰 수입(약 5%)', '대부분 돈·친구를 잃음'),
+      hint: (S) => ((!S.work.job || S.work.home || S.work.seeking) && hasCm() && Cm.JOBS && Cm.JOBS.mlm ? gh('다단계 판매원이 됨(실적만큼 수입)', '등록비·떠안은 물건·실적 압박·회사 단속')
+        : gh('5%는 월급 4달 치·20%는 월급 0.5달 치', '75%는 월급 1~3달 치 손해(행복 −6·관계 −4)·친구 3명 가까움 −10·평판 −2')),
       run: (S) => {
         // 일이 없거나 살림만 하는 사람은 아예 다단계 판매원이 된다(crime.js 의 '올바르지 않은 직업', 피드백 78번 — 실적 압박·회사 단속 사건이 이어짐)
         if ((!S.work.job || S.work.home || S.work.seeking) && hasCm() && Cm.JOBS && Cm.JOBS.mlm && Cm.takeCJ) {
@@ -31041,7 +31220,7 @@ const Vc = {};
     { id: 'allin', ko: '코인·주식 몰빵', cat: 'dark', age: [18, 100], cd: 6, ap: 1,
       where: (S) => S.indep && H.internet(S) > 0.35 && H.dev(S) >= 1,
       need: (S) => reason(S.money >= H.pay(S, 1), '걸 돈이 없습니다'),
-      hint: () => gh('드물게 몇 배 수익(30%는 이득)', '평균은 손해, 40%는 거의 다 잃음'),
+      hint: () => gh('30%는 이득(11%는 1.5~3배·2%는 4~10배)', '가진 돈의 80%를 걺 — 평균 약 11% 손해·40%는 70~95% 잃음·도박 중독'),
       run: (S) => {
         const stake = Math.max(0, S.money) * 0.8, r = Math.random();
         // 기댓값 약 0.88: 수수료와 늦게 뛰어든 개인 투자자의 손실(크게 버는 사람은 드물다)
@@ -31061,7 +31240,9 @@ const Vc = {};
       } },
     { id: 'taxdodge', ko: '세금 빼먹기(탈세)', cat: 'dark', age: [20, 95], cd: 12, ap: 1,
       where: (S) => !!S.work.job && (selfJob(S) || H.formal(S)) && !H.noIncomeTax(S) && !crimeJob(S),
-      hint: (S) => { const t = taxOf(S); return gh(`그해 세금의 ${selfJob(S) ? '15~35%' : '3~8%(원천징수라 작음)'}(약 ${U.j(H.amt(S, t.months * (selfJob(S) ? 0.25 : 0.055)), '을')} 아낌)`, '세무 조사 → 가산세까지 2.5배·징역'); },
+      hint: (S) => { const t = taxOf(S); const self = selfJob(S), g = Math.max(0.1, t.months * (self ? 0.25 : 0.055)), n = ((S.vc && S.vc.tax) || 0) + 1;
+        const bp = bustP(S, 'corrupt', (self ? 0.5 : 0.3) * (1 + 0.3 * (n - 1)) * (1 + Math.min(1, g / 6)), clamp(0.08 * enforce(S) * (1 + 0.3 * (n - 1)), 0.02, 0.45));
+        return gh(`세금 약 ${H.amt(S, g)} 아낌(그해 세금의 ${self ? '15~35%' : '3~8% — 원천징수라 작음'})`, `세무 조사 약 ${pctKo(bp)}(가산세까지 2.5배, 큰돈이면 징역)·5년 동안 해마다 드러날 수 있음`); },
       run: (S) => {
         const self = selfJob(S), t = taxOf(S);
         // 얻는 것: 그해 낼 세금의 15~35%(자영업·사업가: 매출 누락) 또는 3~8%(월급쟁이: 원천징수라 공제·부업 소득 누락 정도)
@@ -31079,7 +31260,7 @@ const Vc = {};
       } },
     { id: 'insfraud', ko: '보험 사기', cat: 'dark', age: [20, 90], cd: 24, ap: 2,
       where: (S) => S.indep && H.dev(S) >= 1 && (!!S.flags.insured || drives(S)),
-      hint: () => gh('보험금(월급 2~5달 치)', '들키면 벌금·징역, 몇 해 뒤 드러나기도'),
+      hint: (S) => gh('보험금(월급 2~5달 치)', `보험사 조사에 들킬 ${pctKo(clamp(0.15 + 0.1 * rl(S) + 0.03 * H.dev(S), 0.05, 0.5))}(그중 45%는 징역, 나머지는 벌금)·5년 동안 해마다 드러날 수 있음`),
       run: (S) => {
         const car = drives(S) && (!S.flags.insured || U.chance(0.5)), g = U.randInt(2, 5);
         if (S.rap) S.rap.ever.crime = true;
@@ -31097,7 +31278,7 @@ const Vc = {};
       } },
     { id: 'embezzle', ko: '회사 돈 빼돌리기', cat: 'dark', age: [22, 75], cd: 24, ap: 2,
       where: (S) => H.ladder(S) || H.jobIs(S, 'entrepreneur'),
-      hint: (S) => gh(embBig(S) ? '내 월급 6~24달 치(돈을 만지는 자리)' : '내 월급 1~4달 치', '큰 금액일수록 잘 걸림 → 해고·징역, 몇 해 뒤 드러나기도'),
+      hint: (S) => { const r = embRange(S), pa = (g) => R(100 * clamp(0.1 + 0.08 * rl(S) + 0.012 * g, 0.06, 0.6)); return gh(embBig(S) ? '내 월급 6~24달 치(돈을 만지는 자리)' : '내 월급 1~4달 치', `그 자리에서 들킬 ${pa(r[0])}~${pa(r[1])}%(큰돈일수록, 해고·60% 넘게 징역)·5년 동안 해마다 드러날 수 있음`); },
       run: (S) => {
         const r = embRange(S), g = r[0] + (r[1] - r[0]) * Math.pow(Math.random(), 1.4);
         if (S.rap) S.rap.ever.crime = true;
@@ -31117,7 +31298,8 @@ const Vc = {};
       } },
     { id: 'bribe', ko: '뇌물로 일 해결하기', cat: 'dark', age: [20, 110], cd: 12, ap: 1,
       where: (S) => S.indep && (bribePromo(S) || !!C.DEC.x_cm_bribe_give),
-      hint: (S) => (bribePromo(S) ? gh(`승진(뒷돈이 통할 가능성 약 ${R(100 * bribeP(S))}%)`, '봉투값을 날리거나, 들키면 해고·징역') : gh('막힌 허가가 빨리 남(가게 벌이↑)', '뇌물 공여로 벌금·징역')),
+      hint: (S) => (bribePromo(S) ? gh(`승진 — 월급 +25%(뒷돈이 통할 가능성 약 ${R(100 * bribeP(S))}%)`, `봉투값 월급 ${R(clamp(S.work.job.pay / 12 / Math.max(1, H.month(S)), 0.5, 4) * 15) / 10}달 치·감찰 약 ${pctKo(bustP(S, 'corrupt', 0.6, clamp(0.1 * enforce(S), 0.03, 0.4)))}(해고 50%·징역 35%)·5년 동안 드러날 수 있음`)
+        : gh('막힌 허가가 빨리 남(가게 벌이↑)', '뇌물 공여로 벌금·징역')),
       run: (S) => {
         vadd(S, { honest: -2 });
         // 정식 직원: 인사권자에게 봉투를 건네 승진을 산다(부패가 심한 나라일수록 잘 통하고, 깨끗한 나라일수록 잘 걸린다)
@@ -31136,7 +31318,7 @@ const Vc = {};
             H.promote(S); E.stat(S, 'happy', 6);
             if (S.work.job.lv >= 4) H.ach(S, 'exec');
             hide(S, 'brb', g, `${S.work.job.id}|${S.work.job.since}`);
-            return `${lead} 다음 인사에서 {N}의 이름이 올라갔습니다. ${U.j(C.LEVELS[S.work.job.lv], '으로')} 승진해 월급이 25% 올랐습니다. 그 봉투 이야기는 아무도 입에 올리지 않습니다.`;
+            return `${lead} 다음 인사에서 {N}의 이름이 올라갔습니다. ${U.j(H.lvName(S), '으로')} 승진해 월급이 25% 올랐습니다. 그 봉투 이야기는 아무도 입에 올리지 않습니다.`;
           }
           E.stat(S, 'happy', -4);
           return `${lead} 윗사람은 봉투만 챙기고 아무 일도 하지 않았습니다. 돈만 날렸습니다.`;
@@ -31145,7 +31327,8 @@ const Vc = {};
         return '"인사"만 잘하면 막힌 일이 금방 풀린다는 중개인을 찾아갔습니다.';
       } },
     { id: 'shoplift', ko: '물건 훔치기', cat: 'dark', age: [10, 90], cd: 2, ap: 1,
-      hint: (S) => gh(minor(S) ? '공짜 물건·친구들 사이 체면' : '공짜 물건(월급 0.3달 치쯤)', '붙잡히면 벌금·전과'),
+      hint: (S) => gh(minor(S) ? '공짜 물건·행복 +3·관계 +2(친구들 사이 체면)' : `공짜 물건(${H.amt(S, 0.3)}쯤)·행복 +3`,
+        `붙잡힐 확률 약 ${pctKo(bustP(S, 'theft', 2, clamp(0.18 + 0.08 * rl(S) + 0.04 * H.dev(S), 0.08, 0.5)))}(${age(S) < 16 ? '부모님이 물어 주심·가까움 −5' : '체포 — 벌금·전과'})·정직 −3`),
       run: (S) => {
         vadd(S, { honest: -3, risk: 2 });
         vcOf(S).theft = (vcOf(S).theft || 0) + 1;
@@ -31167,12 +31350,18 @@ const Vc = {};
         return `가게에서 ${U.j(what, '을')} 훔치다 그 자리에서 붙잡혔습니다.`;
       } },
     { id: 'vandal', ko: '낙서·기물 부수기', cat: 'dark', age: [10, 55], cd: 3, ap: 1,
-      hint: (S) => gh(hardTime(S) ? '화풀이·후련함(크게)' : '화풀이·후련함', '벌금·전과'),
+      hint: (S) => gh(`들키지 않으면 후련함 ${hapKo(S, 4)}·친구들과 어울리면 관계 +2·친구 가까움 +3`,
+        `붙잡힐 확률 약 ${pctKo(bustP(S, 'theft', 1.5, clamp(0.25 + 0.08 * rl(S), 0.1, 0.5)))}(벌금 ${H.amt(S, 0.3)}·전과${(vcOf(S).vandal || 0) >= 2 && !minor(S) ? '·세 번째부터 징역 30%' : ''})`),
       run: (S) => {
         vadd(S, { risk: 2, honest: -1 });
         const n = (vcOf(S).vandal = (vcOf(S).vandal || 0) + 1);
         const how = H.drinks(S) && !minor(S) && U.chance(0.5) ? '술김에 버스 정류장 유리를 걷어차 깨뜨렸습니다.' : '밤에 친구들과 어울려 담벼락과 가게 셔터에 스프레이로 낙서를 했습니다.';
-        if (!busted(S, 'theft', 1.5, clamp(0.25 + 0.08 * rl(S), 0.1, 0.5))) { relief(S, 4); return `${how} 아무도 범인을 몰랐습니다. 속이 후련했습니다.`; }
+        if (!busted(S, 'theft', 1.5, clamp(0.25 + 0.08 * rl(S), 0.1, 0.5))) {
+          relief(S, 4);
+          // 얻는 것(피드백 219번): 친구들과 함께 한 낙서는 그 무리와의 사이를 가깝게 한다
+          if (/친구들과/.test(how)) { E.stat(S, 'social', 2); const f = H.friend(S); if (f) f.close = clamp(f.close + 3, 0, 100); return `${how} 아무도 범인을 몰랐습니다. 속이 후련했고, 함께한 친구들과 한층 가까워졌습니다.`; }
+          return `${how} 아무도 범인을 몰랐습니다. 속이 후련했습니다.`;
+        }
         E.stat(S, 'happy', -5);
         if (minor(S)) { H.fine(S, 0.3); vadd(S, { rep: -4 }); return `${how} 순찰하던 경찰에게 붙잡혀 벌금을 물고, 며칠 동안 낙서를 지웠습니다.${atHome(S) ? bumpPar(S, -4) : ''}`; }
         H.fine(S, 0.3);
@@ -31182,7 +31371,7 @@ const Vc = {};
       } },
     { id: 'crimepath', ko: '검은 일 찾아 나서기', cat: 'dark', age: [16, 60], cd: 12, ap: 2,
       where: (S) => !!S.rap && !crimeJob(S) && !S.work.retired && S.edu.stage === null,
-      hint: (S) => gh(legitJob(S) ? '하던 일은 그대로, 부업 검은돈(한 번에 월급 1.5~4달 치, 그 뒤 해마다 더)' : '보통 벌이를 웃도는 검은 일자리', '수감·폭력·범죄 수익 몰수'),
+      hint: (S) => gh(legitJob(S) ? '하던 일은 그대로, 부업 검은돈(한 번에 월급 1.5~4달 치, 그 뒤 해마다 더)' : '보통 벌이를 웃도는 검은 일자리', `정직 −2·수감·폭력·범죄 수익 몰수(제안을 받으면 체포 위험이 보임 — ${hasCm() && Cm.clearP ? `{country} 절도 검거율 약 ${R(100 * Cm.clearP(E.iso(S), 'theft'))}%` : '나라마다 다름'})`),
       run: (S) => {
         vadd(S, { honest: -2, risk: 2 });
         // 번듯한 일이 있는 사람은 일을 그만두지 않고 '가끔 하는 검은 일'(values.js 범죄의 길: 한 번에 몇 달 치, 그 뒤 해마다 검은돈과 수사망)
@@ -31272,7 +31461,7 @@ const Vc = {};
         if (typeof t === 'string' && /다른 사람이 뽑혔습니다/.test(t) && S2.work.job && U.chance(add)) {
           H.promote(S2); E.stat(S2, 'happy', 10);
           if (S2.work.job.lv >= 4) H.ach(S2, 'exec');
-          return C.t(S2, `술자리와 흡연실에서 쌓은 인맥 덕분에 막판에 {N이} 뽑혔습니다. ${U.j(C.LEVELS[S2.work.job.lv], '으로')} 승진해 월급이 25% 올랐습니다!`);
+          return C.t(S2, `술자리와 흡연실에서 쌓은 인맥 덕분에 막판에 {N이} 뽑혔습니다. ${U.j(H.lvName(S2), '으로')} 승진해 월급이 25% 올랐습니다!`);
         }
         return t;
       } };
@@ -31402,6 +31591,12 @@ const Vc = {};
       fx: { money: -0.15, happy: -1 },
     },
     {
+      // 과속으로 줄어든 출퇴근 시간(피드백 219번 — 이어지는 득은 Vc.ongoing, 이 사건은 그 장면)
+      id: 'vc_speedtime', age: [18, 100], cd: 1, rate: (S) => (S.vc && vcOf(S).speed && drives(S) && !driveJob(S) && commutes(S) && !S.prison ? 0.3 : 0),
+      text: (S) => U.pick([`늦잠을 잤지만 서둘러 밟아 ${H.working(S) ? '일터' : '학교'}에 제시간에 닿았습니다.`, `막히는 길을 이리저리 빠져나가 ${H.working(S) ? '출근' : '등교'} 시간이 십 분쯤 줄었습니다. 아침이 조금 여유로워졌습니다.`]),
+      fx: { happy: 1 },
+    },
+    {
       id: 'vc_cutoffnews', age: [18, 110], cd: 3, rate: (S) => (S.vc && vcOf(S).cutoffM !== undefined && H.parentsAlive(S) > 0 ? 0.3 : 0),
       text: (S) => `명절에도 집에 연락하지 않았습니다. ${C.elders(S)}께서 많이 늙으셨다는 소식을 건너 들었습니다.`,
       fx: { happy: -2 },
@@ -31510,11 +31705,15 @@ const Vc = {};
       const v = v0(S);
       if (!v || !S.vc) return v;
       const x = S.vc, iss = v.issues || (v.issues = []);
-      if (S.habit.smoke) iss.push({ ko: '흡연', level: 50, note: '폐암·심장병 위험(담배 끊기)' });
+      if (S.habit.smoke) iss.push({ ko: '흡연', level: 50, note: `${x.smokeNet ? '함께 피우는 무리 관계 +1 · ' : ''}폐암·심장병 위험(담배 끊기)` });
       if (S.habit.drink >= 2) iss.push({ ko: '잦은 과음', level: 50, note: '간 질환·사고 위험(술 줄이기)' });
       if (x.obese) iss.push({ ko: '비만', level: R(x.fat), note: '당뇨·고혈압 위험(운동·식단 관리)' });
-      if (drives(S) && (x.speed || x.noBelt || recent(x.dd, S, 24))) iss.push({ ko: '위험한 운전', level: 60, note: [x.speed ? '과속' : '', x.noBelt ? (bike(S) ? '헬멧 안 씀' : '안전띠 안 맴') : '', recent(x.dd, S, 24) ? '음주 운전' : ''].filter(Boolean).join('·') });
-      if (x.cutoffM !== undefined) iss.push({ ko: '가족과 연락 끊음', level: 40, note: '부모님 찾아뵙기로 다시 이을 수 있음' });
+      if (drives(S) && (x.speed || x.noBelt || recent(x.dd, S, 24))) {
+        // 얻는 것과 위험을 함께(피드백 219번): 이어지는 편함·벌이와 지금의 교통사고 사망 배수
+        const gain = [x.noBelt ? `편함 행복 +${bike(S) && hotLand(S) ? 2 : 1}` : '', x.speed ? (driveJob(S) ? '벌이 +8%' : `오가는 시간 단축 행복 +1${commutes(S) ? '·스트레스 −2' : ''}`) : ''].filter(Boolean).join('·');
+        iss.push({ ko: '위험한 운전', level: 60, note: `${[x.speed ? '과속' : '', x.noBelt ? (bike(S) ? '헬멧 안 씀' : '안전띠 안 맴') : '', recent(x.dd, S, 24) ? '음주 운전' : ''].filter(Boolean).join('·')} — ${gain ? `${gain} · ` : ''}교통사고 사망 약 ${R(Vc.riskMult(S).road * 10) / 10}배` });
+      }
+      if (x.cutoffM !== undefined) iss.push({ ko: '가족과 연락 끊음', level: 40, note: `끊은 동안 스트레스 −${x.cutoffHard ? 4 : 2} · 해마다 더 멀어짐 · 부모님 찾아뵙기로 다시 이을 수 있음` });
       if (x.hidden && x.hidden.length) iss.push({ ko: '숨긴 비리', level: 50, note: '몇 해 안에 드러날 수 있음' });
       return v;
     };
@@ -31562,6 +31761,12 @@ const Vc = {};
       else { delete v.luxUntil; delete v.lux; }
     }
     if (v.dope && !S.prison && H.jobIs(S, 'athlete') && S.ageM < v.dope.until && U.chance(1 - Math.pow(1 - dopeTestY(S), 1 / 12))) E.log(S, C.t(S, dopeCaught(S)), 'bad');
+    // 이어지는 작은 득(피드백 219번)
+    ongoingMonth(S);
+    // 과속 습관이 다른 길(교통사고 합의 때 습관 고치기 — accident.js)로 끝났으면 늘었던 운전 일 벌이도 되돌린다(같은 일자리일 때)
+    if (v.speedPay && !v.speed) { const j = S.work.job; if (j && v.speedPay === `${j.id}|${j.since}`) j.pay /= 1.08; delete v.speedPay; }
+    // 과속 습관이 있는 채로 새 운전 일을 잡으면 그 일에서도 건수가 늘어 벌이가 오른다
+    else if (v.speed && driveJob(S) && drives(S) && S.work.job.pay > 0 && v.speedPay !== `${S.work.job.id}|${S.work.job.since}`) { v.speedPay = `${S.work.job.id}|${S.work.job.since}`; S.work.job.pay *= 1.08; }
   };
 
   E.hook('ensure', Vc.ensure);
@@ -43589,7 +43794,7 @@ const Cg = {};
     choices: (S) => {
       const P = Cg.P(isoOf(S)), typ = h01(S, 'dl') < P.dl;
       return [
-        { label: '졸업한다', typ: !typ, run: (S2) => { E.finishStage(S2); return null; } },
+        { label: '졸업한다', typ: !typ, run: (S2) => { if (S2.edu.stage !== null && S2.edu.stage !== undefined) E.finishStage(S2); return null; } }, // 이미 학교를 떠났으면 다시 졸업 처리하지 않음('undefined 졸업')
         { label: '졸업을 미루고 한 해 더 취업 준비를 한다', sub: `등록금 일부 약 ${H.amt(S, 0.6)} · 인턴·자격증으로 경력 능력치 +`, typ, run: (S2) => {
           const cg = Cg.ens(S2);
           cg.dl = 1;
@@ -50392,7 +50597,7 @@ const Nk = {};
     const ko0 = a.koS, run0 = a.run, hint0 = a.hint;
     if (koFn) a.koS = (S) => (prkNative(S) ? koFn(S) : ko0 ? ko0(S) : a.ko);
     if (runFn) a.run = (S) => (prkNative(S) ? runFn(S) : run0(S));
-    a.hint = (S) => (prkNative(S) ? (koFn ? '' : '') : hint0 ? hint0(S) : undefined);
+    a.hint = (S) => (prkNative(S) ? '' : hint0 ? hint0(S) || '' : ''); // 설명이 없던 할 일은 빈 문자열(화면에 'undefined'가 나오던 것)
   };
   renameAct('jobhunt', () => '배치 변경 청탁', (S) => { const o = C.makeOffers(S, 3); if (!o.length) return '마땅한 자리가 나지 않았습니다.'; E.ask(S, 'jobOffers', { offers: o }); return null; });
   renameAct('buyhouse', () => '입사증 거래', (S) => { E.ask(S, 'nk_house', {}); return null; });
@@ -57556,11 +57761,855 @@ const Rc = {};
 
 if (typeof module !== 'undefined') module.exports = Rc;
 
+/* 지구 어딘가에서 — 할 일마다 그것만의 득(피드백 226번)·쇼핑 고르기(225번)·익스트림 스포츠 종목별 위험(227번) (v0.6.9)
+ *
+ * 226 "굳이 고를 이유가 없는 할 일이 많음" — 같은 묶음 안에서 다른 할 일과 겹치지 않는, 남는 득을 하나씩 준다.
+ *   1. 즐길 거리 → 스트레스·마음 건강(stats2.js S.ab.str·mh)을 몇 달 낮춤(Ax.relax — 스트레스는 달마다 8%씩 제자리로 돌아감).
+ *      푹 쉬기 −3(돈 안 듦) · 목욕탕 −5 · 전시 −4 · 공연·경기 −6 · 축제 −5 · 국내 여행 −8 · 해외여행 −12 · 익스트림 −7~15.
+ *      자주 몰아서 하면 덜 듣는다(최근 해소 몫 S.ax.rl 이 14에 가까울수록 0.1배까지, 달마다 8%씩 옅어짐).
+ *      함께 가면 관계(연인 사랑·배우자 가까움·친구 가까움), 공연·전시 → 교양(S.ax.cul, 창의성 Ab.crea 에 더함·지식 조금),
+ *      여행 → 추억(S.ax.mem — 60세부터 행복 목표 최대 +3, 자서전에 담김, '몸과 마음' 카드의 추억 칸), 데이트 → 연인 사랑.
+ *   2. 늦게 오는 득을 보이게: 담배 끊기·술 줄이기(앞으로 몇 해 동안 위험 −x%와 '끊은 지 n달째' 줄), 건강검진(일찍 발견할 가능성·발견했을 때 기록),
+ *      보험(보장 내용·낸 보험료·실제로 받은 보장), 야간 대학(졸업까지 남은 달·졸업 뒤 연봉), 방송(이번 영상 조회수), 식단(몸무게 경향).
+ *   3. 손해만 보이던 것: 이사 → 집 크기·동네(통근·학교·환경·이웃)를 고르는 결정(ax_move), 연애 상대 찾기 → 안 되어도 새 친구·자신감.
+ *   4. 거의 없던 것: 영적인 길 찾기 → 마음 건강·스트레스, 길을 찾으면 '삶의 의미'(마음 건강 목표 +3, S.ax.mean), 복권 → '얻음: 드물게 큰돈'.
+ *   5. 할 일 단추마다 '얻음 · 위험'(actions.js C.gh — vice.js 와 같은 형식). 이미 숫자로 된 설명이 있는 할 일(운동하기·외국어·입단 테스트 등)은 그대로 둔다.
+ * 225 쇼핑 → '무엇을 사러 가나'(ax_shop): 옷·꾸밈(외모 몇 달) · 선물(부모님·배우자·연인·자녀·친구 — 명절·기념일이면 더) ·
+ *   살림살이(가난한 집은 신발·이불 같은 꼭 필요한 것) · 함께 구경(관계) · 충동구매(큰 위로, 돈이 크고 한 해 4번이면 쇼핑 중독 — 카드 빚).
+ *   나라 문장: 시장·백화점·온라인(인터넷 사정 restrict.js net → H.online), 시골은 읍내 장터, 북한은 장마당.
+ * 227 익스트림 스포츠 → 종목 고르기(ax_extreme). 한 번 할 때 사망(근삿값, 처리 때 확인한 공개 자료):
+ *   가벼운 편 — 번지점프 약 1/50만(점프), 집라인 약 1/100만(보수적), 급류 래프팅 약 1/18만(이용 1일 — 미국 래프팅 이용일 10만 당 0.55명)
+ *   보통 — 스카이다이빙 약 1/35만(USPA 2023, 점프 10만 번에 0.28명), 패러글라이딩 약 1/7만(비행), 암벽 등반 약 1/10만(바깥 바위 하루),
+ *          스쿠버 다이빙 약 1/25만(하루 두 번 잠수 — DAN, 잠수 100만 번에 약 2명)
+ *   아주 위험함 — 베이스 점프·윙슈트 약 1/2,300(점프 — 노르웨이 셰락 연구), 8,000m 고산 원정 약 1%(원정 한 번 — 히말라야 데이터베이스),
+ *          프리 솔로(맨몸 등반) 약 1/1,000(믿을 만한 통계가 없어 보수적으로 둔 추정)
+ *   다칠 위험은 그보다 훨씬 흔하다(0.1~8%, 크게 다치는 몫은 종목마다) — accident.js Ac.hurt(골절·척추·입원·후유증), 크게 다치면 재활 결정(acRehab).
+ *   득: 큰 스트레스 해소·마음 건강·행복, 자신감(인품 +1, 다섯 번까지)·모험심, 동호회 친구, 고산 원정은 정상에 서면 명성(+3)·기록.
+ *   같은 종목을 세 번 넘게 하면 '익스트림 취미' — 한 번 누르면 한 철 동안 여러 번(스카이다이빙 12번 등) 하고, 실력이 쌓여 한 번의 위험은 줄지만
+ *   (8번까지 번마다 5%씩, 최대 40%) 한 철·한 해에 짊어지는 위험은 커진다. 위험은 하는 사람에게만 — 할 일을 쓰지 않는 보통 인생의 수명은 그대로.
+ *   죽으면 부고에 '스카이다이빙을 하다 사고로'처럼(accident.js 가 S.flags.deathHow 를 그대로 씀).
+ * 상태 S.ax = { rl(최근 해소), cul(교양), mem[{m,y,t,k,w}](추억), home{sz,nb,m}(집·동네), ex{종목: 횟수}·exM·exP(자신감 몫)·peaks(고산 등정),
+ *               imp[](충동구매 달)·shopAdd(쇼핑 중독), qs(담배 끊은 달)·ld(술 줄인 달), ins{paid,got,n}(보험), chk(검진)·chkHit, sk·mean(삶의 의미) }
+ * 수명·재산 통계: 새 장치는 모두 할 일을 한 사람에게만 붙는다(S.ax 가 없으면 아무 일도 하지 않음). 할 일을 쓰지 않는 보통 인생(sim_test typ)은 그대로.
+ */
+'use strict';
+
+const Ax = {};
+(() => {
+  const clamp = U.clamp, R = Math.round;
+  const gh = (g, r) => (C.gh ? C.gh(g, r) : r ? `얻음: ${g} · 위험: ${r}` : `얻음: ${g}`);
+  const ageOf = (S) => E.age(S);
+  const isoOf = (S) => E.iso(S);
+  const hasAc = () => typeof Ac !== 'undefined' && !!Ac && typeof Ac.hurt === 'function';
+  const hasPp = () => typeof Pp !== 'undefined' && !!Pp && typeof Pp.bump === 'function';
+  const hasVl = () => typeof Vl !== 'undefined' && !!Vl && typeof Vl.add === 'function';
+  const hasAb = () => typeof Ab !== 'undefined' && !!Ab;
+  const HL = () => (typeof Hl !== 'undefined' ? Hl : E.Hl || null);
+  E.Ax = Ax;
+  /** 이 파일의 상태(처음 쓸 때 만든다 — 할 일을 하지 않은 사람에게는 없음) */
+  const st = (S) => S.ax || (S.ax = { rl: 0, cul: 0, mem: [] });
+  Ax.st = st;
+  const partnerOn = (S) => !!(S.fam.married && S.fam.partner && S.fam.partner.alive);
+  const amt = (S, m) => H.amt(S, m);
+  /** 돈(보통 월급 몇 달 치)을 낼 수 있나·낸다 — rec.js 와 같은 규칙(독립 전에는 부모님 1년 살림의 4% 안쪽이면 부모님이 내 줌) */
+  const payable = (S, m) => {
+    if (!(m > 0)) return true;
+    const a = H.pay(S, m);
+    if (S.indep) return (typeof Ec !== 'undefined' && Ec.liquid ? Ec.liquid(S) : S.money) >= a;
+    return S.money >= a || a <= S.fam.cons * Wd.payLvl(isoOf(S)) * S.fam.size * 0.04;
+  };
+  const pay = (S, m) => {
+    if (!(m > 0)) return;
+    const a = H.pay(S, m);
+    if (S.indep) { if (typeof Ec !== 'undefined' && Ec.withdrawBank) Ec.withdrawBank(S, a); S.money -= a; }
+    else if (S.money >= a) S.money -= a;
+    else E.addMoney(S, -a);
+  };
+  /** '0.2%'·'3%' */
+  const pctKo = (p) => { const x = p * 100; return x >= 10 ? `${R(x)}%` : x >= 0.1 ? `${Math.round(x * 10) / 10}%` : `${Math.max(0.01, Math.round(x * 100) / 100)}%`; };
+  const comma = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  /** 두 자리로 반올림한 '1/2,300'·'1/35만'·'1%' */
+  const oddsKo = (p) => {
+    if (!(p > 0)) return '거의 없음';
+    if (p >= 0.01) return pctKo(p);
+    const n = 1 / p, e = Math.pow(10, Math.max(0, Math.floor(Math.log10(n)) - 1)), r = Math.round(n / e) * e;
+    return r >= 1e4 ? `1/${Math.round(r / 1e3) / 10}만` : `1/${comma(r)}`;
+  };
+  Ax.oddsKo = oddsKo;
+  const won = (S, money) => (typeof Ec !== 'undefined' && Ec.fmt ? Ec.fmt(S, money) : Wd.money(isoOf(S), money));
+
+  /* ================================================================ 1. 스트레스 해소·교양·추억 */
+  const RL_CAP = 14;
+  /** 스트레스를 낮추고(마음 건강을 올리고) 실제로 낮춘 몫을 돌려준다 */
+  Ax.relax = (S, str, mh = 0) => {
+    if (!S.ab || typeof S.ab.str !== 'number' || ageOf(S) < 10) return 0;
+    const x = st(S), m = clamp(1 - (x.rl || 0) / RL_CAP, 0.1, 1), d = str * m;
+    S.ab.str = clamp(S.ab.str - d, 0, 100);
+    if (mh && typeof S.ab.mh === 'number') S.ab.mh = clamp(S.ab.mh + mh * m, 0, 100);
+    x.rl = (x.rl || 0) + d;
+    return d;
+  };
+  /** 지금 누르면 스트레스가 몇 낮아지나(단추 설명) */
+  const relaxNow = (S, str) => R(str * clamp(1 - ((S.ax && S.ax.rl) || 0) / RL_CAP, 0.1, 1));
+  /** 교양(공연·전시): 창의성에 더해진다(최대 10 → 창의성 +8), 달마다 1.5%씩 옅어짐 */
+  Ax.cul = (S, d) => { const x = st(S); x.cul = clamp((x.cul || 0) + d, 0, 10); };
+  if (hasAb() && typeof Ab.crea === 'function') {
+    const c0 = Ab.crea;
+    Ab.crea = (S) => { const v = c0(S), c = S && S.ax && S.ax.cul; return c > 0 ? clamp(v + 0.8 * c, 1, 99) : v; };
+  }
+  /** 추억 남기기: t 는 '2031년 제주 여행'처럼 짧게, w 무게(해외·순례·고산 2). 12개까지(가벼운 것·오래된 것부터 뺌) */
+  Ax.mem = (S, t, k, w = 1) => {
+    const x = st(S);
+    x.mem = x.mem || [];
+    x.mem.push({ m: S.ageM, y: E.year(S), t, k, w });
+    if (x.mem.length > 12) { const i = x.mem.reduce((b, v, j, a) => (v.w < a[b].w || (v.w === a[b].w && v.m < a[b].m) ? j : b), 0); x.mem.splice(i, 1); }
+  };
+  const memW = (S) => (S.ax && S.ax.mem ? S.ax.mem.reduce((s, v) => s + (v.w || 1), 0) : 0);
+  /** 함께 갈 사람: 연인·배우자·친구 가운데 하나 */
+  const buddy = (S) => {
+    const c = [];
+    if (S.romance) c.push([{ k: 'love', o: S.romance }, 3]);
+    if (partnerOn(S)) c.push([{ k: 'partner', o: S.fam.partner }, 3]);
+    const f = ageOf(S) >= 10 ? H.friend(S) : null;
+    if (f) c.push([{ k: 'friend', o: f }, 2]);
+    if (!c.length) return null;
+    const b = U.weighted(c);
+    b.name = b.k === 'partner' && hasPp() && Pp.who ? Pp.who(S, b.o, 'partner') : b.o.name;
+    return b;
+  };
+  /** 함께한 사람과 가까워짐: 꼬리말(' (지은과의 가까움 52 → 58)') */
+  const bond = (S, b, d) => {
+    if (!b || !b.o) return '';
+    if (b.k === 'love' && S.romance) { const f = R(S.romance.love); S.romance.love = clamp(S.romance.love + d, 0, 100); return R(S.romance.love) !== f ? ` (${U.j(S.romance.name, '과')}의 사랑 ${f} → ${R(S.romance.love)})` : ''; }
+    if (b.k === 'partner') return hasPp() ? Pp.bump(S, b.o, 'partner', d) : '';
+    const f0 = R(b.o.close || 0);
+    b.o.close = clamp((b.o.close || 40) + d, 0, 100);
+    return R(b.o.close) !== f0 ? ` (${U.j(b.o.name, '과')}의 가까움 ${f0} → ${R(b.o.close)})` : '';
+  };
+
+  /* ================================================================ 2. 늘 쓰는 감싸기 */
+  const wrap = (id, after) => {
+    const a = C.ACTION[id];
+    if (!a || a['_ax_' + id]) return;
+    const r0 = a.run;
+    a.run = (S) => { const t = r0(S); const t2 = after(S, t); return t2 !== undefined ? t2 : t; };
+    a['_ax_' + id] = true;
+  };
+  const addT = (t, tail) => (typeof t === 'string' && tail ? t + tail : t);
+
+  // 몸과 마음: 돈 안 드는 작은 회복
+  wrap('rest', (S) => { Ax.relax(S, 3); });
+  wrap('bathhouse', (S) => { Ax.relax(S, 5); });
+  wrap('garden', (S) => { Ax.relax(S, 3); });
+  wrap('therapy', (S) => { Ax.relax(S, 3, 3); });
+  // 즐길 거리
+  wrap('market', (S) => { Ax.relax(S, 2); });
+  wrap('party', (S) => { Ax.relax(S, 3); });
+  wrap('fishing', (S) => { Ax.relax(S, 4); });
+  wrap('date', (S) => { Ax.relax(S, 3); });
+  wrap('scripture', (S) => { Ax.relax(S, 1, 1); });
+  wrap('gallery', (S, t) => { Ax.relax(S, 4); Ax.cul(S, 2); return addT(t, ' 보고 온 것을 오래 곱씹었습니다.'); });
+  wrap('festival', (S, t) => {
+    Ax.relax(S, 5);
+    if (ageOf(S) >= 10 && U.chance(0.15) && hasPp() && Pp.mkFriend) { const f = Pp.mkFriend(S, 'neighbor', 45); return addT(t, ` 옆자리에서 어울린 ${U.j(f.name, '과')} 알고 지내기로 했습니다.`); }
+  });
+  // 공연·경기: 경기는 함께 간 사람과 가까워지고, 공연은 교양(창의성)
+  wrap('show', (S, t) => {
+    Ax.relax(S, 6, 1);
+    if (typeof t === 'string' && /중계/.test(t)) return;
+    const game = typeof t === 'string' && /경기/.test(t);
+    if (!game) { Ax.cul(S, 1.5); return; }
+    const b = U.chance(0.6) ? buddy(S) : null;
+    return b ? addT(t, ` ${U.j(b.name, '과')} 함께 갔습니다.${bond(S, b, 4)}`) : undefined;
+  });
+  // 여행: 함께 간 사람·추억·큰 해소
+  wrap('trip', (S, t) => {
+    Ax.relax(S, 8, 1);
+    const b = U.chance(0.7) ? buddy(S) : null;
+    const place = typeof t === 'string' ? Wd.cities(isoOf(S)).find((c) => t.indexOf(c) >= 0) : null;
+    Ax.mem(S, `${E.year(S)}년 ${place ? place + ' ' : ''}여행`, 'trip', 1);
+    return b ? addT(t, ` ${U.j(b.name, '과')} 함께였습니다.${bond(S, b, 5)}`) : undefined;
+  });
+  {
+    const ab = C.ACTION.abroad;
+    if (ab && !ab._ax) {
+      const r0 = ab.run;
+      ab.run = (S) => {
+        const n0 = (S.stats && S.stats.trips) || 0;
+        const t = r0(S);
+        if (((S.stats && S.stats.trips) || 0) <= n0) return t; // 비자가 거절되어 못 감
+        Ax.relax(S, 12, 2);
+        const dest = S.visited && S.visited.length ? S.visited[S.visited.length - 1] : null;
+        const last = S.stamps && S.stamps.length ? S.stamps[S.stamps.length - 1].iso : dest;
+        Ax.mem(S, `${E.year(S)}년 ${last ? Wd.name(last) : '해외'} 여행`, 'abroad', 2);
+        const b = U.chance(0.6) ? buddy(S) : null;
+        return b ? addT(t, ` ${U.j(b.name, '과')} 함께한 여행이었습니다.${bond(S, b, 6)}`) : t;
+      };
+      ab._ax = true;
+    }
+  }
+  // 국내 여행 값: 예전 월급 0.6달 치는 한 사람의 2~3일 여행으로는 비쌌다(한국 국민여행조사 — 숙박 여행 1회 1인 지출 약 20~30만 원 = 월급 0.1~0.15달 치).
+  // 교통·숙박·먹을거리를 넉넉히 잡아 0.25달 치로(해외여행은 비행기 값이 있는 migrate.js 그대로)
+  if (C.ACTION.trip && C.ACTION.trip.cost === 0.6) C.ACTION.trip.cost = 0.25;
+  wrap('famtrip', (S) => { Ax.relax(S, 6, 1); Ax.mem(S, `${E.year(S)}년 가족 여행`, 'famtrip', 1); });
+  wrap('pilgrim', (S) => { Ax.relax(S, 5, 3); Ax.mem(S, `${E.year(S)}년 ${C.ACTION.pilgrim.koS ? C.ACTION.pilgrim.koS(S) : '성지 순례'}`, 'pilgrim', 2); });
+  // 야간 강좌: 같이 듣는 사람·새 취미
+  wrap('nightclass', (S, t) => {
+    if (typeof t !== 'string') return;
+    let tail = '';
+    const hob = /요리/.test(t) ? 'cooking' : /목공/.test(t) ? 'crafts' : /사진/.test(t) ? 'drawing' : /글쓰기/.test(t) ? 'reading' : null;
+    if (hob && C.HOBBY[hob] && !S.hobbies.includes(hob) && (!C.hobbyOK || C.hobbyOK(S, hob)) && U.chance(0.12)) { H.fx(S, { hobby: hob }); tail += ` 재미가 붙어 ${U.j(C.hobbyName(S, hob), '을')} 취미로 삼았습니다.`; }
+    if (U.chance(0.1) && hasPp() && Pp.mkFriend) { const f = Pp.mkFriend(S, 'club', 45); tail += ` 옆자리 ${U.j(f.name, '과')} 친해졌습니다.`; }
+    Ax.cul(S, 0.5);
+    return addT(t, tail);
+  });
+
+  /* ---------------------------------------------------------------- 연애 상대 찾기: 안 되어도 새 친구·자신감 */
+  const loveP = (S) => clamp((0.35 + ((H.looks ? H.looks(S) : H.charm(S)) - 50) / 120 + (S.st.social - 50) / 200 + (ageOf(S) > 50 ? -0.15 : 0)) * (H.htLove ? H.htLove(S) : 1), 0.08, 0.85);
+  wrap('findlove', (S, t) => {
+    if (S.romance || typeof t !== 'string') return;
+    let tail = '';
+    if (S.st.pres !== undefined) E.stat(S, 'pres', 1);
+    if (U.chance(0.3) && hasPp() && Pp.mkFriend) { const f = Pp.mkFriend(S, 'club', 42); tail = ` 그래도 그 자리에서 ${U.j(f.name, '과')} 말이 잘 통해 친구가 되었습니다.`; }
+    else tail = ' 그래도 낯선 사람 앞에서 말을 꺼내는 일이 조금은 덜 떨렸습니다.';
+    return t + tail;
+  });
+
+  /* ---------------------------------------------------------------- 영적인 길 찾기: 마음 건강, 길을 찾으면 삶의 의미 */
+  wrap('seek', (S) => {
+    Ax.relax(S, 4, 3);
+    const x = st(S);
+    if (!x.mean) x.sk = { rel: S.rel, own: !!(S.vmeta && S.vmeta.ownPath), m: S.ageM };
+  });
+  if (hasAb() && typeof Ab.mhTarget === 'function') {
+    const m0 = Ab.mhTarget;
+    Ab.mhTarget = (S) => { const t = m0(S); return S.ax && S.ax.mean ? clamp(t + 3, 5, 98) : t; };
+  }
+  // 집·동네(이사): 직장 가까운 동네는 일하는 동안 스트레스 −5, 조용한 동네·시골은 −3 / 야간 대학 다니는 동안 +4
+  if (hasAb() && typeof Ab.stressTarget === 'function') {
+    const s0 = Ab.stressTarget;
+    Ab.stressTarget = (S) => {
+      let t = s0(S);
+      const h = S.ax && S.ax.home;
+      if (h && h.nb === 'commute' && S.work.job && !S.work.retired) t -= 5;
+      else if (h && h.nb === 'green') t -= 3;
+      if (S.ax && S.flags.nightUntil) t += 4;
+      return clamp(t, 3, 95);
+    };
+  }
+
+  /* ---------------------------------------------------------------- 방송: 이번 영상 조회수 */
+  {
+    const sa = C.ACTION.stream;
+    if (sa && !sa._ax) {
+      const r0 = sa.run, h0 = sa.hint;
+      sa.run = (S) => {
+        const had = !!S.stream;
+        const t = r0(S);
+        if (!had || !S.stream || typeof t !== 'string') return t;
+        const f = S.stream.fans || 0, viral = /퍼졌습니다/.test(t);
+        const v = R(viral ? f * (1.5 + U.rand() * 2.5) : f * (0.04 + U.rand() * 0.2) + U.randInt(5, 40));
+        S.stream.lastV = v;
+        return `${t} 이번 영상 조회수는 ${U.fmtKo(v)}회입니다.`;
+      };
+      sa.hint = (S) => {
+        const h = h0 ? h0(S) : '';
+        if (!S.stream) return h;
+        const f = S.stream.fans || 0, lo = R(f * 0.04 + 5), hi = R(f * 0.24 + 40);
+        return `${h} · 영상 하나에 조회수 약 ${U.fmtKo(lo)}~${U.fmtKo(hi)}회(크게 퍼질 가능성 약 ${R(3 * H.talent(S, 'charm') / 50)}%)${S.stream.lastV ? ` · 지난 영상 ${U.fmtKo(S.stream.lastV)}회` : ''}`;
+      };
+      sa._ax = true;
+    }
+  }
+
+  /* ---------------------------------------------------------------- 담배 끊기·술 줄이기: 앞으로 줄어드는 위험과 '끊은 지 n달째' */
+  // 끊은 흡연자에게 남는 몫: 끊은 지 y년이면 흡연 초과 위험의 exp(-y/9)(world.js exResidual) — 폐암 18배·심장병 2.4배(RISK_MULT)
+  const exRR = (m, y) => 1 + (m - 1) * Math.exp(-Math.max(0, y) / 9);
+  const cut = (m, y) => R(100 * (m - exRR(m, y)) / m);
+  const quitP = (S) => 0.3 + (S.focus === 'health' ? 0.1 : 0);
+  {
+    const q = C.ACTION.quitsmoke;
+    if (q && !q._ax) {
+      const r0 = q.run, n0 = q.need;
+      q.run = (S) => {
+        const was = !!S.habit.smoke, t = r0(S);
+        if (was && !S.habit.smoke) { st(S).qs = S.ageM; delete S.actCd.quitsmoke; return addT(t, ` 지금부터 5년 뒤 폐암 위험은 피울 때보다 약 ${cut(18, 5)}%, 10년 뒤 약 ${cut(18, 10)}% 줄어듭니다.`); }
+        return t;
+      };
+      q.need = (S) => {
+        if (!S.habit.smoke && (S.habit.everSmoke || (S.ax && S.ax.qs !== undefined))) {
+          const m0 = S.ax && S.ax.qs !== undefined ? S.ax.qs : S.habit.quitM;
+          if (m0 !== undefined) {
+            const mo = Math.max(0, S.ageM - m0), y = mo / 12;
+            return `담배를 끊은 지 ${mo < 24 ? `${mo}달째` : `${Math.floor(y)}년째`} · 폐암 위험 −${cut(18, y)}%·심장병 −${cut(2.4, y)}%(피울 때보다, 해마다 더 줄어듦)`;
+          }
+        }
+        return n0 ? n0(S) : true;
+      };
+      q.hint = (S) => gh(`성공하면(약 ${R(quitP(S) * 100)}%) 5년 뒤 폐암 위험 −${cut(18, 5)}%·심장병 −${cut(2.4, 5)}%, 10년 뒤 폐암 −${cut(18, 10)}%`, '실패하면 행복 −2(금단)');
+      q._ax = true;
+    }
+    const d = C.ACTION.lessdrink;
+    if (d && !d._ax) {
+      const r0 = d.run, n0 = d.need;
+      d.run = (S) => {
+        const lv = S.habit.drink, t = r0(S);
+        if (S.habit.drink < lv) {
+          st(S).ld = S.ageM;
+          if (S.habit.drink < 1) delete S.actCd.lessdrink; // 이제 '끊은 지 n달째' 줄을 바로 보여 줌
+          if (lv >= 2 && S.habit.drink < 2) return addT(t, ' 과음을 멈춘 덕에 간경화 위험이 약 5배에서 보통 사람 수준으로, 술로 인한 사고 위험이 약 2배에서 보통으로 내려갑니다.');
+          return addT(t, S.habit.drink === 0 ? ' 이제 술을 거의 마시지 않습니다.' : '');
+        }
+        return t;
+      };
+      d.need = (S) => {
+        if (S.habit.drink < 1 && S.ax && S.ax.ld !== undefined) { const mo = S.ageM - S.ax.ld; return `술을 끊은 지 ${mo < 24 ? `${mo}달째` : `${Math.floor(mo / 12)}년째`} · 간 질환·술 사고 위험은 보통 사람 수준입니다`; }
+        return n0 ? n0(S) : true;
+      };
+      d.hint = (S) => {
+        const since = S.ax && S.ax.ld !== undefined ? ` · 줄인 지 ${S.ageM - S.ax.ld}달째` : '';
+        return S.habit.drink >= 2 ? gh(`성공하면(약 45%) 과음이 멈춰 간경화 위험 5배 → 보통, 술 사고 2배 → 보통, 자살 위험도 줄어듦${since}`, '실패하면 그대로·중독이 깊으면 자주 실패')
+          : gh(`성공하면(약 45%) 술을 끊음 · 술값·아침이 개운함${since}`, '실패하면 그대로');
+      };
+      d._ax = true;
+    }
+  }
+
+  /* ---------------------------------------------------------------- 건강검진: 일찍 발견할 가능성과 그 결과 */
+  const chkGain = (S) => R(100 * (1 - Wd.survivalAvg(isoOf(S), 'cancer')) * 0.15);
+  {
+    const c = C.ACTION.checkup;
+    if (c && !c._ax) {
+      const r0 = c.run;
+      c.run = (S) => { const x = st(S); x.chk = (x.chk || 0) + 1; return r0(S); };
+      c.hint = (S) => {
+        const last = S.flags.lastCheckM !== undefined ? S.ageM - S.flags.lastCheckM : null;
+        return gh(`고혈압·당뇨를 찾아 관리 · 2년 안에 암이 생기면 일찍 발견(나을 가능성 약 +${chkGain(S)}%p)${S.ax && S.ax.chkHit ? ` · 검진으로 일찍 찾은 일 ${S.ax.chkHit}번` : ''}${last !== null && last <= 24 ? (last === 0 ? ' · 이번 달에 받음(2년 동안 유효)' : ` · 지난 검진 ${last}달 전(아직 2년 안)`) : ''}`);
+      };
+      c._ax = true;
+    }
+    if (typeof E.applyTreatment === 'function' && !E._axTreat) {
+      const at0 = E.applyTreatment;
+      E.applyTreatment = (S, level) => {
+        const ill = S.ill;
+        const early = !!(ill && ill.kind === 'cancer' && S.flags.lastCheckM !== undefined && S.ageM - S.flags.lastCheckM <= 24 && S.ax);
+        const r = at0(S, level);
+        if (early && S.ill && typeof S.ill.p === 'number') {
+          S.ax.chkHit = (S.ax.chkHit || 0) + 1;
+          E.log(S, C.t(S, `${S.ageM - S.flags.lastCheckM}달 전에 받은 건강검진 덕에 암을 일찍 발견했습니다. 나을 가능성은 약 ${R(S.ill.p * 100)}%입니다.`), 'ev');
+        }
+        return r;
+      };
+      E._axTreat = true;
+    }
+  }
+
+  /* ---------------------------------------------------------------- 보험: 보장 내용·낸 보험료·실제로 받은 보장 */
+  const insOf = (S) => { const x = st(S); return x.ins || (x.ins = { paid: 0, got: 0, n: 0 }); };
+  const insGot = (S, money) => { if (!(money > 0) || !S.flags.insured) return; const i = insOf(S); i.got += money; i.n++; };
+  if (hasAc() && !Ac._axIns) {
+    const h0 = Ac.hurt;
+    Ac.hurt = (S, sev, ty, opt) => { const r = h0(S, sev, ty, opt); if (S.flags.insured && r && r.cost > 0) insGot(S, r.cost * 1.5); return r; };
+    Ac._axIns = true;
+  }
+  if (HL() && typeof HL().hospMonth === 'function' && !HL()._axIns) {
+    const Hx = HL(), hm0 = Hx.hospMonth;
+    Hx.hospMonth = (S) => { if (S.flags.insured && S.hosp) { const c = Wd.c(isoOf(S)); insGot(S, H.pay(S, 3 * ((c.oop || 40) / 100 + 0.05)) * 0.6); } return hm0(S); };
+    Hx._axIns = true;
+  }
+  if (typeof Ec !== 'undefined' && typeof Ec.partnerDied === 'function' && !Ec._axIns) {
+    const pd0 = Ec.partnerDied;
+    Ec.partnerDied = (S) => { if (S.flags.insured && S.fam.partner) insGot(S, Math.max(Wd.workerMedian(isoOf(S)), (S.fam.partner.pay || 0) * 2)); return pd0(S); };
+    Ec._axIns = true;
+  }
+  const premium = (S) => Math.max(H.pay(S, 0.3), (S.income || 0) * 0.03);
+  {
+    const ins = C.ACTION.insure;
+    if (ins && !ins._ax) {
+      const n0 = ins.need, r0 = ins.run;
+      ins.run = (S) => { const t = r0(S); if (S.flags.insured) { insOf(S); delete S.actCd.insure; } return t; }; // 가입하면 바로 보장 줄을 보여 줌
+      ins.hint = (S) => gh(`다치거나 입원하면 치료비 약 60% 덜 냄 · 배우자를 잃으면 생명 보험금(연봉 2배쯤) · 불·물난리 수리비 절반`, `해마다 보험료 약 ${won(S, premium(S))}`);
+      ins.need = (S) => {
+        if (S.flags.insured) { const i = S.ax && S.ax.ins; return i ? `가입함 · 지금까지 낸 보험료 약 ${won(S, i.paid)} · 받은 보장 약 ${won(S, i.got)}(${i.n}번)` : '이미 가입했습니다'; }
+        return n0 ? n0(S) : true;
+      };
+      ins._ax = true;
+    }
+  }
+
+  /* ---------------------------------------------------------------- 야간 대학: 졸업까지 남은 달·졸업 뒤 연봉 */
+  const eduUp = () => (C.EDU_PAY ? R(100 * (C.EDU_PAY[4] / C.EDU_PAY[3] - 1)) : 18);
+  {
+    const ns = C.ACTION.nightschool;
+    if (ns && !ns._ax) {
+      const n0 = ns.need, r0 = ns.run;
+      ns.run = (S) => { st(S); return r0(S); };
+      ns.need = (S) => (S.flags.nightUntil ? `야간 대학에 다니는 중 · 졸업까지 ${Math.max(0, S.flags.nightUntil - S.ageM)}달 · 졸업하면 대학 학력(같은 일의 새 연봉 약 +${eduUp()}%)` : n0 ? n0(S) : true);
+      ns.hint = () => gh(`4년 뒤 대학 학력 — 같은 일의 새 연봉 약 +${eduUp()}%, 대학 학력이 필요한 일자리`, '4년 동안 일과 공부를 함께 함(스트레스 +4)·학비');
+      ns._ax = true;
+    }
+  }
+
+  /* ================================================================ 3. 쇼핑(225번) — 무엇을 사러 가나 */
+  const shopWhere = (S) => {
+    const iso = isoOf(S);
+    if (iso === 'PRK') return { ko: '장마당', lead: '장마당에 나가 볼까요? 국영 상점은 물건이 드물어 대부분 장마당에서 삽니다.' };
+    const on = typeof H.online === 'function' && H.online(S) && H.dev(S) >= 1;
+    if (H.rural(S)) return { ko: '읍내 장터', lead: `읍내 장터와 가게에 나가 볼까요?${on ? ' 인터넷으로 주문하면 며칠 뒤 택배로 옵니다.' : ' 버스를 갈아타야 하는 길입니다.'}` };
+    if (H.dev(S) >= 2) return { ko: '시내 상가', lead: `시내 상가·백화점에 나가거나${on ? ' 온라인으로 주문할 수 있습니다.' : ' 시장을 둘러볼 수 있습니다.'}` };
+    return { ko: '시장', lead: `시장에 나가 볼까요?${on ? ' 휴대전화로 주문하는 사람도 늘었습니다.' : ''}` };
+  };
+  const poorHome = (S) => H.destitute(S) || E.wealthP(S) < 0.2;
+  const wealthK = (S) => 0.6 + E.wealthP(S);
+  const impRecent = (S) => ((S.ax && S.ax.imp) || []).filter((m) => S.ageM - m < 12).length;
+  // 한 번 값(보통 월급 몇 달 치 × 형편 0.6~1.6배): 일상 할 일이라 한 달에 두 번도 할 수 있어 예전 쇼핑 값(0.4달의 1/3)과 평균이 비슷하게
+  const SHOP_COST = {
+    clothes: (S) => 0.1 * wealthK(S),
+    gift: (S) => 0.06 * wealthK(S),
+    home: (S) => (poorHome(S) ? 0.06 : 0.1 * wealthK(S)),
+    with: (S) => 0.05 * wealthK(S),
+    impulse: (S) => 0.35 * wealthK(S) * (S.ax && S.ax.shopAdd ? 1.5 : 1),
+  };
+  /** 오늘이 그 사람에게 특별한 날인가(명절·결혼기념일·사귄 날·생일) */
+  const occasion = (S, who, o) => {
+    const fest = H.festNow ? H.festNow(S) : null;
+    if (who === 'partner' && S.flags.marriedM !== undefined && S.ageM > S.flags.marriedM && (S.ageM - S.flags.marriedM) % 12 === 0) return '결혼기념일';
+    if (who === 'love' && o && o.since !== undefined && S.ageM > o.since && (S.ageM - o.since) % 12 === 0) return '사귄 지 한 해 되는 날';
+    if (who === 'kid' && o && o.bornM !== undefined && (S.ageM - o.bornM) % 12 === 0) return '생일';
+    return fest ? fest : null;
+  };
+  const giftTargets = (S) => {
+    const out = [];
+    if (S.romance) out.push({ who: 'love', o: S.romance, ko: `연인 ${S.romance.name}에게 줄 선물`, name: S.romance.name });
+    if (partnerOn(S)) out.push({ who: 'partner', o: S.fam.partner, ko: `${hasPp() && Pp.who ? Pp.who(S, S.fam.partner, 'partner') : '배우자'}에게 줄 선물`, name: hasPp() && Pp.who ? Pp.who(S, S.fam.partner, 'partner') : S.fam.partner.name });
+    if (H.parentsAlive(S) > 0) out.push({ who: 'parents', o: null, ko: '부모님께 드릴 선물', name: '부모님' });
+    const kids = S.fam.kids.filter((k) => k.alive && !k.estranged && (S.ageM - k.bornM) / 12 < 25);
+    if (kids.length) { const k = kids.slice().sort((a, b) => (a.close || 60) - (b.close || 60))[0]; out.push({ who: 'kid', o: k, ko: `${k.name}에게 줄 선물`, name: k.name }); }
+    const f = H.bestFriend ? H.bestFriend(S) : H.friend(S);
+    if (f && ageOf(S) >= 10) out.push({ who: 'friend', o: f, ko: `친구 ${f.name}에게 줄 선물`, name: f.name });
+    // 특별한 날인 사람부터, 많아야 셋
+    return out.map((g) => ({ ...g, occ: occasion(S, g.who, g.o) })).sort((a, b) => (b.occ ? 1 : 0) - (a.occ ? 1 : 0)).slice(0, 3);
+  };
+  const giftRun = (S, g) => {
+    const d = g.occ ? 9 : 5;
+    let tail = '';
+    if (g.who === 'love' && S.romance) tail = bond(S, { k: 'love', o: S.romance }, d + 3);
+    else if (g.who === 'partner' && partnerOn(S)) tail = hasPp() ? Pp.bump(S, S.fam.partner, 'partner', d, { stage: true }) : '';
+    else if (g.who === 'parents') tail = hasPp() && Pp.dPar ? Pp.dPar(S, d) : '';
+    else if (g.who === 'kid' && g.o) tail = hasPp() ? Pp.bump(S, g.o, 'kid', d, { stage: true }) : '';
+    else if (g.o) tail = bond(S, { k: 'friend', o: g.o, name: g.name }, d + 2);
+    E.stat(S, 'happy', 2);
+    const what = g.who === 'parents' ? U.pick(['따뜻한 내복', '건강식품', '새 신발', '안마기']) : g.who === 'kid' ? U.pick(['책가방', '운동화', '갖고 싶어 하던 장난감', '새 옷']) : U.pick(['목도리', '시계', '향수', '좋아하던 작가의 책', '작은 화분']);
+    const occ = g.occ ? `${U.j(g.occ, '을')} 맞아 ` : '';
+    return `${occ}${g.name}${g.who === 'parents' ? '께' : '에게'} ${U.j(what, '을')} 선물했습니다. ${g.who === 'parents' ? '손사래를 치시면서도 오래 들여다보셨습니다.' : '기뻐하는 얼굴을 보니 고른 보람이 있었습니다.'}${tail}`;
+  };
+  C.DEC.ax_shop = {
+    title: () => '무엇을 사러 갈까요?',
+    text: (S) => `${shopWhere(S).lead} 무엇을 사느냐에 따라 남는 것이 다릅니다 — 옷은 몇 달 동안 외모에, 선물은 받는 사람과의 사이에, 살림살이는 생활의 만족에 남습니다. 충동구매는 그 순간의 위로가 크지만 돈이 많이 들고 버릇이 되기 쉽습니다.${S.ax && S.ax.shopAdd ? ' 요즘은 사고 싶은 마음을 참기가 어렵습니다(쇼핑 중독).' : ''}`,
+    choices: (S) => {
+      const out = [], here = shopWhere(S);
+      const mk = (label, sub, m, run, extra = {}) => { const ok = payable(S, m); out.push({ label, sub: ok ? `${sub} · 돈 ${amt(S, m)}` : `돈이 모자랍니다(필요 ${amt(S, m)})`, disabled: !ok, run: (S2) => { pay(S2, m); return run(S2); }, ...extra }); };
+      // 옷·꾸밈
+      mk('옷·꾸밈 — 새 옷과 신발', `외모 +${R(Math.min(10 - (S.boost.charm || 0), 3) * 2)}(몇 달 동안 옅어짐)`, SHOP_COST.clothes(S), (S2) => {
+        S2.boost.charm = Math.min(10, (S2.boost.charm || 0) + 3); E.stat(S2, 'charm', 1); E.stat(S2, 'happy', 2);
+        return U.pick([`${here.ko}에서 철에 맞는 새 옷을 장만했습니다. 거울 앞에서 한참 서 있었습니다.`, `오래 신은 신발을 바꾸고 옷 몇 벌을 새로 샀습니다. 사람들이 달라 보인다고 했습니다.`, H.rural(S2) ? '읍내 옷가게에서 외출복 한 벌을 맞췄습니다.' : `${U.j(here.ko, '을')} 돌며 마음에 드는 옷을 골랐습니다.`]);
+      }, { typ: true });
+      // 선물
+      for (const g of giftTargets(S)) mk(g.ko, `${g.occ ? `${g.occ} — ` : ''}${g.who === 'love' ? '연인 사랑' : '가까움'} +${g.occ ? 9 : 5} 안팎`, SHOP_COST.gift(S), (S2) => giftRun(S2, g));
+      // 살림살이(독립해 사는 사람)
+      if (S.indep) {
+        if (poorHome(S)) mk('꼭 필요한 것 — 신발·이불·냄비', '건강 +1 · 몇 달 동안 생활 만족(행복)', SHOP_COST.home(S), (S2) => { E.stat(S2, 'health', 1); E.stat(S2, 'happy', 2); S2.boost.happy = Math.min(10, (S2.boost.happy || 0) + 3); return U.pick(['해진 신발과 얇은 이불을 새것으로 바꿨습니다. 밤에 덜 춥습니다.', '찌그러진 냄비 대신 새 냄비를 샀습니다. 아이들이 따뜻한 밥을 먹습니다.', '비가 새던 지붕을 막을 방수포와 새 신발을 샀습니다.']); });
+        else mk('살림살이 — 그릇·이불·작은 가전', '몇 달 동안 생활 만족(행복)', SHOP_COST.home(S), (S2) => { E.stat(S2, 'happy', 2); S2.boost.happy = Math.min(10, (S2.boost.happy || 0) + 4); return U.pick(['오래 쓴 그릇과 이불을 바꿨습니다. 집이 한결 새로워 보입니다.', '작은 가전 하나를 들였습니다. 집안일이 조금 수월해졌습니다.', '커튼과 조명을 바꿨습니다. 집에 들어서는 기분이 달라졌습니다.']); });
+      }
+      // 함께 구경
+      const b = buddy(S);
+      if (b) mk(`${U.j(b.name, '과')} 함께 구경하기`, `${b.k === 'love' ? '연인 사랑' : '가까움'} +4 · 관계 +2`, SHOP_COST.with(S), (S2) => { E.stat(S2, 'social', 2); E.stat(S2, 'happy', 3); return `${U.j(b.name, '과')} ${U.j(here.ko, '을')} 한 바퀴 돌며 이것저것 구경하고 군것질을 했습니다.${bond(S2, b, 4)}`; });
+      // 충동구매
+      {
+        const m = SHOP_COST.impulse(S), n = impRecent(S);
+        const ok = S.indep ? true : payable(S, m);
+        out.push({ label: '충동구매 — 사고 싶은 것을 마음껏', sub: ok ? `스트레스 −${relaxNow(S, 8)}·큰 위로 · 위험: 돈 ${amt(S, m)}${S.indep && !payable(S, m) ? '(카드 빚)' : ''}, 한 해 4번이면 쇼핑 중독(지금 ${n}번)` : `돈이 모자랍니다(필요 ${amt(S, m)})`, disabled: !ok,
+          run: (S2) => {
+            const a = H.pay(S2, m);
+            if (S2.indep) { if (typeof Ec !== 'undefined' && Ec.withdrawBank) Ec.withdrawBank(S2, a); S2.money -= a; } else pay(S2, m);
+            const x = st(S2);
+            x.imp = (x.imp || []).filter((v) => S2.ageM - v < 24); x.imp.push(S2.ageM);
+            Ax.relax(S2, 8, 1); E.stat(S2, 'happy', 5); S2.boost.happy = Math.min(10, (S2.boost.happy || 0) + 2);
+            let t = U.pick(['계획에 없던 물건을 잔뜩 샀습니다. 계산대 앞에서는 속이 다 후련했습니다.', '할인 문구에 끌려 이것저것 담았습니다. 집에 와 보니 비슷한 것이 이미 있었습니다.', '마음이 답답한 날, 비싼 물건 하나를 질렀습니다.']);
+            if (S2.indep && S2.money < 0) t += ' 카드 대금이 통장 잔고를 넘었습니다.';
+            if (!x.shopAdd && impRecent(S2) >= 4) { x.shopAdd = S2.ageM; t += ' 사고 싶은 마음을 참기가 점점 어려워집니다. 쇼핑 중독이 의심됩니다.'; }
+            return t;
+          } });
+      }
+      out.push({ label: '다음에 한다', cancel: true, run: () => null });
+      return out;
+    },
+  };
+  {
+    const sh = C.ACTION.shopping;
+    if (sh && !sh._ax) {
+      sh.cost = 0; // 돈은 고른 것에 따라(ax_shop)
+      sh.moneyNote = (S) => `돈은 고르는 것에 따라(옷 ${amt(S, SHOP_COST.clothes(S))}·충동구매 ${amt(S, SHOP_COST.impulse(S))})`;
+      sh.run = (S) => { E.ask(S, 'ax_shop', {}); return null; };
+      sh.hint = (S) => gh(`옷(외모 몇 달)·선물(가까움)·살림(생활 만족)·함께 구경(관계)·충동구매(스트레스 −${relaxNow(S, 8)}) 가운데 고름`, S.ax && S.ax.shopAdd ? '쇼핑 중독 — 충동구매 값이 1.5배' : '충동구매는 돈이 크고 버릇이 됨');
+      sh._ax = true;
+    }
+  }
+
+  /* ================================================================ 4. 익스트림 스포츠(227번) — 종목별 위험 */
+  // die: 한 번(점프·비행·하루·원정) 사망 · inj: 다칠 가능성 · sev: 다쳤을 때 크게 다치는 몫 · usd: 한 번 값(미국 달러) · k: 취미로 한 철 동안 하는 번 수
+  // str: 스트레스 해소 · tier 1 가벼운 편 · 2 보통 · 3 아주 위험함 · a0·a1: 나이 · ty: 다친 모양(accident.js HURT) · soc: 함께 하는 일이 많음
+  const EX = {
+    bungee: { ko: '번지점프', tier: 1, die: 1 / 500000, inj: 0.002, sev: 0.1, usd: 80, k: 3, str: 9, ty: 'strain', a0: 16, lead: '줄이 세게 튕기며 목과 허리에 무리가 왔습니다.', dth: '번지점프를 하다 줄이 끊어지는 사고로',
+      line: ['다리에 줄을 묶고 까마득한 다리 위에서 뛰어내렸습니다. 땅이 거꾸로 달려들었습니다.', '번지점프대 끝에서 숨을 고르고 뛰었습니다. 줄이 튕겨 오를 때 비명이 웃음으로 바뀌었습니다.'] },
+    zipline: { hv: '집라인을 타다', ko: '집라인', tier: 1, die: 1 / 1000000, inj: 0.001, sev: 0.1, usd: 40, k: 4, str: 7, ty: 'fall', a0: 16, lead: '도착 지점에서 제동이 늦어 세게 부딪혔습니다.', dth: '집라인을 타다 떨어지는 사고로',
+      line: ['골짜기를 가로지르는 줄에 매달려 바람을 갈랐습니다.', '숲 위를 미끄러져 건너며 소리를 질렀습니다.'] },
+    rafting: { ko: '급류 래프팅', tier: 1, die: 1 / 180000, inj: 0.004, sev: 0.1, usd: 60, k: 4, str: 9, ty: 'water', soc: 1, a0: 16, lead: '보트가 뒤집혀 거센 물살에 휩쓸렸습니다.', dth: '급류 래프팅을 하다 물에 빠지는 사고로',
+      line: ['거센 물살 위에서 모두가 한목소리로 노를 저었습니다. 온몸이 흠뻑 젖었습니다.', '보트가 바위 사이를 빠져나갈 때마다 함성이 터졌습니다.'] },
+    skydive: { ko: '스카이다이빙', tier: 2, die: 1 / 350000, inj: 0.002, sev: 0.25, usd: 250, k: 12, str: 13, ty: 'fall', soc: 1, a0: 18, lead: '착지 때 크게 넘어졌습니다.', dth: '스카이다이빙을 하다 사고로',
+      line: ['4천 미터 상공에서 비행기 문 밖으로 몸을 던졌습니다. 1분 가까운 자유 낙하 끝에 낙하산이 펴졌습니다.', '구름 아래로 떨어지며 발아래 펼쳐진 땅을 보았습니다. 낙하산이 펴지자 세상이 고요해졌습니다.'] },
+    paraglide: { ko: '패러글라이딩', tier: 2, die: 1 / 70000, inj: 0.005, sev: 0.25, usd: 120, k: 10, str: 11, ty: 'fall', a0: 16, lead: '착륙 때 바람에 휩쓸려 땅에 부딪혔습니다.', dth: '패러글라이딩을 하다 추락하는 사고로',
+      line: ['산꼭대기에서 바람을 타고 날아올랐습니다. 새가 된 것 같았습니다.', '상승 기류를 타고 한참을 맴돌다 내려왔습니다.'] },
+    climb: { ko: '암벽 등반', tier: 2, die: 1 / 100000, inj: 0.008, sev: 0.15, usd: 60, k: 12, str: 10, ty: 'fall', soc: 2, a0: 14, lead: '바위에서 미끄러져 떨어졌습니다.', dth: '암벽을 오르다 떨어지는 사고로',
+      line: ['줄을 매고 깎아지른 바위를 한 뼘씩 올랐습니다. 꼭대기에서 손이 덜덜 떨렸습니다.', '손끝으로 바위틈을 더듬으며 올랐습니다. 아래를 내려다보지 않으려 애썼습니다.'] },
+    scuba: { hv: '잠수를 마치고 너무 빨리 올라오다', ko: '스쿠버 다이빙', tier: 2, die: 1 / 250000, inj: 0.003, sev: 0.2, usd: 150, k: 8, str: 11, ty: 'poison', a0: 14, lead: '잠수병 증상이 왔습니다.', dth: '스쿠버 다이빙을 하다 사고로',
+      line: ['바다 밑 산호 사이를 물고기 떼와 함께 헤엄쳤습니다. 숨소리만 들렸습니다.', '깊은 바다에 가라앉은 배 주위를 천천히 돌아보았습니다.'] },
+    base: { hv: '베이스 점프를 하다', ko: '베이스 점프·윙슈트', tier: 3, die: 1 / 2300, inj: 0.004, sev: 0.5, usd: 400, k: 15, str: 15, ty: 'fall', a0: 18, a1: 60, pre: ['skydive', 3, '스카이다이빙을 세 번 넘게 해 봐야 합니다'], lead: '낙하산이 늦게 펴져 땅에 세게 부딪혔습니다.', dth: '베이스 점프를 하다 사고로',
+      line: ['절벽 끝에서 날개옷을 입고 뛰어내렸습니다. 바위벽이 바로 옆으로 스쳐 지나갔습니다.', '높은 다리 위에서 뛰어내려 땅에 닿기 몇 초 전에 낙하산을 폈습니다.'] },
+    alpine: { hv: '원정 중에', ko: '8,000m 고산 등반 원정', tier: 3, die: 0.01, inj: 0.08, sev: 0.3, usd: 25000, k: 1, str: 12, ty: 'poison', a0: 20, a1: 60, minHealth: 60, pre: ['climb', 2, '암벽 등반을 두 번 넘게 해 보거나 등산을 꾸준히 해야 합니다'], lead: '고산병과 동상에 시달렸습니다.', dth: '히말라야 고산 등반 원정에서 사고로',
+      line: [] },
+    freesolo: { hv: '맨몸으로 바위를 오르다', ko: '프리 솔로(맨몸 암벽 등반)', tier: 3, die: 1 / 1000, inj: 0.01, sev: 0.5, usd: 0, k: 10, str: 14, ty: 'fall', a0: 18, a1: 60, pre: ['climb', 3, '암벽 등반을 세 번 넘게 해 봐야 합니다'], lead: '손이 미끄러져 떨어졌습니다.', dth: '맨몸으로 암벽을 오르다 떨어져',
+      line: ['줄도 없이 맨손으로 바위를 올랐습니다. 실수 한 번이면 끝이라는 생각에 오히려 마음이 고요해졌습니다.', '밧줄 없이 오른 바위 꼭대기에서 한참을 앉아 있었습니다.'] },
+  };
+  Ax.EX = EX;
+  const TIER_KO = ['', '가벼운 편', '보통', '아주 위험함'];
+  const exN = (S, id) => (S.ax && S.ax.ex && S.ax.ex[id]) || 0;
+  /** 실력 배수: 같은 종목을 할수록 한 번의 위험이 번마다 5%씩(8번까지) 준다 */
+  const skillM = (n) => Math.max(0.6, 1 - 0.05 * Math.min(n, 8));
+  const hobbyOn = (S, id) => exN(S, id) >= 3 && EX[id].k > 1;
+  const outings = (S, id) => (hobbyOn(S, id) ? EX[id].k : 1);
+  const exRisk = (S, id) => {
+    const d = EX[id], m = skillM(exN(S, id)), k = outings(S, id);
+    const die = 1 - Math.pow(1 - d.die * m, k), inj = clamp(1 - Math.pow(1 - d.inj * m, k), 0, 0.6);
+    return { die, inj, big: inj * d.sev, k };
+  };
+  const exCost = (S, id) => { const d = EX[id]; if (!d.usd) return 0; return (Wd.tradablePrice(isoOf(S), d.usd) * outings(S, id) * (hobbyOn(S, id) ? 0.5 : 1)) / Math.max(1, H.month(S)); };
+  const hikeN = (S) => (S.ft && S.ft.recN && S.ft.recN.hike) || 0;
+  /** 종목을 지금 할 수 있나: true 또는 까닭 */
+  const exOK = (S, id) => {
+    const d = EX[id], a = ageOf(S);
+    if (a < d.a0) return `${d.a0}세부터 할 수 있습니다`;
+    if (d.a1 && a > d.a1) return '나이가 많아 받아 주는 곳이 없습니다';
+    if (d.minHealth && S.st.health < d.minHealth) return '체력이 버티지 못합니다';
+    if (d.pre) { const [p, n, why] = d.pre; if (exN(S, p) < n && !(id === 'alpine' && hikeN(S) >= 5)) return why; }
+    return true;
+  };
+  const exSub = (S, id) => {
+    const d = EX[id], r = exRisk(S, id);
+    return `${TIER_KO[d.tier]} · 사망 ${oddsKo(r.die)} · 다칠 위험 ${pctKo(r.inj)}(크게 ${pctKo(r.big)}) · 스트레스 −${relaxNow(S, d.str * (r.k > 1 ? 1.4 : 1))}`;
+  };
+  const exLabel = (S, id) => { const d = EX[id], n = exN(S, id); return hobbyOn(S, id) ? `${d.ko} — 취미로 한 철(${d.k}번)` : n ? `${d.ko}(${n}번 해 봄)` : d.ko; };
+  const exHobbies = (S) => Object.keys(EX).filter((id) => hobbyOn(S, id));
+  const exDo = (S, id) => {
+    const d = EX[id], x = st(S), r = exRisk(S, id);
+    pay(S, exCost(S, id));
+    x.ex = x.ex || {};
+    const first = !x.ex[id];
+    x.ex[id] = (x.ex[id] || 0) + 1;
+    x.exM = S.ageM; x.exLast = id;
+    if (hasVl()) Vl.add(S, { risk: 2 });
+    // 목숨을 잃는 사고(하는 사람에게만): 부고에 종목을 그대로
+    if (U.chance(r.die)) { S.flags.extremeDeath = true; S.flags.deathHow = d.dth; E.die(S, 'other'); return null; }
+    // 다침: 대개 가볍고, 종목에 따라 크게(척추·머리) — 치료비·쉬는 동안의 벌이·후유증은 accident.js
+    if (U.chance(r.inj)) {
+      const sev = U.chance(d.sev) ? 'severe' : U.chance(0.4) ? 'moderate' : 'minor';
+      if (hasAc()) {
+        const h = Ac.hurt(S, sev, d.ty, { noQuit: true });
+        if (Ac.st) Ac.st(S).last.sport = S.ageM;
+        if (sev === 'severe' && ageOf(S) >= 16 && S.alive && C.DEC.acRehab) E.ask(S, 'acRehab', { kind: 'sport', sev, cost: R(h.cost || 0), lost: R(h.lost || 0), dis: h.dis || 0 });
+        return { text: `${r.k > 1 ? '한 철 동안 ' : ''}${d.hv || U.j(d.ko, '을') + ' 하다'} ${d.lead} ${h.t}`, k: 'bad' };
+      }
+      E.stat(S, 'health', sev === 'minor' ? -3 : -10);
+      return { text: `${d.hv || U.j(d.ko, '을') + ' 하다'} ${d.lead}`, k: 'bad' };
+    }
+    // 득: 큰 해소·행복·자신감·모험심, 동호회 친구
+    const hob = r.k > 1;
+    Ax.relax(S, d.str * (hob ? 1.4 : 1), 2);
+    E.stat(S, 'happy', (4 + 2 * d.tier) * (hob ? 1.2 : 1));
+    if (S.st.pres !== undefined && (x.exP || 0) < 5) { E.stat(S, 'pres', 1); x.exP = (x.exP || 0) + 1; }
+    let tail = '';
+    if (ageOf(S) >= 14 && hasPp() && Pp.mkFriend && U.chance((hob ? 0.3 : 0.1) * (d.soc ? 1.5 : 1))) { const f = Pp.mkFriend(S, 'club', 48); tail += ` 함께 ${U.j(d.ko, '을')} 하던 ${U.j(f.name, '과')} 친해졌습니다.`; }
+    if (first) Ax.mem(S, `${E.year(S)}년 첫 ${d.ko}`, 'extreme', d.tier >= 3 ? 2 : 1);
+    if (id === 'alpine') {
+      const ok = U.chance(0.55 * (S.st.health >= 70 ? 1 : 0.75));
+      if (ok) {
+        x.peaks = (x.peaks || 0) + 1;
+        H.fameUp(S, 3);
+        Ax.mem(S, `${E.year(S)}년 8,000m 봉우리 정상`, 'peak', 3);
+        return { text: `두 달에 걸친 원정 끝에 해발 8,000m가 넘는 봉우리 정상에 섰습니다. 산소가 희박한 꼭대기에서 발아래 구름을 내려다보았습니다. 지역 신문에 등정 소식이 실렸습니다.${x.peaks >= 2 ? ` 이번이 ${x.peaks}번째 8,000m 등정입니다.` : ''}${tail}`, k: 'good' };
+      }
+      return { text: `두 달 동안 원정대와 함께 산을 올랐지만, 날씨가 나빠져 정상을 수백 미터 앞두고 돌아섰습니다. 살아서 내려온 것만으로도 다행이라는 말을 들었습니다.${tail}`, k: 'ev' };
+    }
+    const base = U.pick(d.line);
+    if (hob) return { text: `한 철 동안 ${d.k}번 ${U.j(d.ko, '을')} 했습니다. ${base} 몸이 기억하는 것이 늘어 조금씩 여유가 생겼습니다.${tail}`, k: 'good' };
+    return { text: `${base}${first ? ' 심장이 터질 것 같았습니다!' : ''}${tail}`, k: 'good' };
+  };
+  C.DEC.ax_extreme = {
+    title: () => '어떤 익스트림 스포츠에 도전할까요?',
+    text: (S) => {
+      const hs = exHobbies(S);
+      return `짜릿한 만큼 위험도 종목마다 크게 다릅니다. 번지점프·집라인·래프팅은 수십만 번에 한 번꼴로 목숨을 잃는 사고가 나지만, 베이스 점프는 2천여 번에 한 번, 8,000m 고산 원정은 백 명에 한 명꼴입니다. 같은 종목을 여러 번 하면 몸에 익어 조금 덜 위험해지지만, 취미로 자주 할수록 한 해에 짊어지는 위험은 커집니다.${hs.length ? ` 요즘 즐기는 종목: ${hs.map((id) => `${EX[id].ko}(${exN(S, id)}번)`).join(', ')}.` : ''}`;
+    },
+    choices: (S) => {
+      const out = [];
+      let typ = false;
+      for (const id of Object.keys(EX)) {
+        const why = exOK(S, id);
+        if (why !== true && EX[id].tier === 3 && !EX[id].pre) continue;
+        const m = exCost(S, id), ok = why === true && payable(S, m);
+        const c = { label: exLabel(S, id), sub: why !== true ? why : !ok ? `돈이 모자랍니다(필요 ${amt(S, m)})` : `${exSub(S, id)} · ${m > 0 ? `돈 ${amt(S, m)}` : '돈 거의 안 듦'}`, disabled: !ok, run: (S2) => exDo(S2, id) };
+        if (ok && !typ) { c.typ = true; typ = true; }
+        out.push(c);
+      }
+      out.push({ label: '다음에 한다', cancel: true, run: () => null });
+      return out;
+    },
+  };
+  {
+    const ex = C.ACTION.extreme;
+    if (ex && !ex._ax) {
+      ex.cost = 0; // 돈은 종목에 따라(ax_extreme)
+      ex.moneyNote = () => '돈은 종목에 따라';
+      ex.run = (S) => { E.ask(S, 'ax_extreme', {}); return null; };
+      ex.koS = (S) => { const hs = exHobbies(S); return hs.length ? `익스트림 스포츠 — ${EX[hs[0]].ko}` : '익스트림 스포츠'; };
+      ex.hint = (S) => {
+        const last = S.ax && S.ax.exLast && EX[S.ax.exLast] ? S.ax.exLast : null;
+        if (last) { const r = exRisk(S, last); return gh(`큰 스트레스 해소(−${relaxNow(S, EX[last].str)})·자신감·동호회 친구 · 지난번 ${EX[last].ko}${r.k > 1 ? `(한 철 ${r.k}번)` : ''}`, `사망 약 ${oddsKo(r.die)} · 다칠 위험 ${pctKo(r.inj)}`); }
+        return gh('큰 스트레스 해소·자신감·동호회 친구', '종목마다 사망 약 1/100만(집라인)~1/2,300(베이스 점프) · 다칠 위험 0.1~1%');
+      };
+      ex._ax = true;
+    }
+  }
+
+  /* ================================================================ 5. 이사(226번) — 집 크기와 동네 고르기 */
+  const HOME_SZ = { small: '작은 집', mid: '보통 크기 집', big: '넓은 집' };
+  const NB_KO = { commute: '직장 가까운 동네', school: '학교가 좋은 동네', green: '공기 좋고 조용한 동네', neighbor: '이웃이 정다운 동네' };
+  const homeOf = (S) => (S.ax && S.ax.home) || { sz: 'mid', nb: null };
+  const setHome = (S, patch) => { const x = st(S); x.home = { ...homeOf(S), ...patch, m: S.ageM }; };
+  const schoolKids = (S) => S.fam.kids.filter((k) => k.alive && !k.left && (S.ageM - k.bornM) / 12 >= 2 && (S.ageM - k.bornM) / 12 < 16);
+  C.DEC.ax_move = {
+    title: () => '어디로, 어떤 집으로 옮길까요?',
+    text: (S) => {
+      const h = homeOf(S), where = S.place.urban ? S.place.city : '시골 마을';
+      const parts = ['넓은 집은 살기 좋지만 다달이 더 들고'];
+      if (S.work.job && !S.work.retired && S.place.urban) parts.push('직장 가까운 동네는 출퇴근 스트레스가 줄고');
+      if (schoolKids(S).length) parts.push('학교가 좋은 동네는 아이 공부에');
+      parts.push('조용한 동네는 마음에, 이웃이 정다운 동네는 사람 사이에 좋습니다');
+      return `지금은 ${where}의 ${HOME_SZ[h.sz] || '집'}에 삽니다${h.nb ? `(${NB_KO[h.nb]})` : ''}. 이사는 집 크기와 동네를 고르는 일입니다 — ${parts.join(', ')}. 다른 도시나 시골로 가면 생활비와 할 수 있는 일이 바뀌고 이웃과는 멀어집니다.`;
+    },
+    choices: (S) => {
+      const h = homeOf(S), out = [], cs = Wd.cities(isoOf(S));
+      const mk = (label, sub, m, run, extra = {}) => { const ok = payable(S, m); out.push({ label, sub: ok ? `${sub}${m > 0 ? ` · 이사 비용 ${amt(S, m)}` : ''}` : `돈이 모자랍니다(필요 ${amt(S, m)})`, disabled: !ok, run: (S2) => { pay(S2, m); return run(S2); }, ...extra }); };
+      if (h.sz !== 'big') mk('같은 동네 더 넓은 집으로', '행복 +4, 사는 동안 생활 만족(행복 +2) · 다달이 집값·관리비 월급 0.05달 치 더', 1.5, (S2) => { setHome(S2, { sz: 'big' }); E.stat(S2, 'happy', 4); return '같은 동네의 더 넓은 집으로 옮겼습니다. 방 하나가 늘어 숨통이 트였습니다.'; }, { typ: true });
+      if (h.sz !== 'small') mk('더 작은 집으로 줄인다', `보증금 차액 ${amt(S, 0.5)}을 돌려받고 다달이 월급 0.04달 치 아낌 · 사는 동안 생활 만족 −1`, 0.3, (S2) => { setHome(S2, { sz: 'small' }); E.addMoney(S2, H.pay(S2, 0.5)); E.stat(S2, 'happy', -1); return '살림을 줄여 작은 집으로 옮겼습니다. 짐을 정리하니 마음도 조금 가벼워졌습니다.'; });
+      if (S.work.job && !S.work.retired && S.place.urban && h.nb !== 'commute') mk('직장 가까운 동네로', '일하는 동안 출퇴근 스트레스 −5 · 이웃과 멀어짐(관계 −2)', 0.8, (S2) => { setHome(S2, { nb: 'commute' }); E.stat(S2, 'social', -2); return '직장까지 걸어서 다닐 수 있는 동네로 옮겼습니다. 아침에 한 시간을 벌었습니다.'; });
+      if (schoolKids(S).length && h.nb !== 'school') mk('학교가 좋은 동네로', '아이가 더 높이 배울 가능성 +15% · 다달이 집값 월급 0.04달 치 더 · 관계 −2', 1.2, (S2) => {
+        setHome(S2, { nb: 'school' }); E.stat(S2, 'social', -2);
+        let up = 0;
+        for (const k of schoolKids(S2)) if (k.school && k.edu !== undefined && k.edu < 5 && U.chance(0.15)) { k.edu++; up++; }
+        return `학교가 좋기로 이름난 동네로 옮겼습니다.${up ? ' 아이가 새 학교에서 공부에 재미를 붙였습니다.' : ' 아이가 새 학교에 적응하느라 한동안 애를 먹었습니다.'}`;
+      });
+      if (h.nb !== 'green' && S.place.urban) mk('공기 좋고 조용한 동네로', '스트레스 −3(사는 동안) · 관계 −2', 0.8, (S2) => { setHome(S2, { nb: 'green' }); E.stat(S2, 'social', -2); return '공원과 숲이 가까운 조용한 동네로 옮겼습니다. 밤에 차 소리 대신 풀벌레 소리가 들립니다.'; });
+      if (h.nb !== 'neighbor') mk('이웃이 정다운 동네로', '새 이웃 친구 · 사는 동안 관계 +3', 0.6, (S2) => {
+        setHome(S2, { nb: 'neighbor' });
+        const f = hasPp() && Pp.mkFriend ? Pp.mkFriend(S2, 'neighbor', 50) : null;
+        return `이웃끼리 반찬을 나누는 작은 동네로 옮겼습니다.${f ? ` 이사 떡을 돌리다 ${U.j(f.name, '과')} 금세 친해졌습니다.` : ''}`;
+      });
+      // 다른 곳으로(예전 이사 창과 같은 효과 — 살던 집은 세를 놓음, 이웃과 멀어짐)
+      const reloc = (S2, urban, city, soc) => { const n = typeof Ec !== 'undefined' && Ec.leaveHome ? Ec.leaveHome(S2) : ''; S2.place.urban = urban; if (city) S2.place.city = city; if (soc) E.stat(S2, 'social', soc); return n; };
+      if (S.place.city !== cs[0] || !S.place.urban) mk(`큰 도시 ${U.j(cs[0], '으로')}`, '일자리·기회가 많음 · 집값·생활비가 비쌈 · 이웃과 멀어짐(관계 −5)', 1, (S2) => { const n = reloc(S2, true, cs[0], -5); setHome(S2, { sz: 'mid', nb: null }); return `짐을 싸서 큰 도시로 옮겼습니다. 기회도 많고 집값도 비쌉니다.${n ? ' ' + n : ''}`; });
+      if (cs.length > 1) mk('다른 도시로', '새 출발 · 이웃과 멀어짐(관계 −4)', 0.8, (S2) => { const pool = cs.length > 1 ? cs.slice(1).filter((c) => c !== S2.place.city) : cs; const n = reloc(S2, true, U.pick(pool.length ? pool : cs), -4); setHome(S2, { sz: 'mid', nb: null }); return `${S2.place.city}에서 새 출발을 합니다.${n ? ' ' + n : ''}`; });
+      if (S.place.urban) mk('조용한 시골로', `공기 맑음(스트레스 −3) · 집값이 쌈${S.work.job && ageOf(S) < 60 ? ' · 지금 일을 그만둘 수 있음(50%)' : ''}`, 0.5, (S2) => {
+        const n = reloc(S2, false, null, 0); setHome(S2, { sz: 'mid', nb: 'green' }); S2.boost.happy = Math.min(10, (S2.boost.happy || 0) + 4);
+        if (S2.work.job && ageOf(S2) < 60 && U.chance(0.5)) E.loseJob(S2, 'quit');
+        return `도시를 떠나 시골에 자리를 잡았습니다. 공기가 맑습니다.${n ? ' ' + n : ''}`;
+      });
+      out.push({ label: '그만둔다', cancel: true, run: () => null });
+      return out;
+    },
+  };
+  {
+    const mv = C.ACTION.move;
+    if (mv && !mv._ax) {
+      mv.run = (S) => { E.ask(S, 'ax_move', {}); return null; };
+      mv.moneyNote = () => '이사 비용은 고르는 곳에 따라';
+      mv.hint = (S) => { const h = homeOf(S); return gh(`집 크기·동네를 고름 — 직장 가까이(스트레스 −5)·학교·조용한 동네·정다운 이웃·넓은 집(생활 만족 +2)${h.nb || h.sz !== 'mid' ? ` · 지금 ${HOME_SZ[h.sz]}${h.nb ? `·${NB_KO[h.nb]}` : ''}` : ''}`, '이사 비용·이웃과 멀어짐'); };
+      mv._ax = true;
+    }
+  }
+  // 학교가 좋은 동네: 아직 입학 전인 아이는 입학 때 정해지는 '어디까지 배울지'가 15% 확률로 한 단계 높다
+  if (typeof C.childMilestones === 'function' && !C._axCM) {
+    const cm0 = C.childMilestones;
+    C.childMilestones = (S, k, kAge) => {
+      const pre = k.edu;
+      const r = cm0(S, k, kAge);
+      if (pre === undefined && k.edu !== undefined && k.school && k.edu < 5 && S.ax && S.ax.home && S.ax.home.nb === 'school' && U.chance(0.15)) k.edu++;
+      return r;
+    };
+    C._axCM = true;
+  }
+
+  /* ================================================================ 6. 단추 설명(얻음 · 위험) — 아직 설명이 없는 할 일 */
+  const fr = (S) => H.friend(S);
+  const nearClose = (o, d) => R(Math.max(1, d * clamp((108 - ((o && o.close) || 60)) / 48, 0.2, 1.3)));
+  const HINT = {
+    rest: (S) => gh(`행복 +4 · 스트레스 −${relaxNow(S, 3)} · 돈 안 드는 작은 회복`),
+    therapy: (S) => gh(`행복 +6~12 · 마음 건강 +3·스트레스 −${relaxNow(S, 3)}${S.ab && S.ab.ep ? ' · 지금 겪는 우울·불안의 회복이 빨라짐' : ''} · 중독 −4`),
+    groom: () => gh('외모 +4 안팎(몇 달 동안 옅어짐) 또는 말하기 연습(언변·인품)'),
+    diet: (S) => gh(`건강 보너스 +2${S.vc && S.vc.fat > 0 ? ` · 몸무게 경향 ${R(S.vc.fat)} → ${R(Math.max(0, S.vc.fat - 6))}${S.vc.obese ? '(비만 — 30 아래면 벗어남)' : ''}` : ''}`, '먹고 싶은 것을 참음(행복 −1)'),
+    gym: () => gh('건강 +2·건강 보너스 +4'),
+    bathhouse: (S) => gh(`행복 +3·건강 +1 · 스트레스 −${relaxNow(S, 5)}`),
+    garden: (S) => gh(`장 볼 돈 조금·건강 +1 · 스트레스 −${relaxNow(S, 3)}`),
+    study: (S) => gh(`지식 +2(높을수록 더딤)${S.edu.stage !== null ? ' · 학교를 그만둘 위험 −15%' : ''}`),
+    online: () => gh('지식 +2·경력 +2'),
+    nightclass: () => gh('지식·경력 +2·관계 +1 · 같이 듣는 사람과 친구(10%) · 새 취미'),
+    scripture: () => gh('신앙 +3·지식 +1 · 마음 건강 조금'),
+    cg_abroad: () => gh('외국 학위·외국어·해외 경력(고르는 창에서 학교·비용)', '큰돈·몇 해'),
+    cg_wh: () => gh('한두 해 외국에서 일하며 외국어·경험', '고생·벌이가 들쭉날쭉'),
+    meetfriend: (S) => { const f = fr(S); return gh(f ? `친구 한 명과 가까움 +${nearClose(f, 12)} 안팎 · 관계 +3` : '이웃과 처음 어울려 친구가 생김'); },
+    newfriend: (S) => gh(`새 친구(가능성 약 ${R(100 * clamp(0.45 + (S.st.social - 50) / 150 + (H.talent(S, 'charm') - 50) / 200, 0.15, 0.9))}%) · 관계 +4`, '안 되면 행복 −1'),
+    parents: (S) => { const ks = ['father', 'mother'].filter((k) => S.fam[k] && S.fam[k].alive); const o = ks.length ? S.fam[ks[0]] : null; return gh(`부모님과 가까움 +${nearClose(o, 8)} 안팎 · 행복 +3`); },
+    sibs: () => gh('형제자매 한 명과 가까움 +8 안팎 · 행복 +2'),
+    adultkids: () => gh('다 큰 자녀 한 명과 가까움 +7 안팎(연락이 끊긴 자녀면 화해 30%)'),
+    kids: () => gh('아이와 가까움 +9 안팎(사춘기는 덜) · 행복 +4'),
+    spouse: (S) => gh(`배우자와 가까움 +${partnerOn(S) ? nearClose(S.fam.partner, 8) : 8} 안팎 · 행복 +3`),
+    famtrip: () => gh('배우자·아이와 가까움 +6~7 · 추억 · 스트레스 −6'),
+    findlove: (S) => gh(`사귈 사람(가능성 약 ${R(loveP(S) * 100)}%) · 안 되어도 새 친구(30%)·자신감`, '안 되면 행복 −3'),
+    date: (S) => gh(`연인 사랑 +12${S.romance ? `(지금 ${R(S.romance.love)})` : ''} · 스트레스 −${relaxNow(S, 3)}`),
+    propose: (S) => gh(S.romance ? `받아들일 가능성 약 ${R(100 * clamp(S.romance.love / 100 + 0.1, 0.05, 0.95))}%` : '결혼'),
+    volunteer: () => gh('관계 +4·평판 +2·행복 +4 · 새 친구(25%)'),
+    worship: () => gh('관계 +3·신앙 · 이웃'),
+    reunion: (S) => { const n = (S.friends || []).filter((f) => f.alive && f.lost).length; return gh(n ? `연락이 끊긴 친구 ${n}명 가운데 한 명을 다시 만날 가능성 60%` : '관계 +3·옛 친구 소식'); },
+    grandkids: () => gh('행복 +5·관계 +3'),
+    sidejob: () => gh('월급 0.2~0.6달 치', '몸 쓰는 일은 건강 −1'),
+    farmhelp: () => gh('품삯 월급 0.15~0.35달 치 · 건강 +1·관계 +2'),
+    livestock: () => gh('새끼를 팔아 월급 0.25달 치 · 건강 +1'),
+    fishing: (S) => gh(`고기를 잡으면(60%) 월급 0.15달 치 · 스트레스 −${relaxNow(S, 4)}`),
+    cafejob: () => gh('월급 0.5~0.9달 치 · 단골과 얼굴 트기(관계 +2)', '건강 −1'),
+    rework: () => gh('은퇴 뒤 다시 일자리(제안을 보고 고름)'),
+    invest: () => gh('예금·주식·집을 사고팔고 돌봄(기회를 쓰지 않음)'),
+    lottery: () => gh('드물게 큰돈(1등 814만 분의 1 — 월급 900달 치, 무엇이든 당첨 약 1/45)', '평균으로는 산 값의 약 11%만 돌아옴'),
+    donate: () => gh('행복 +5·평판 +2·명성 조금'),
+    quitjob: () => gh('쉼·다른 길을 찾을 시간', '수입이 끊김'),
+    buycar: () => gh('출퇴근·장보기가 편해짐', '찻값·유지비·교통사고'),
+    retire: () => gh('일의 스트레스에서 벗어남·연금', '수입이 줄어듦'),
+    trip: (S) => gh(`행복 +6·스트레스 −${relaxNow(S, 8)} · 함께 간 사람과 가까워짐 · 추억`),
+    abroad: (S) => gh(`행복 +10·스트레스 −${relaxNow(S, 12)} · 가 본 나라 · 추억`, '비자가 거절될 수 있음'),
+    pet: () => gh('함께 사는 동안 행복 +3', '먹이·병원비·돌봄'),
+    party: (S) => gh(`친구 모두와 가까움 +3·관계 +5 · 스트레스 −${relaxNow(S, 3)}`),
+    market: (S) => gh(`이웃 소식·관계 +3 · 스트레스 −${relaxNow(S, 2)}`),
+    show: (S) => gh(`행복 +5·스트레스 −${relaxNow(S, 6)} · 경기는 함께 간 사람과 가까움, 공연은 교양(창의성)`),
+    gallery: (S) => gh(`교양(창의성 +2, 몇 해에 걸쳐 옅어짐)·지식 +1 · 스트레스 −${relaxNow(S, 4)}`),
+    festival: (S) => gh(`행복 +6·관계 +3 · 스트레스 −${relaxNow(S, 5)} · 이웃 친구(15%)`),
+    folkgame: () => gh('가족·이웃과 어울림(관계 +3)·행복 +3'),
+    gamble: () => gh('절반 가까이는 월급 1달 치를 땀', '평균은 손해 · 3%는 하룻밤에 8달 치를 잃음 · 거듭하면 도박 중독'),
+    contest: () => gh('상을 받으면 명성 +2·재능을 알게 됨', '떨어지면 행복이 조금'),
+    practice: () => gh('고른 실력 +5 안팎(높을수록 더딤)'),
+    lesson: () => gh('고른 실력 +8 안팎(혼자 연습보다 빠름)'),
+    election: () => gh('당선되면 지방의원(4년)·명성', '낙선하면 선거 비용을 날림'),
+    emigrate: () => gh('다른 나라에서 살 길(비자·일자리를 알아봄)'),
+    pilgrim: (S) => gh(`신앙 +6·평판 · 마음 건강 +3·스트레스 −${relaxNow(S, 5)} · 평생 추억`),
+  };
+  // 이미 설명이 있는 할 일 가운데 숫자가 없던 것에 득을 덧붙임
+  const AUG = {
+    seek: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}${gh(`마음 건강 +3·스트레스 −${relaxNow(S, 4)} · 길을 찾으면 마음 건강이 오래 +3`)}`,
+    ged: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}합격 가능성 약 ${R(100 * clamp(0.3 + (S.st.smarts - 50) / 120, 0.08, 0.85))}%`,
+    license: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}${gh('붙으면 그 자격이 필요한 일자리·급여', '떨어지면 시험 비용만')}`,
+    novel: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}${gh('원고를 끝내면 출판·연재 — 수입·명성(완성도에 따라)')}`,
+    artwork: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}${gh('완성하면 전시·판매·명성(완성도에 따라)')}`,
+    buypc: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}${gh('행복 +3 · 온라인 강의·방송·재택 일')}`,
+    buyphone: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}${gh('행복 +5·관계 +3 · 인터넷·영상 통화·방송')}`,
+    buyac: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}${gh('행복 +3 · 한여름 더위를 견디기 쉬움', '여름 전기료')}`,
+  };
+  for (const id in HINT) {
+    const a = C.ACTION[id];
+    if (!a || !HINT[id] || a._axH) continue;
+    if (a.hint && !['rest', 'therapy', 'diet', 'gym', 'study', 'meetfriend', 'parents', 'spouse', 'date', 'findlove', 'trip', 'abroad', 'show', 'gallery', 'festival', 'lottery', 'gamble', 'pilgrim', 'fishing'].includes(id)) continue; // 다른 파일이 단 설명은 그대로
+    a.hint = HINT[id];
+    a._axH = true;
+  }
+  for (const id in AUG) { const a = C.ACTION[id]; if (!a || a._axA) continue; const h0 = a.hint; a.hint = (S) => AUG[id](S, h0); a._axA = true; }
+
+  /* ================================================================ 7. 달마다·해마다 */
+  E.hook('month', (S) => {
+    const x = S.ax;
+    if (!x || !S.alive) return;
+    if (x.rl) x.rl *= 0.92;
+    if (x.cul) x.cul *= 0.985;
+    const a = ageOf(S);
+    // 추억: 60세부터 행복 목표 최대 +3(엔진의 행복은 목표 쪽으로 달마다 4%씩)
+    const w = memW(S);
+    if (w && a >= 60) S.st.happy = clamp(S.st.happy + 0.04 * Math.min(3, 0.4 * w), 0, 100);
+    // 집·동네
+    const h = x.home;
+    if (h && S.indep && !S.prison) {
+      if (h.sz === 'big') { S.st.happy = clamp(S.st.happy + 0.04 * 2, 0, 100); S.money -= H.pay(S, 0.05); }
+      else if (h.sz === 'small') { S.st.happy = clamp(S.st.happy - 0.04, 0, 100); S.money += H.pay(S, 0.04); }
+      if (h.nb === 'school') S.money -= H.pay(S, 0.04);
+      if (h.nb === 'neighbor') S.st.social = clamp(S.st.social + 0.025 * 3, 0, 100);
+    }
+    // 쇼핑 중독: 한 해 동안 충동구매를 하지 않으면 벗어남
+    if (x.shopAdd && impRecent(S) === 0 && S.ageM - x.shopAdd >= 12) { delete x.shopAdd; E.log(S, '한동안 충동구매를 참았습니다. 사고 싶은 마음이 예전만큼 들끓지 않습니다.', 'good'); }
+    // 영적인 길: 탐색 뒤 종교를 받아들이거나 나만의 길을 찾았으면 삶의 의미
+    if (x.sk) {
+      const found = S.rel !== x.sk.rel || (!x.sk.own && S.vmeta && S.vmeta.ownPath);
+      if (found) { x.mean = S.ageM; delete x.sk; E.log(S, C.t(S, '삶의 의미를 붙잡고 나니 힘든 날에도 마음이 쉽게 무너지지 않습니다.'), 'good'); }
+      else if (S.ageM - x.sk.m > 6) delete x.sk;
+    }
+  });
+  E.hook('year', (S) => {
+    if (!S.alive || !S.flags.insured || !S.indep) return;
+    insOf(S).paid += premium(S);
+  });
+  // 나라를 옮기면 집·동네는 새로 시작
+  E.hook('move', (S) => { if (S.ax && S.ax.home) delete S.ax.home; });
+
+  /* ================================================================ 8. 자서전: 추억이 소재가 됨 */
+  wrap('memoir', (S, t) => {
+    const ms = (S.ax && S.ax.mem) || [];
+    if (!ms.length || typeof t !== 'string') return;
+    const pick = ms.slice().sort((a, b) => b.w - a.w || b.m - a.m).slice(0, 2).map((v) => v.t);
+    E.stat(S, 'happy', Math.min(4, ms.length));
+    return `${t} 책에는 ${pick.join(', ')} 이야기도 담겼습니다.`;
+  });
+
+  /* ================================================================ 9. 화면: '몸과 마음·평판' 카드에 추억·교양·취미·집 */
+  if (hasAb() && typeof Ab.view === 'function') {
+    const v0 = Ab.view;
+    Ab.view = (S) => {
+      const v = v0(S);
+      const x = S && S.ax;
+      if (!v || !x) return v;
+      const ms = (x.mem || []).slice().sort((a, b) => b.m - a.m);
+      if (ms.length) v.rows.push(['추억', `${ms.slice(0, 3).map((m) => m.t).join(' · ')}${ms.length > 3 ? ` 외 ${ms.length - 3}개` : ''}${ageOf(S) >= 60 ? ' — 돌아보면 미소가 지어짐(행복)' : ''}`]);
+      if (x.cul >= 1) v.rows.push(['교양', `공연·전시를 즐겨 창의성 +${R(0.8 * x.cul)}`]);
+      const hs = exHobbies(S);
+      if (hs.length) v.rows.push(['익스트림 취미', hs.map((id) => `${EX[id].ko} ${exN(S, id)}번(한 철 사망 ${oddsKo(exRisk(S, id).die)})`).join(' · ')]);
+      if (x.peaks) v.rows.push(['고산 등정', `8,000m 봉우리 ${x.peaks}번`]);
+      if (x.home && (x.home.nb || x.home.sz !== 'mid')) v.rows.push(['집·동네', `${HOME_SZ[x.home.sz] || '집'}${x.home.nb ? ` · ${NB_KO[x.home.nb]}` : ''}`]);
+      if (x.shopAdd) v.rows.push(['쇼핑', '충동구매를 참기 어려움(쇼핑 중독) — 한 해 참으면 벗어남']);
+      if (x.mean) v.rows.push(['삶의 의미', '영적인 길을 찾아 마음이 단단해짐']);
+      return v;
+    };
+  }
+})();
+
 /* 80억분의 1 — 업데이트 기록(게임 정보 → 업데이트 기록). 새 판을 낼 때 맨 위에 한 줄 더한다.
  * v: 판, d: 날짜(YY.MM.DD), t: 한 줄 제목, items: 바뀐 것(짧게)
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.6.9', d: '26.10.18', t: '할 일마다의 득·쇼핑·익스트림 스포츠·나쁜 습관·직급 이름', items: ["할 일마다 그것만의 남는 득: 쉬기·목욕탕·상담은 스트레스·마음 건강, 공연·경기는 함께 간 사람과 가까움·교양, 전시는 교양·지식, 여행은 스트레스를 크게 덜고 '추억'(노년 행복·자서전), 데이트는 연인 사랑, 야간 강좌는 새 친구·취미, 연애 상대 찾기는 실패해도 새 친구·자신감, 영적인 길 찾기는 삶의 의미", "늦게 오는 득을 보이게: 금연·절주(앞으로 줄어드는 위험과 끊은 지 n달째), 건강검진(일찍 발견할 가능성), 보험(보장 내용·받은 보장), 야간 대학(졸업까지·졸업 뒤 연봉), 방송(이번 영상 조회수), 식단(몸무게 경향)", "모든 할 일 단추에 '얻음 · 위험'을 숫자로", "쇼핑은 고르기로: 옷(외모 몇 달)·선물(가족·연인·친구 — 명절·기념일이면 더)·살림살이·함께 구경·충동구매(자주 하면 쇼핑 중독·카드 빚)", "익스트림 스포츠는 종목 10개 가운데 고르고 종목마다 실제 근삿값의 위험(번지점프 사망 1/50만 … 베이스 점프 1/2,300·8,000m 원정 1%)과 부상, 자주 하면 익스트림 취미, 8,000m 등정은 명성", "이사는 집 크기와 동네(직장·학교·조용함·정다운 이웃)를 고름", "나쁜 습관에도 이어지는 득: 안전띠·헬멧 안 매기는 편함(행복 +1, 더운 나라 헬멧 +2), 과속은 출퇴근 시간 단축(스트레스 −2), 담배·술은 관계, 바람은 설렘, 연락 끊기는 스트레스↓, 문신은 행복·외모 — 위험은 그대로, '선 넘기' 단추마다 위험을 숫자로(사고 때 사망 1.6배·지금 나이 사망 위험 +9% 등)", "자녀마다 다른 쪽 부모 표시('아버지 벤저민(사실혼)')", "직업마다 고유한 직급 이름(의사 과장·병원장, 교사 교감·교장, 경찰 경위·총경 등), 개원의는 직급 없음('개원의 (팀장)'이던 것)", "이미 학교를 떠났는데 '졸업한다'를 고르면 'undefined 졸업'이 나오던 것, 0원 예금에서 돈이 숫자가 아니게 되던 것, 일부 할 일 설명에 'undefined'가 보이던 것"] },
   { v: '0.6.8', d: '26.10.18', t: '일상 기회·생활체육·젠더 표시', items: ["기회를 둘로 나눔: 몇 시간이면 하는 일상(운동·공부·친구·쉬기·데이트·가족·종교 모임·쇼핑 등)은 한 달에 2번 생기는 '일상 기회'(석 달 치 6번까지 모아 둠)를 쓰고, 큰일 기회(한 해 4번)는 큰일에만. 어린이·수감·복무·누워 지내는 동안은 한 달 1번", "모든 할 일의 기회 수와 쿨다운을 '드는 시간 × 남는 크기' 기준표로 다시 정함(청혼하기 큰일 2, 일 그만두기·은퇴 1, 차 사기·보험은 결정만, 가족 여행·연애 상대 찾기 1, 쿨다운도 대부분 짧아짐). 일상을 몰아서 해도 능력치가 쉽게 차지 않게 최근에 오른 몫이 클수록 덜 오름", "할 일 탭 맨 위에 '일상 기회 n/6 · 큰일 기회 n/8', 단추마다 '일상' 또는 '큰일 기회 n번'", "운동하기 → 생활체육 고르기: 걷기·달리기·등산·자전거·수영·헬스·요가·배드민턴·탁구·테니스·당구·볼링·골프·게이트볼·동네 축구·농구·크리켓·족구·광장무·태극권·공원 운동기구 등을 나라·나이·성별·계절에 맞게, 고른 운동은 '요즘 하는 운동'으로 이어짐. 종목마다 운동 습관·관계·스트레스·부상·이용료가 다름", "선수 길은 '선수로 뛸 종목 정하기'로 나누고, e스포츠는 운동에서 빼 '프로게임단 입단 테스트'(게임 실력)로. 취미에 걷기·요가·당구·볼링", "이름 옆에 젠더 표시(♂ 남성 · ♀ 여성 · ⚧ 논바이너리 — 스스로 깨달은 성별 정체성을 따름)"] },
   { v: '0.6.7', d: '26.10.18', t: '알려진 정도·종교 모임 지도자·떠난 사람·기회 돌려받기', items: ["작품과 책의 '알려진 정도': 그 분야 이름값에 다른 분야 명성의 일부(배우·운동선수·방송인 등)와 지위(정치인·고위 공무원·기업 대표)를 더해 그림 판매·전시 관객·무대 관객·음원·영상 재생·책 판매·보도에 반영. 유명인의 첫 작품은 관심이 크고, 완성도가 낮으면 혹평으로 이름값이 깎임. 지위로 팔리는 그림은 청탁 의혹 위험. 공모전 심사는 명성을 보지 않음", "원고 계약 가능성은 까닭을 더해서: 원고 완성도·작가 이력(베스트셀러·전작 판매·문학상)·알려진 정도·팬과 구독자·지위(회고록·에세이는 크게, 소설·시는 작게)·장르와 경력 — 창에 까닭을 모두 표시", "종교 모임을 이끄는 동안 개종하려 하면 먼저 모임을 해산·맡기기·모임과 함께 옮기기 가운데 고름. 따르는 사람 수에 따라 인도자 → 목자 → 지도자(사이비는 교주) 단계, 명성·권력·평판과 상태 줄에 반영, 모임 규칙·떠받드는 사람들·언론 취재·수사 결정", "사람 탭에서 세상을 떠난 가족·친척에게 '2053년, 62세에 떠나심 · 42년 전(내가 27세 때)'", "4살 기질 고르기에 '앞 목록으로 돌아간다'", "할 일이 연 결정에서 '거절한다·사양한다·생각을 접는다·마음만 받는다'를 골라도 기회를 돌려받고, 이어서 열린 결정에서 '하지 않기'를 골라도 돌려받음", "자서전이 책이 되는 기준을 명성 대신 '글 분야에서 알려진 정도'로"] },
   { v: '0.6.6', d: '26.10.18', t: '새 능력치·매력 나누기·입양·반려동물·이민 2세·교육열', items: ["매력을 외모와 인품·카리스마·말솜씨로 나눔: 외모는 나이·건강·꾸밈으로 오르내리고 인품은 경험·관계·명성·말하기로 쌓여 나이로는 거의 줄지 않음. 화면의 매력은 둘의 평균이고 누르면 따로 보임. 오디션·첫 만남은 외모, 선거·면접·협상·방송 진행은 인품·말솜씨", "새 능력치: 키(나라·성별 평균 근삿값 — '175cm, 대한민국 남성 평균쯤'), 마음 건강(스트레스·우울·불안 — 진료·상담·휴직 결정, 행복과 이어짐), 언변(연습으로 오름 — 면접·연봉 협상·선거·말로 하는 일), 카리스마·창의성·신용 등급(계산값), 주변의 별명(의리 있는 사람·마당발·동네 말썽꾼 등 — 화면과 부고)", "입양한 자녀의 삶: 입양 사실 알려 주기·뿌리 찾기·친부모 재회·해외 입양의 국적과 정체성·놀림, 드물게 파양", "입양·위탁·보육원·친척 손에서 자라는 출생(나라별 비율), 해외 입양인의 태어난 나라 방문·국적 문제, 부모를 모두 잃으면 조부모·친척·보육원·위탁·입양으로 이어지고 형편·학업이 바뀜, 18세 보호 종료", "이민 2세 출생(미국 약 23%·캐나다 약 30%·스위스 약 40% 등): 부모의 출신 나라·계승어·국적 규칙(출생지주의·18세 신고·걸프는 국적 없음), 통역하는 아이·이름·부모 나라 방문·문화 충돌·'돌아가라'는 말", "반려동물의 오래가는 영향: 산책 이웃·아이의 정서·혼자 사는 사람의 외로움 덜기·병원비 결정·늙은 반려동물의 마지막·새 식구", "한국 아이는 대부분 입학 전에 한글을 뗌(일본 히라가나 등도), 교육열(한국 사교육 약 79% 등): 학원비 결정의 빈도와 보통 선택, 학생의 학원 생활·성적표 기대, 아시아계 이민 가정의 교육열과 주말 계승어 학교"] },
@@ -58619,7 +59668,8 @@ UI.actHTML = (S) => {
       const info = C.actInfo ? C.actInfo(S, a) : { daily: false, ap: C.actAP(S, a) };
       const w = info.ap;
       const ok = st === true;
-      const hint = st === true && a.hint ? a.hint(S) + ' · ' : '';
+      const h0 = st === true && a.hint ? a.hint(S) : '';
+      const hint = h0 && typeof h0 === 'string' && h0 !== 'undefined' ? h0 + ' · ' : ''; // 설명이 없으면 붙이지 않음
       // 어느 기회를 몇 번 쓰는지와 돈을 함께 적는다(피드백 63번: '비용 없음'이 기회도 안 쓰는 것처럼 읽힘 · 221번: 일상/큰일)
       const money = a.moneyNote ? a.moneyNote(S) : cost > 0 ? `돈 ${H.amt(S, cost)}` : '돈은 들지 않음';
       const sub = st !== true ? st : w === 0 ? (a.free ? '기회를 쓰지 않습니다' : '기회를 쓰지 않음 · ' + hint + money) : `${info.daily ? '일상' : `큰일 기회 ${w}번`} · ` + hint + money;
