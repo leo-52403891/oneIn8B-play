@@ -258,6 +258,10 @@ h1, h2, h3 { text-wrap: balance; }
 .act .apw { margin-left: 6px; font-size: 8px; letter-spacing: 1px; color: var(--accent); vertical-align: 2px; white-space: nowrap; }
 .ap .pips i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--accent); }
 .ap .pips i.on { background: var(--accent); }
+.ap .pipbox { display: grid; gap: 6px; justify-items: end; flex: none; }
+.ap .pips.d { grid-template-columns: repeat(3, 12px); }
+.ap .pips.d i { border-color: var(--teal); border-radius: 3px; }
+.ap .pips.d i.on { background: var(--teal); }
 .act-cat { margin: 14px 0 6px; font: 600 13px var(--f-body); color: var(--muted); }
 .acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .act { text-align: left; border: 1px solid var(--line); background: var(--paper); border-radius: 12px; padding: 10px 11px; cursor: pointer; display: grid; gap: 2px; min-width: 0; }
@@ -3049,6 +3053,7 @@ H.jail = (S, months, why) => {
   S.work.seeking = false;
   S.prison = { endM: S.ageM + months, why, start: S.ageM };
   if (C.apCap) S.ap = Math.min(S.ap || 0, C.apCap(S)); // 갇히면 모아 둔 기회도 수감 중 상한(2번)까지만(점검: 상한을 넘은 채 남았음)
+  if (C.dapCap) S.dap = Math.min(S.dap || 0, C.dapCap(S)); // 일상 기회도 수감 중 상한(3번)까지만
   S.stats.jail = (S.stats.jail || 0) + 1;
   if (S.romance && U.chance(0.5)) S.romance = null;
   E.stat(S, 'happy', -20);
@@ -3242,6 +3247,9 @@ E.ensure = (S) => {
   S.boost = S.boost || { health: 0, happy: 0 };
   if (S.boost.charm === undefined) S.boost.charm = 0;
   S.ap = S.ap === undefined ? 0 : S.ap; // 기회는 6세부터 생긴다(피드백 48번)
+  // 일상 기회(피드백 221번): 옛 저장에는 없으므로 지금 처지의 상한(석 달 치)만큼 채워 준다
+  if (S.dap === undefined) S.dap = C.dapCap ? C.dapCap(S) : 0;
+  S.dfx = S.dfx || {}; // 일상 할 일로 최근 올린 능력치의 몫(actions.js C.DFX)
   S.actCd = S.actCd || {};
   S.prison = S.prison || null;
   S.visited = S.visited || [];
@@ -3272,6 +3280,24 @@ C.apCap = (S) => C.yearAP(S) * 2;
 /** 다음 기회까지 남은 달 */
 C.apNext = (S) => { const ev = C.apEvery(S); return ev ? Math.max(1, Math.ceil(ev - (S.apM || 0))) : 0; };
 
+/** 일상 기회(피드백 221번 — 사용자 선택 (가)): 몇 시간이면 하는 일(운동·공부·친구·쉬기·가족·종교 모임 등)은 큰일 기회(S.ap) 대신 이것을 쓴다.
+ *  한 달에 생기는 수: 13세 이상 2번(사용자 결정).
+ *  6~12세는 1번 — 학교·숙제·집안 일과가 정해져 있어 스스로 쓰는 자유 시간이 어른의 절반쯤(큰일 기회도 어른의 절반: 한 해 2번).
+ *  수감 중 1번 — 기상·작업·점호·취침이 정해진 교도소 일과 밖의 시간이 적다(큰일 기회도 한 해 1번).
+ *  부대 안 복무 1번 — 일과·훈련·근무 뒤의 개인 정비 시간과 주말 정도(situ.js Si.barracks).
+ *  누워 지냄 1번 — 몸을 거의 움직이지 못해 할 수 있는 일도 쉬기·기도·면회 정도(health.js H.limit 이 할 일을 따로 거름). 입원 중에는 상한도 3번.
+ *  5세까지는 0. 입원·붙잡힘·중증 치매처럼 스스로 정할 수 없는 동안(H.incap — 할 일도 막힘)은 생기지 않는다. */
+C.dapMonth = (S) => {
+  const a = E.age(S);
+  if (a < 6) return 0;
+  if (a < 13) return 1;
+  if (S.prison || S.hosp) return 1;
+  if (typeof Si !== 'undefined' && Si && typeof Si.kind === 'function') { const k = Si.kind(S); if (k === 'barracks' || k === 'bed') return 1; }
+  return 2;
+};
+/** 안 쓰고 모아 둘 수 있는 일상 기회: 석 달 치(13세 이상 6번, 어린이·수감·부대 안·누워 지냄 3번) */
+C.dapCap = (S) => C.dapMonth(S) * 3;
+
 /** 매달 v0.2 처리 */
 C.hooksMonth = (S) => {
   // 할 일 기회: 정해진 간격마다 하나씩 생기고, 2년 치까지 모아 둘 수 있다
@@ -3280,6 +3306,13 @@ C.hooksMonth = (S) => {
     S.apM = (S.apM || 0) + 1;
     if (S.apM >= every) { S.apM = 0; S.ap = Math.min(C.apCap(S), (S.ap || 0) + 1); }
   }
+  // 일상 기회: 달마다 생기고 석 달 치까지(처지가 바뀌어 상한이 줄면 거기에 맞춘다)
+  {
+    const dm = C.dapMonth(S), dcap = dm * 3;
+    S.dap = Math.min(dcap, (S.dap || 0) + (H.incap(S) ? 0 : dm));
+  }
+  // 일상 할 일로 올린 능력치의 몫도 그 능력치가 제자리로 돌아가는 빠르기만큼 옅어진다(actions.js C.DFX)
+  if (S.dfx && C.DFX) for (const k in S.dfx) { const r = C.DFX[k] ? C.DFX[k][0] : 0.05; S.dfx[k] *= 1 - r; if (S.dfx[k] < 0.05) delete S.dfx[k]; }
   // 행동으로 얻은 일시 효과는 서서히 사라진다
   S.boost.health *= 0.96;
   S.boost.happy *= 0.94;
@@ -3320,7 +3353,7 @@ C.hooksMonth = (S) => {
 
 /** 생일마다 v0.2 처리 */
 C.hooksYear = (S, ay) => {
-  if (ay === 6) { S.ap = Math.max(S.ap || 0, 1); S.apM = 0; E.log(S, C.t(S, '{N은} 여섯 살이 되었습니다. 이제 아래 "할 일"에서 하고 싶은 일을 직접 고를 수 있습니다.'), 'act'); }
+  if (ay === 6) { S.ap = Math.max(S.ap || 0, 1); S.apM = 0; S.dap = Math.max(S.dap || 0, C.dapMonth(S)); E.log(S, C.t(S, '{N은} 여섯 살이 되었습니다. 이제 아래 "할 일"에서 하고 싶은 일을 직접 고를 수 있습니다.'), 'act'); }
   const iso = E.iso(S);
   // 연인도 해마다 나이를 먹는다(예전에는 사귀기 시작한 나이에 멈춰 있었다, 피드백 42번)
   if (S.romance) S.romance.age = (S.romance.age || ay) + 1;
@@ -4958,8 +4991,10 @@ E.hook('takeJob', (S) => { if (S.work && S.work.retired) { S.work.retired = fals
 if (typeof module !== 'undefined') module.exports = Ec;
 
 /* 80억분의 1 — 언제든 할 수 있는 일(행동)
- * 행동 기회(S.ap)는 13세 이상 분기마다, 6~12세 반기마다 하나씩 생기고 2년 치까지 모아 둘 수 있다(피드백 56번).
- * 행동마다 쓰는 기회 수(C.actAP: 일상 1, 노력이 드는 일 2, 삶의 큰일 3)와 다시 하기까지 기다리는 달 수(cd)가 있다.
+ * 기회는 두 가지(피드백 221번 — 사용자 선택 (가)):
+ *   일상 기회(S.dap) — 13세 이상 달마다 2번, 석 달 치(6번)까지 모음(dsl.js C.dapMonth). 몇 시간이면 하는 일상이 1번씩 쓴다.
+ *   큰일 기회(S.ap) — 13세 이상 분기마다, 6~12세 반기마다 하나씩 생기고 2년 치까지 모아 둘 수 있다(피드백 56번). 하루 이상 걸리거나 삶에 오래 남는 일이 1~3번 쓴다.
+ * 할 일마다 어느 기회를 몇 번 쓰는지와 다시 하기까지 기다리는 달 수(쿨다운)는 아래 기준표(C.ACT_W)가 한곳에서 정한다.
  * need(S) 가 문자열을 돌려주면 그 이유로 잠긴다. run(S) 는 결과 문장을 돌려준다(없으면 결정 창이 뜬다).
  */
 'use strict';
@@ -5257,16 +5292,148 @@ C.ACTIONS = [
 C.ACTION = {};
 for (const a of C.ACTIONS) C.ACTION[a.id] = a;
 
-/** 할 일마다 쓰는 기회 수(피드백 56번). 적혀 있지 않으면 1, free 는 0 */
-C.AP_W = {
-  // 삶의 큰일
-  nightschool: 3, startup: 3, election: 3, emigrate: 3, pilgrim: 3,
-  // 시간과 노력이 드는 일
-  license: 2, language: 2, ged: 2, nightclass: 2, findlove: 2, jobhunt: 2, sidejob: 2, cafejob: 2, selfstart: 2, rework: 2,
-  abroad: 2, famtrip: 2, pet: 2, contest: 2, tryout: 2, audition: 2, novel: 2, memoir: 2, move: 2,
-  quitsmoke: 2, lessdrink: 2, seek: 2,
+/* ================================================================ 기회 기준표(피드백 221번)
+ * 할 일 하나를 '드는 시간'(한 번 할 때 삶에서 통째로 비우는 시간)과 '남는 크기'(한 번으로 삶에 남는 것)로 나눠
+ * 어느 기회를 몇 번 쓸지 정한다(C.actRule). 쿨다운은 드는 시간에 맞추되(일상 1달 안팎, 며칠 걸리는 일 몇 달, 큰일은 해 단위),
+ * 실제로 그만큼 자주 하기 어려운 일(검진·축제·동창회는 한 해에 한 번, 한 철짜리 강좌는 석 달 등)은 그 주기를 따른다.
+ *   드는 시간: '0' 마음먹고 정하기만(사고팔기·정하기·그만두기) · 'h' 몇 시간(하루 안에 끝나 일상을 비우지 않음 — 저녁마다 하는 한 철 공부 포함)
+ *              'd' 하루~며칠(여행·시험·행사) · 'w' 몇 주(준비·처리에 몇 주) · 'm' 몇 달 이상(학위·창업·이주)
+ *   남는 크기: 1 작음(잠깐의 기분·조금씩 쌓임) · 2 보통(한 번으로 몇 달~몇 해 이어짐: 자격·연봉·습관·물건) · 3 큼(결혼·이혼·직업·학교·나라처럼 삶의 줄기가 바뀜)
+ *   규칙(큰일 기회 수, '일상'은 일상 기회 1번):
+ *              작음    보통    큼
+ *     결정만     0       0       1
+ *     몇 시간   일상     1       2
+ *     하루~며칠   1       1       2
+ *     몇 주      2       2       2
+ *     몇 달 이상  3       3       3
+ * 표에 없는 할 일: 할 일 자신의 daily(일상)·ap·free·cd 를 쓰고, 그것도 없으면 큰일 기회 1번(다른 파일이 새로 넣는 할 일 — 예: 생활체육은 daily: true).
+ * 표의 값: [드는 시간, 남는 크기, 쿨다운(달 — 비우면 할 일에 적힌 값), 기회 수를 규칙과 다르게 둘 때만 넷째 값] */
+C.ACT_TIME = { 0: '결정만', h: '몇 시간', d: '하루~며칠', w: '몇 주', m: '몇 달 이상' };
+C.ACT_SIZE = { 1: '작음', 2: '보통', 3: '큼' };
+C.actRule = (t, s) => (t === '0' ? (s >= 3 ? 1 : 0) : t === 'h' ? (s <= 1 ? 'daily' : s === 2 ? 1 : 2) : t === 'd' ? (s >= 3 ? 2 : 1) : t === 'w' ? 2 : 3);
+C.ACT_W = {
+  /* 몸과 마음 */
+  exercise: ['h', 1], martial: ['h', 1], // 생활체육 쪽(rec·fitness)의 쿨다운을 그대로 쓴다
+  gym: ['h', 1], // 헬스장 다니기 — 운동하기의 '헬스'로 합쳐 목록에서 숨김(rec.js)
+  recpick: ['0', 1, 0], // 요즘 하는 운동 바꾸기(rec.js) — 정하기만
+  rest: ['h', 1, 1], therapy: ['h', 1, 1], groom: ['h', 1, 2], diet: ['h', 1, 2], bathhouse: ['h', 1, 1], garden: ['h', 1, 1],
+  checkup: ['h', 1, 12], // 반나절 — 검진은 한 해에 한 번
+  aidget: ['0', 2, 12], // 보조기기는 사는 결정
+  quitsmoke: ['w', 2, 6], lessdrink: ['w', 2, 6], rehab: ['w', 2, 12], // 끊기·줄이기는 몇 주를 버티는 일 — 실패하면 반년 뒤 다시
+  /* 배우기 */
+  study: ['h', 1, 1], online: ['h', 1, 1], scripture: ['h', 1, 1],
+  language: ['h', 1, 3], locallang: ['h', 1, 3], nightclass: ['h', 1, 3], // 저녁마다 한 철(석 달) 듣는 강좌 — 쿨다운이 곧 한 철
+  license: ['w', 2, 6], relicense: ['w', 2, 6], ged: ['w', 2, 6], // 시험은 한 해 두 번쯤
+  cg_abroad: ['m', 3, 12], cg_wh: ['m', 3, 12], nightschool: ['m', 3, 60],
+  /* 사람 */
+  meetfriend: ['h', 1, 1], newfriend: ['h', 1, 2], parents: ['h', 1, 1], sibs: ['h', 1, 1], adultkids: ['h', 1, 1],
+  date: ['h', 1, 1], spouse: ['h', 1, 1], kids: ['h', 1, 1], grandkids: ['h', 1, 1], volunteer: ['h', 1, 2], worship: ['h', 1, 1],
+  reunion: ['h', 1, 12], // 동창회는 한 해에 한 번쯤
+  findlove: ['h', 2, 3], // 소개팅 한 번은 몇 시간이지만 사귀게 되면 오래 남음
+  propose: ['h', 3, 6], // 결혼 — 삶의 줄기
+  famtrip: ['d', 1, 6],
+  /* 돈과 일 */
+  farmhelp: ['h', 1, 2], livestock: ['h', 1, 2], fishing: ['h', 1, 2],
+  lottery: ['h', 1, 3], // 몇 분이면 사지만 기대값이 손해인 일이라 한 철에 한 번 꿈꿔 보는 정도로(예전 1달)
+  donate: ['h', 1, 3],
+  raise: ['h', 2, 12], // 한 번 이야기하는 데 몇 시간, 오른 연봉은 몇 해 남음
+  sidejob: ['w', 1, 3], cafejob: ['w', 1, 4], // 한 철 동안 주말마다
+  jobhunt: ['w', 3, 4], selfstart: ['w', 3, 6], rework: ['w', 3, 6],
+  rg_market: ['d', 2, 12],
+  startup: ['m', 3, 24],
+  invest: ['0', 2, 0], buyhouse: ['0', 2, 0], buycar: ['0', 2, 12], buypc: ['0', 1, 6], buyac: ['0', 1, 6], buyphone: ['0', 1, 6], insure: ['0', 2, 12],
+  quitjob: ['0', 3, 0], // 정하기만 하면 되지만 삶의 줄기(일)가 바뀜
+  /* 즐길 거리 */
+  party: ['h', 1, 2], shopping: ['h', 1, 1], market: ['h', 1, 1], show: ['h', 1, 1], gallery: ['h', 1, 1], gamble: ['h', 1, 3],
+  tradsport: ['h', 1], folkgame: ['h', 1], // 생활체육 쪽의 쿨다운(명절 놀이는 명절 달에만)
+  festival: ['h', 1, 12], // 축제는 한 해에 한 번
+  trip: ['d', 1, 3], extreme: ['d', 1, 6], abroad: ['w', 1, 6],
+  contest: ['w', 1, 12], // 대회는 몇 주를 준비해 한 해에 한 번쯤(큰일 기회 1번으로 두면 우승이 쌓여 명성이 너무 쉽게 올랐음 — 점검)
+  pet: ['w', 2, 24], // 십수 년을 함께할 식구 — 데려와 집에 익숙해지기까지 몇 주
+  /* 꿈에 도전 */
+  practice: ['h', 1, 2], lesson: ['h', 1, 2],
+  stream: ['h', 1, 3], // 영상 하나를 찍고 다듬어 올리는 주기(자주 올리면 퍼지는 영상·명성이 너무 쉽게 쌓였음)
+  tryout: ['d', 3, 12], audition: ['d', 3, 3], progamer: ['d', 3, 12], // 하루의 시험이 직업(삶의 줄기)을 가름 — 프로게임단 입단 테스트(rec.js)는 프로 입단 테스트와 같게
+  sportpick: ['0', 2], // 선수로 뛸 종목 정하기(sports.js) — 정하기만, 쿨다운은 sports.js
+  novel: ['w', 2, 6], artwork: ['w', 2, 4], streamlang: ['w', 2, 24],
+  election: ['m', 3], // 쿨다운은 선거 주기(career.js)
+  /* 삶의 큰일 */
+  will: ['h', 2, 60], memoir: ['w', 2, 60], move: ['w', 2, 12], pilgrim: ['w', 2, 60], seek: ['w', 2, 24],
+  belief: ['0', 2, 12], retire: ['0', 3, 0],
+  emigrate: ['m', 3, 24], rg_defect: ['m', 3, 24],
+  /* 유혹과 나쁜 습관(vice.js) */
+  binge: ['h', 1, 1], junkfood: ['h', 1, 1], gaming: ['h', 1, 1], drunkdrive: ['h', 1, 2],
+  startsmoke: ['h', 2, 3], startdrink: ['h', 2, 6], speeding: ['h', 2, 6], nobelt: ['h', 2, 6], saferide: ['h', 2, 6], tattoo: ['h', 2, 12], // 습관·몸에 오래 남음
+  drugs: ['h', 1, 3, 0], allnight: ['h', 1, 2, 0], // 기회를 쓰지 않고 오히려 일상 기회 +1(vice.js giveAP)
+  surgery: ['w', 2, 24], crashdiet: ['w', 1, 6],
+  /* 선을 넘는 일(vice.js) */
+  gossip: ['h', 1, 1], neglect: ['h', 1, 1], brawl: ['h', 1, 2], shoplift: ['h', 1, 2], vandal: ['h', 1, 2], truant: ['h', 1, 2], skipwork: ['h', 1, 2], splurge: ['h', 1, 3], sponge: ['h', 1, 6],
+  endaffair: ['h', 2, 3], examcheat: ['h', 2, 12], doping: ['h', 2, 12], loanshark: ['h', 2, 6], allin: ['h', 2, 6], taxdodge: ['h', 2, 12], bribe: ['h', 2, 12],
+  affair: ['h', 3, 12], divorceask: ['h', 3, 12], cutoff: ['0', 3, 60], dropout: ['0', 3, 12],
+  runaway: ['d', 3, 12], insfraud: ['w', 2, 24], embezzle: ['w', 2, 24], mlm: ['w', 2, 36], crimepath: ['w', 3, 12],
 };
-C.actAP = (S, a) => (a.free ? 0 : a.ap !== undefined ? (typeof a.ap === 'function' ? a.ap(S) : a.ap) : C.AP_W[a.id] || 1);
+/** 예전 기회 수 표(피드백 56번). 기준표(C.ACT_W)가 생긴 뒤로는 표에 없는 할 일에만 쓰인다(다른 파일이 C.AP_W.x = n 으로 넣는 값) */
+C.AP_W = C.AP_W || {};
+/** 할 일의 기회 정보: { daily: 일상 기회를 쓰나, ap: 쓰는 기회 수(일상이면 1), cd: 쿨다운(달) } */
+C.actInfo = (S, a) => {
+  const w = C.ACT_W[a.id];
+  if (w) {
+    const r = w[3] !== undefined ? w[3] : C.actRule(w[0], w[1]);
+    return { daily: r === 'daily', ap: r === 'daily' ? 1 : r, cd: w[2] !== undefined ? w[2] : a.cd || 0 };
+  }
+  if (a.daily) return { daily: true, ap: a.free ? 0 : 1, cd: a.cd || 0 };
+  return { daily: false, ap: a.free ? 0 : a.ap !== undefined ? (typeof a.ap === 'function' ? a.ap(S) : a.ap) : C.AP_W[a.id] || 1, cd: a.cd || 0 };
+};
+/** 일상 할 일인가(일상 기회를 쓰나) */
+C.actDaily = (S, a) => C.actInfo(S, a).daily;
+/** 쓰는 기회 수(일상이면 일상 기회 1번) */
+C.actAP = (S, a) => C.actInfo(S, a).ap;
+/** 다시 하기까지 기다리는 달 수 */
+C.actCd = (S, a) => C.actInfo(S, a).cd;
+/** 할 일이 쓰는 기회 칸 이름: 'dap'(일상) 또는 'ap'(큰일) */
+C.actWal = (S, a) => (C.actInfo(S, a).daily ? 'dap' : 'ap');
+/** 쓴 기회를 돌려준다(결정에서 '하지 않기'를 골랐을 때 등) */
+C.actRefund = (S, a) => { const k = C.actWal(S, a); S[k] = (S[k] || 0) + C.actAP(S, a); };
+
+/* ================================================================ 일상 할 일의 효과 크기(피드백 221번)
+ * 일상 기회가 달마다 2번 생겨 운동·쉬기·친구·공부를 예전(한 해 4번을 큰일과 나눠 씀)보다 훨씬 자주 할 수 있게 되었다.
+ * 한 번의 효과를 그대로 두면 능력치가 금세 차므로, 일상 할 일이 올리는 몫은 '최근 일상으로 올린 몫'(S.dfx)이 클수록 줄어든다:
+ *   올리는 몫 × (1 − 최근 몫 ÷ 상한), 바닥 0.05배. 최근 몫은 그 능력치가 제자리(목표값)로 돌아가는 빠르기만큼 달마다 옅어진다
+ *   (행복 4%·건강 3%·관계 2.5%·외모 2%·인품 1.2% — engine.js E.sysStats·stats2.js 와 같은 값).
+ *   그래서 가끔 하면 예전처럼 거의 다 오르고, 자주 몰아서 하면 '제자리로 돌아가는 만큼만' 다시 채워져 상한 근처에서 멈춘다.
+ *   지식·경력은 제자리로 돌아가지 않는 값이라 '몰아서 하면 덜 는다'(지식 달마다 2%·경력 1.5%씩 옅어짐 — 꾸준히 해도 한 해 지식 1.4·경력 0.9 안팎까지)로 보고,
+ *   높을수록 더디게(엔진의 지식과 같은 비율)도 곱한다.
+ * 짧은 효과(S.boost — 쉬기·목욕·운동이 직접 더하는 행복·건강·꾸밈의 여운)도 같은 방식(b_ 칸)으로 줄인다. 일상 할 일이 연 결정의 선택(연습·외국어·생활체육 고르기)도 같다.
+ * 내리는 몫(다치기·실패)은 그대로. 운동 습관(fitness.js)·친구 가까움·연인 사랑·실력(연습)은 따로 쌓이는 값이라 여기서 줄이지 않는다.
+ * [옅어지는 빠르기(달마다), 상한] — 상한은 일상 기회를 거의 다 쓰는 인생(점검 scratchpad/v068a/actsim.js heavy: 한국·나이지리아·전체)에서
+ *   행복·관계가 예전(큰일과 한 지갑이던 때)보다 몇 점 안쪽으로만 오르고, 일상만 골라 하는 인생은 예전과 비슷하게 맞춘 값. */
+C.DFX = { happy: [0.04, 12], health: [0.03, 8], social: [0.025, 8], charm: [0.02, 3], looks: [0.02, 6], pres: [0.012, 3], smarts: [0.02, 6], skill: [0.015, 5], b_health: [0.04, 3], b_happy: [0.06, 4], b_charm: [0.05, 3] };
+/** 지금 몇 배로 오르나(최근 몫이 상한에 가까울수록 0에 가까움) */
+A.dfxM = (S, k) => { const d = C.DFX[k]; return d ? U.clamp(1 - ((S.dfx && S.dfx[k]) || 0) / d[1], 0.05, 1) : 1; };
+A.dailyRun = (S, a) => C.dailyWrap(S, () => a.run(S));
+/** fn 이 하는 동안 오르는 능력치·짧은 효과를 위 방식으로 줄인다 — 일상 할 일이 연 결정의 선택(engine.js E.choose)에도 쓴다 */
+C.dailyWrap = (S, fn) => {
+  const R = S.dfx || (S.dfx = {});
+  const st0 = E.stat;
+  E.stat = (S2, k, d) => {
+    if (S2 === S && d > 0 && C.DFX[k]) {
+      let m = A.dfxM(S, k);
+      if ((k === 'smarts' || k === 'skill') && S.st[k] !== undefined) m *= U.clamp((100 - S.st[k]) / 55, 0.1, 1);
+      d *= m;
+      R[k] = (R[k] || 0) + d;
+    }
+    return st0(S2, k, d);
+  };
+  // 짧은 효과(S.boost: 건강·행복·꾸밈 — 할 일이 E.stat 을 거치지 않고 직접 더함)도 같은 방식으로
+  const b0 = S.boost ? { health: S.boost.health || 0, happy: S.boost.happy || 0, charm: S.boost.charm || 0 } : null;
+  try { return fn(); } finally {
+    E.stat = st0;
+    if (b0 && S.boost) for (const k of ['health', 'happy', 'charm']) {
+      const d = (S.boost[k] || 0) - b0[k], key = 'b_' + k;
+      if (d > 0 && C.DFX[key]) { const x = d * A.dfxM(S, key); S.boost[k] = b0[k] + x; R[key] = (R[key] || 0) + x; }
+    }
+  }
+};
 
 /** 자서전(피드백 66번: 써도 아무 득이 없었음)
  *  - 누구나: 행복, 마음의 상처가 조금 아묾, 배우자·다 큰 자녀·손주와 가까워짐(살아온 이야기를 돌려 읽음)
@@ -5353,7 +5520,7 @@ const NO_WORK_VISA = ['jobhunt', 'selfstart', 'startup', 'rework', 'sidejob', 'c
 const MIL_BASE = ['exercise', 'rest', 'study', 'novel', 'language', 'meetfriend'];
 const MIL_PHONE = ['invest', 'license', 'online', 'worship', 'donate', 'insure', 'lottery', 'checkup', 'therapy', 'groom', 'quitsmoke', 'lessdrink', 'diet', 'memoir', 'will'];
 const MIL_MIN = ['checkup', 'quitsmoke', 'lessdrink'];
-const MIL_PROFIT = ['sidejob', 'startup', 'selfstart', 'election', 'jobhunt', 'rework', 'cafejob', 'stream', 'audition', 'tryout', 'emigrate', 'abroad', 'pilgrim', 'gamble'];
+const MIL_PROFIT = ['sidejob', 'startup', 'selfstart', 'election', 'jobhunt', 'rework', 'cafejob', 'stream', 'audition', 'tryout', 'progamer', 'emigrate', 'abroad', 'pilgrim', 'gamble'];
 A.milBlock = (S, a) => {
   const m = S.mil;
   if (m.k === 'alt') return MIL_PROFIT.includes(a.id) ? '대체 복무 중에는 겸직·영리 활동·출국을 할 수 없습니다' : '';
@@ -5374,38 +5541,46 @@ A.state = (S, a) => {
   if (S.flags.a_gulf && ['jobhunt', 'selfstart', 'startup', 'election', 'rework', 'sidejob', 'cafejob', 'farmhelp', 'livestock', 'fishing', 'move'].includes(a.id)) return '해외에서 계약 노동 중입니다';
   if (S.res && S.res.status === 'retire' && NO_WORK_VISA.includes(a.id)) return '은퇴 비자로 머무는 중이라 일할 자격이 없습니다';
   if (S.res && S.res.status === 'study' && (a.id === 'startup' || a.id === 'selfstart')) return '유학 비자로는 사업을 할 수 없습니다(일자리를 얻으면 취업 비자로 바뀝니다)';
-  const last = S.actCd[a.id];
-  if (last !== undefined && a.cd && S.ageM - last < a.cd) return `${a.cd - (S.ageM - last)}달 뒤에 다시 할 수 있습니다`;
+  const last = S.actCd[a.id], info = C.actInfo(S, a);
+  if (last !== undefined && info.cd && S.ageM - last < info.cd) return `${info.cd - (S.ageM - last)}달 뒤에 다시 할 수 있습니다`;
   if (a.need) { const r = a.need(S); if (r !== true) return r || '지금은 할 수 없습니다'; }
   const cost = A.cost(S, a);
   if (cost > 0 && S.indep && Ec.liquid(S) < H.pay(S, cost)) return Ec.shortTxt(S, H.pay(S, cost), Ec.liquid(S));
   // 독립 전: 내 돈으로 내거나, 부모님 1년 살림의 4% 안쪽이면 부모님이 내 준다(피드백 26번)
   if (cost > 0 && !S.indep && S.money < H.pay(S, cost) && H.pay(S, cost) > S.fam.cons * Wd.payLvl(E.iso(S)) * S.fam.size * 0.04) return E.age(S) >= 15 ? `용돈이 모자라고, 집안 형편으로도 어렵습니다(필요 ${H.amt(S, cost)} · 내 돈 ${Ec.fmt(S, Math.max(0, S.money))})` : `집안 형편으로는 어렵습니다(필요 ${H.amt(S, cost)})`;
-  const w = C.actAP(S, a), ap = S.ap || 0;
-  if (w > ap) return ap <= 0 ? `기회를 모두 썼습니다 · 다음 기회까지 ${C.apNext(S)}달` : `기회가 ${w}번 필요합니다(지금 ${ap}번)`;
+  const w = info.ap;
+  if (info.daily) { if (w > (S.dap || 0)) return C.dapMonth(S) ? '일상 기회를 모두 썼습니다 · 다음 달에 다시 생깁니다' : '지금은 일상 기회가 생기지 않습니다'; return true; }
+  const ap = S.ap || 0;
+  if (w > ap) return ap <= 0 ? `큰일 기회를 모두 썼습니다 · 다음 큰일 기회까지 ${C.apNext(S)}달` : `큰일 기회가 ${w}번 필요합니다(지금 ${ap}번)`;
   return true;
 };
-A.cost = (S, a) => (a.cost ? (typeof a.cost === 'function' ? a.cost(S) : a.cost) : 0);
+/** 일상 할 일의 한 번 값(피드백 221번): 예전에는 한 해 4번뿐인 기회로 하던 일이라 값이 '한 철 몫'이었다(쇼핑 월급 0.4달 치·레슨 0.4·상담 0.2~0.5 등).
+ *  이제 한 달에 두 번 할 수 있는 '몇 시간짜리 한 번'이므로, 쿨다운 2달 이하인 일상의 돈은 예전 값의 3분의 1로 본다
+ *  (점검: 일상만 골라 하는 한국 인생의 50세 재산 순위 중앙값이 21% → 4%로 바닥까지 내려갔음).
+ *  한 철·한 해 단위인 것(외국어·야간 강좌·검진·축제·복권·기부)과 생활체육(rec.js — 처음부터 한 번 이용료)은 그대로. */
+C.ACT_COSTX = { shopping: 1 / 3, show: 1 / 3, gallery: 1 / 3, bathhouse: 1 / 3, groom: 1 / 3, therapy: 1 / 3, date: 1 / 3, party: 1 / 3, lesson: 1 / 3, junkfood: 1 / 3 };
+A.cost = (S, a) => { const c = a.cost ? (typeof a.cost === 'function' ? a.cost(S) : a.cost) : 0; return c && C.ACT_COSTX[a.id] ? c * C.ACT_COSTX[a.id] : c; };
 
 /** 행동 실행. 결과 문장(또는 null)을 돌려준다. */
 E.doAction = (S, id) => {
   const a = C.ACTION[id];
   if (!a || !S.alive || S.queue.length) return { ok: false, msg: '지금은 할 수 없습니다' };
-  const w = C.actAP(S, a);
-  if ((S.ap || 0) < w) return { ok: false, msg: (S.ap || 0) <= 0 ? `지금은 쓸 수 있는 기회가 없습니다. ${C.apNext(S)}달 뒤에 다시 생깁니다.` : `기회가 ${w}번 필요합니다. 지금은 ${S.ap}번 있습니다.` };
+  const info = C.actInfo(S, a), w = info.ap, k = info.daily ? 'dap' : 'ap';
+  if ((S[k] || 0) < w) return { ok: false, msg: info.daily ? '지금은 쓸 수 있는 일상 기회가 없습니다. 다음 달에 다시 생깁니다.' : (S.ap || 0) <= 0 ? `지금은 쓸 수 있는 큰일 기회가 없습니다. ${C.apNext(S)}달 뒤에 다시 생깁니다.` : `큰일 기회가 ${w}번 필요합니다. 지금은 ${S.ap}번 있습니다.` };
   const st = A.state(S, a);
   if (st !== true) return { ok: false, msg: st };
   const cost = A.cost(S, a);
-  const snap = { id, ap0: S.ap || 0, cd0: S.actCd[id], paid: cost > 0 ? H.pay(S, cost) : 0, own: !!S.indep || S.money >= H.pay(S, cost) }, q0 = S.queue.length;
+  // 돌려받기용 기록: 어느 기회 칸(k)에서 몇 번(ap0 은 쓰기 전 그 칸의 값)을 썼는지(engine.js E.choose)
+  const snap = { id, k, ap0: S[k] || 0, cd0: S.actCd[id], paid: cost > 0 ? H.pay(S, cost) : 0, own: !!S.indep || S.money >= H.pay(S, cost) }, q0 = S.queue.length;
   if (cost > 0) {
     if (S.indep) { Ec.withdrawBank(S, H.pay(S, cost)); S.money -= H.pay(S, cost); } // 현금이 모자라면 예금에서 꺼낸다
     else if (S.money >= H.pay(S, cost)) S.money -= H.pay(S, cost);
     else E.addMoney(S, -H.pay(S, cost));
   }
-  S.ap = (S.ap || 0) - w;
+  S[k] = (S[k] || 0) - w;
   S.actCd[id] = S.ageM;
   S.stats.actions = (S.stats.actions || 0) + 1;
-  const t = a.run(S);
+  const t = info.daily ? A.dailyRun(S, a) : a.run(S);
   // 결정 창을 열었으면: '다음에 한다'처럼 하지 않기로 하면 쓴 기회·쿨다운·돈을 돌려준다(engine.js E.choose, 피드백 133번)
   if (S.queue.length > q0) { const q = S.queue[S.queue.length - 1]; q.ctx = q.ctx || {}; q.ctx._act = snap; }
   if (t) E.log(S, C.t(S, t), 'act');
@@ -14369,7 +14544,7 @@ const Cr = {};
         if (o.cost) sub += ` · 밑천 약 ${H.amt(S, o.cost)}`;
         out.push({ label: o.ko, sub, run: (S2) => Cr.startSelf(S2, o) });
       }
-      out.push({ label: '그만둔다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.selfstart); delete S2.actCd.selfstart; return null; } });
+      out.push({ label: '그만둔다', typ: true, run: (S2) => { C.actRefund(S2, C.ACTION.selfstart); delete S2.actCd.selfstart; return null; } });
       return out;
     },
   };
@@ -14668,6 +14843,7 @@ const Cr = {};
    * 일자리 알아보기 창 아래에 그 길을 보여 주고, 고르면 그 할 일로 바로 이어 준다(일자리 알아보기에 이미 기회를 썼으므로 더 쓰지 않음). */
   const ROUTES = [
     ['tryout', (S) => (H.jobIs(S, 'athlete') ? '운동선수 — 상위 리그로' : '운동선수 — 입단 테스트로')],
+    ['progamer', () => '프로게이머 — 프로게임단 입단 테스트로'], // e스포츠는 운동과 따로(rec.js, 피드백 220번)
     ['audition', () => '가수·배우·모델 등 — 오디션으로'],
     ['artwork', () => '화가·사진가·작곡가 등 — 작품을 만들어 팔기'],
     ['novel', () => '작가 — 글을 써서 출판하기'],
@@ -14676,7 +14852,7 @@ const Cr = {};
     ['startup', () => '사업가 — 창업하기'],
     ['election', () => '정치인 — 선거에 나가기'],
   ];
-  const routeState = (S, a) => { const ap = S.ap; S.ap = 99; try { return C.actionState(S, a); } finally { S.ap = ap; } };
+  const routeState = (S, a) => { const ap = S.ap, dap = S.dap; S.ap = 99; S.dap = 99; try { return C.actionState(S, a); } finally { S.ap = ap; S.dap = dap; } }; // 일상 기회도(피드백 221번)
   {
     const c0 = C.DEC.cr_jobField.choices;
     C.DEC.cr_jobField.choices = (S, ctx) => {
@@ -14688,7 +14864,7 @@ const Cr = {};
         if (!a || E.age(S) < a.age[0] || E.age(S) > a.age[1] || (a.where && !a.where(S))) continue;
         const st = routeState(S, a);
         if (st !== true && (id === 'election' || id === 'startup')) continue; // 조건이 먼 길은 숨긴다
-        const hint = st === true && a.hint && (id === 'tryout' || id === 'audition') ? a.hint(S) : ''; // 가능성만 붙인다(다른 설명은 처지와 안 맞는 낱말이 섞일 수 있음)
+        const hint = st === true && a.hint && (id === 'tryout' || id === 'progamer' || id === 'audition') ? a.hint(S) : ''; // 가능성만 붙인다(다른 설명은 처지와 안 맞는 낱말이 섞일 수 있음)
         add.push({ label: lab(S), sub: st !== true ? st : `공고로 뽑지 않는 일입니다 · '${a.koS ? a.koS(S) : a.ko}'로 이어집니다${hint ? ` · ${hint}` : ''}`, disabled: st !== true,
           run: (S2) => { S2.actCd[id] = S2.ageM; const r = a.run(S2); return r || null; } });
       }
@@ -14930,7 +15106,7 @@ const Cr = {};
         out.push({ label: `${title} 선거에 나간다`, sub: short ? `선거 비용 약 ${fj(S, e.cost, '이')} 필요합니다` : `당선 가능성 약 ${P(e.p)}%${w ? ` (${w})` : ''} · 선거 비용 약 ${fmt(S, e.cost)}${Cr.influence(S) >= 20 ? '(후원금으로 일부 충당)' : ''}`,
           disabled: short, run: (S2) => Cr.runElection(S2, t, e.p, e.cost, false) });
       }
-      out.push({ label: '이번에는 나가지 않는다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.election); delete S2.actCd.election; return null; } });
+      out.push({ label: '이번에는 나가지 않는다', typ: true, run: (S2) => { C.actRefund(S2, C.ACTION.election); delete S2.actCd.election; return null; } });
       return out;
     },
   };
@@ -15594,7 +15770,7 @@ const Cr = {};
         const job = Cr.makeSelf(S, so);
         out.push({ label: `${U.j(so.ko, '을')} 시작한다`, sub: `처음 한 해 약 ${fmt(S, job.pay)}${so.cost ? ` · 밑천 약 ${H.amt(S, so.cost)}` : ''}`, run: (S2) => Cr.startSelf(S2, so) });
       }
-      out.push({ label: '그만둔다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.rework); delete S2.actCd.rework; return null; } });
+      out.push({ label: '그만둔다', typ: true, run: (S2) => { C.actRefund(S2, C.ACTION.rework); delete S2.actCd.rework; return null; } });
       return out;
     },
   };
@@ -15820,7 +15996,7 @@ const Cr = {};
       });
       if (!chLangs(S).includes('en')) out.push({ label: '영어 자막을 맡긴다', sub: `번역 비용 약 ${H.amt(S, 1)} · 영어권 시청자에게 조금 닿습니다`, cost: 1,
         run: (S2) => { const d = addStreamLang(S2, 'en', 0.2, true); return C.t(S2, `영상마다 영어 자막을 달았습니다. 채널이 닿을 수 있는 사람이 약 ${U.fmtKo(Math.round(d))}명 늘었습니다.`); } });
-      out.push({ label: '그만둔다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.streamlang); delete S2.actCd.streamlang; return null; } });
+      out.push({ label: '그만둔다', typ: true, run: (S2) => { C.actRefund(S2, C.ACTION.streamlang); delete S2.actCd.streamlang; return null; } });
       return out;
     },
   };
@@ -19825,7 +20001,7 @@ const Pr = {};
         return { label: d.ko, disabled: ok !== true || old, sub: ok !== true ? ok : old ? `${d.max}세가 넘으면 어렵습니다` : `대형 기획사·방송 약 ${Math.max(1, Math.round(r.p * 100))}% · 떨어져도 작은 기획사·극단 약 ${Math.max(1, Math.round(rs.p * 100))}% · ${d.max}세까지`,
           run: (S2) => C.t(S2, Pr.doAudition(S2, id)) };
       }).sort((x, y) => (x.disabled - y.disabled));
-      out.push({ label: '그만둔다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.audition); delete S2.actCd.audition; return null; } });
+      out.push({ label: '그만둔다', typ: true, run: (S2) => { C.actRefund(S2, C.ACTION.audition); delete S2.actCd.audition; return null; } });
       return out;
     },
   };
@@ -26538,7 +26714,7 @@ const Ar = {};
           sub: `${d.desc} · 작업 ${d.need}번 · 재료비 약 ${H.amt(S, d.cost)} · ${hasPr() ? `${Pr.KINDS[d.pk].ko} 실력 ${lv}` : ''}`,
           run: (S2) => Ar.artStep(S2, k) });
       }
-      out.push({ label: '그만둔다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.artwork); delete S2.actCd.artwork; return null; } });
+      out.push({ label: '그만둔다', typ: true, run: (S2) => { C.actRefund(S2, C.ACTION.artwork); delete S2.actCd.artwork; return null; } });
       return out;
     },
   };
@@ -27186,7 +27362,7 @@ const Ar = {};
         if (k === 'short' && S.cr.lit.shorts) extra = ` · 모아 둔 원고 ${S.cr.lit.shorts}편${S.cr.lit.debut ? ' · 등단' : ''}`;
         out.push({ label: `${d.ko}${pg ? ` 이어 쓰기 (${pg}/${need})` : ''}`, sub: `${d.sub}${need > 1 ? ` · 원고 ${need}번` : ''}${extra}`, run: (S2) => Ar.writeStep(S2, k) });
       }
-      out.push({ label: '그만둔다', typ: true, run: (S2) => { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.novel); delete S2.actCd.novel; return null; } });
+      out.push({ label: '그만둔다', typ: true, run: (S2) => { C.actRefund(S2, C.ACTION.novel); delete S2.actCd.novel; return null; } });
       return out;
     },
   };
@@ -27656,6 +27832,8 @@ if (typeof module !== 'undefined') module.exports = Ar;
  *       프로 선수 S.work.job.sp(종목)·lg(뛰는 리그 나라)·ret(은퇴 나이, dsl.js 의 은퇴 판정이 씀)
  * 은퇴 뒤: 지도자(코치)의 길(직업 'coach'), 운동 클럽 열기(내 일 시작하기 'coach'), 다른 일 찾기.
  * 옛 저장: 종목이 없으면 나라 인기 종목으로 본다.
+ * 피드백 220번(v0.6.8): 할 일 이름을 '선수로 뛸 종목 정하기'로(꿈에 도전 칸), 생활체육은 rec.js '운동하기'.
+ *   e스포츠는 종목 고르기·입단 테스트 목록·운동 실력에서 빼고 rec.js 의 게임 쪽 길(게임 실력·프로게임단 입단 테스트)로 — 표의 e스포츠 정의는 프로게이머 리그·연봉·은퇴에 그대로 쓴다.
  */
 'use strict';
 
@@ -27911,7 +28089,8 @@ const Sp = {};
     return true;
   };
   /** 고를 수 있는 종목(이 나라 인기순) */
-  Sp.avail = (S) => Sp.IDS.filter((sp) => Sp.can(S, sp) === true).sort((a, b) => Sp.popW(b, E.iso(S)) - Sp.popW(a, E.iso(S)));
+  // e스포츠는 운동 종목 고르기에서 빼고 게임 쪽 길(rec.js '프로게임단 입단 테스트')로(피드백 220번)
+  Sp.avail = (S) => Sp.IDS.filter((sp) => sp !== 'esports' && Sp.can(S, sp) === true).sort((a, b) => Sp.popW(b, E.iso(S)) - Sp.popW(a, E.iso(S)));
   /** 연봉 수준(이 나라 보통 일꾼 연봉 대비 중앙값) */
   const cmu = (sp, iso) => ((SP[sp].cmu || {})[iso] || 0);
   // 피드백 100번: 실업·세미프로는 대개 다른 일과 겸하는 수준(−0.7 → −1.5), 최고 리그가 있는 나라의 '프로' 단계는 2부·마이너 리그라 더 적게(−0.6)
@@ -28151,8 +28330,8 @@ const Sp = {};
     return parts.join(' · ');
   };
   C.DEC.sp_pick = {
-    title: () => '어떤 종목을 할까요?',
-    text: (S) => C.t(S, `종목마다 즐기는 사람 수, 프로 리그가 있는 나라, 연봉, 선수로 뛸 수 있는 햇수, 부상 위험이 다릅니다. 고른 종목의 기술이 연습·레슨·취미로 쌓이고, 입단 테스트도 그 종목으로 봅니다(종목을 바꾸면 쌓인 기술은 그 종목에 남아 있습니다).${Sp.main(S) ? ` 지금 종목은 ${U.j(Sp.ko(S, Sp.main(S)), '이')}고, 기술은 ${Math.round(Sp.lvl(S, Sp.main(S)))}입니다.` : ''}`),
+    title: () => '선수로 뛸 종목을 고를까요?',
+    text: (S) => C.t(S, `선수(프로·실업팀)로 뛰려면 종목을 정합니다. 종목마다 즐기는 사람 수, 프로 리그가 있는 나라, 연봉, 선수로 뛸 수 있는 햇수, 부상 위험이 다릅니다. 고른 종목의 기술이 연습·레슨·운동 취미로 쌓이고, 입단 테스트·대회도 그 종목으로 봅니다(종목을 바꾸면 쌓인 기술은 그 종목에 남아 있습니다). 건강을 위한 생활체육(걷기·달리기·등산·배드민턴 등)은 할 일의 '운동하기'에서 고르고, e스포츠는 운동이 아니라 게임 쪽 길(프로게임단 입단 테스트)입니다.${Sp.main(S) ? ` 지금 종목은 ${U.j(Sp.ko(S, Sp.main(S)), '이')}고, 기술은 ${Math.round(Sp.lvl(S, Sp.main(S)))}입니다.` : ''}`),
     choices: (S, ctx) => {
       const nat = Sp.natId(E.iso(S));
       let list = Sp.avail(S).slice(0, 9);
@@ -28166,7 +28345,7 @@ const Sp = {};
           Sp.ensureS(S2);
           const before = Sp.main(S2);
           S2.sp.main = sp;
-          if (S2.work.job && S2.work.job.id === 'athlete' && S2.work.job.sp !== sp) S2.sp.main = S2.work.job.sp; // 프로 선수는 뛰는 종목이 주 종목
+          if (S2.work.job && S2.work.job.id === 'athlete' && S2.work.job.sp !== sp && S2.work.job.sp !== 'esports') S2.sp.main = S2.work.job.sp; // 프로 선수는 뛰는 종목이 주 종목(프로게이머는 운동 종목이 따로)
           if (c2.prac) return Sp.practice(S2, c2.lesson);
           if (c2.tryout) return Sp.doTryout(S2, S2.sp.main);
           return C.t(S2, before && before !== sp ? `운동 종목을 ${U.j(Sp.ko(S2, before), '에서')} ${U.j(Sp.ko(S2, sp), '으로')} 바꿨습니다.` : `${U.j(Sp.ko(S2, sp), '을')} 내 종목으로 정했습니다.`);
@@ -28176,12 +28355,12 @@ const Sp = {};
       return out;
     },
   };
-  // 할 일: 운동 종목 정하기(기회를 쓰지 않음)
+  // 할 일: 선수로 뛸 종목 정하기(기회를 쓰지 않음). 생활체육(rec.js '운동하기')과 나누려고 '꿈에 도전' 칸에 둔다(피드백 220번)
   if (!C.ACTION.sportpick) {
-    const a = { id: 'sportpick', ko: '운동 종목 정하기', cat: 'body', age: [6, 120], cd: 12, free: true,
-      koS: (S) => (Sp.main(S) ? '운동 종목 바꾸기' : '운동 종목 정하기'),
-      hint: (S) => (Sp.main(S) ? `지금 종목: ${Sp.ko(S, Sp.main(S))}` : '연습·입단 테스트에 쓸 종목을 고릅니다'),
-      need: (S) => (H.jobIs(S, 'athlete') ? '프로 선수로 뛰는 동안에는 종목을 바꿀 수 없습니다' : true),
+    const a = { id: 'sportpick', ko: '선수로 뛸 종목 정하기', cat: 'dream', age: [6, 45], cd: 12, free: true,
+      koS: (S) => (Sp.main(S) ? '선수 종목 바꾸기' : '선수로 뛸 종목 정하기'),
+      hint: (S) => (Sp.main(S) ? `지금 선수 종목: ${Sp.ko(S, Sp.main(S))}` : '입단 테스트·대회·연습에 쓸 종목을 고릅니다(생활체육은 운동하기)'),
+      need: (S) => (H.jobIs(S, 'athlete') ? (S.work.job.sp === 'esports' ? '프로게이머로 뛰는 동안에는 선수 종목을 정할 수 없습니다' : '프로 선수로 뛰는 동안에는 종목을 바꿀 수 없습니다') : true),
       run: (S) => { E.ask(S, 'sp_pick', { act: true }); return null; } };
     const i = C.ACTIONS.findIndex((x) => x.id === 'exercise');
     C.ACTIONS.splice(i >= 0 ? i + 1 : C.ACTIONS.length, 0, a);
@@ -28221,7 +28400,7 @@ const Sp = {};
     if (a < 5 || !S.sp) return;
     const sp = Sp.mainOrNat(S);
     const on = new Set();
-    if ((S.hobbies || []).includes('sport')) { Sp.gain(S, sp, a < 10 ? 0.15 : 0.22); on.add(sp); }
+    if ((S.hobbies || []).includes('sport')) { const hs = sp === 'esports' ? Sp.natId(E.iso(S)) : sp; Sp.gain(S, hs, a < 10 ? 0.15 : 0.22); on.add(hs); } // 운동 취미는 e스포츠를 쌓지 않는다(피드백 220번)
     if ((S.hobbies || []).includes('games') && sp === 'esports') { Sp.gain(S, 'esports', 0.18); on.add('esports'); }
     const j = S.work.job;
     if (j && j.id === 'athlete' && j.sp) { Sp.gain(S, j.sp, 0.5); on.add(j.sp); }
@@ -28331,9 +28510,10 @@ const Sp = {};
     },
   };
   const why = (S, sp) => {
-    const parts = [`${Sp.ko(S, sp)} 기술 ${Math.round(Sp.lvl(S, sp))}`];
-    if (hasPr()) parts.push(`운동 실력 ${Math.round(Pr.lvl(S, sp === 'esports' ? 'mind' : 'sport'))}`);
-    if (S.talentSeen && S.talentSeen.sport) parts.push(`운동 재능 ${Math.round(H.talent(S, 'sport'))}`);
+    const e = sp === 'esports'; // e스포츠는 운동이 아니라 게임 실력·두뇌 겨루기(피드백 220번)
+    const parts = [e ? `게임 실력 ${Math.round(Sp.lvl(S, sp))}` : `${Sp.ko(S, sp)} 기술 ${Math.round(Sp.lvl(S, sp))}`];
+    if (hasPr()) parts.push(e ? `두뇌 겨루기 ${Math.round(Pr.lvl(S, 'mind'))}` : `운동 실력 ${Math.round(Pr.lvl(S, 'sport'))}`);
+    if (!e && S.talentSeen && S.talentSeen.sport) parts.push(`운동 재능 ${Math.round(H.talent(S, 'sport'))}`);
     parts.push(sp === 'esports' ? `지식 ${Math.round(S.st.smarts)}` : `건강 ${Math.round(S.st.health)}`);
     return parts.join(' · ');
   };
@@ -28356,7 +28536,7 @@ const Sp = {};
     const pass1 = U.chance(r.p1);
     if (pass1 && U.chance(r.p2)) {
       Sp.ensureS(S);
-      S.sp.main = sp;
+      if (sp !== 'esports') S.sp.main = sp; // 프로게이머가 되어도 운동 종목(선수 종목)은 따로 둔다
       if (d.amateur) {
         H.fameUp(S, 4); E.stat(S, 'happy', 10);
         if (hasCr()) Cr.honor(S, 'national', `${ko} 지역 대표 선발`);
@@ -28365,9 +28545,12 @@ const Sp = {};
       const lgIso = r.lg.iso || E.iso(S), lv = r.lg.lv;
       let months = 12 * Math.exp(U.normal(Sp.payMu(sp, lgIso, lv, S) - (r.lg.abroad ? 0.2 : 0), d.sig));
       if (r.lg.abroad && lgIso !== E.iso(S)) months *= U.clamp(Math.pow(Wd.workerMedian(lgIso) / Wd.workerMedian(E.iso(S)), 0.75), 0.3, 6);
+      const main0 = S.sp.main;
       H.setJob(S, 'athlete', months);
       const j = S.work.job;
       j.sp = sp; j.lg = lgIso; j.ret = Sp.retAge(sp); j.lv = lv;
+      if (sp === 'esports') S.sp.main = main0; // 일자리를 얻을 때(takeJob) 나라 인기 종목이 운동 종목으로 들어가지 않게
+
       j.title = Sp.title(S, sp, lv);
       const movedT = r.lg.abroad && lgIso !== E.iso(S) ? Sp.relocate(S, lgIso) : '';
       H.fameUp(S, lv >= 2 ? 12 : 6); E.stat(S, 'happy', 15); H.ach(S, 'pro_athlete');
@@ -28379,8 +28562,8 @@ const Sp = {};
     // 무엇이 모자랐고 무엇을 하면 되는지(피드백 104번)
     const tips = [];
     if (sp !== 'esports' && S.st.health < 75) tips.push('체력(건강)을 끌어올리기');
-    if (Sp.lvl(S, sp) < 70) tips.push(`${ko} 기술 연습·레슨`);
-    if (Sp.talent(S, sp) < 60 && Sp.lvl(S, sp) >= 70) tips.push('타고난 체격·순발력의 한계를 감안해 낮은 단계 리그부터 도전하기');
+    if (Sp.lvl(S, sp) < 70) tips.push(sp === 'esports' ? '게임 실력 연습·레슨' : `${ko} 기술 연습·레슨`);
+    if (Sp.talent(S, sp) < 60 && Sp.lvl(S, sp) >= 70) tips.push(sp === 'esports' ? '타고난 반응 속도의 한계를 감안해 낮은 단계 리그부터 도전하기' : '타고난 체격·순발력의 한계를 감안해 낮은 단계 리그부터 도전하기');
     else if ((r.lg.lv || 0) >= 2) tips.push('한 단계 낮은 리그에서 경력을 쌓고 올라가기');
     if (!(S.honors || []).length) tips.push('취미 대회 입상으로 눈에 띄기');
     const coach = !pass1 ? (Sp.lvl(S, sp) < 50 ? '감독이 기본기를 더 다지고 오라고 했습니다.' : '감독이 몸놀림이 아직 프로 수준에 못 미친다고 했습니다.') : '기량 테스트는 통과했지만 마지막 계약 명단에는 들지 못했습니다.';
@@ -28390,8 +28573,9 @@ const Sp = {};
     title: () => '어느 종목으로 도전할까요?',
     text: (S) => C.t(S, '지금까지 해 온 종목 가운데 하나로 프로에 도전합니다. 낮은 단계 리그부터 올라가는 선수가 많고, 높은 리그일수록 문이 좁습니다. 그 나라에 리그가 없는 종목은 해외 팀 테스트를 봐야 해 훨씬 어렵습니다.'),
     choices: (S) => {
-      const list = new Set([Sp.mainOrNat(S)]);
-      for (const k of Object.keys((S.sp && S.sp.lv) || {}).sort((a, b) => Sp.lvl(S, b) - Sp.lvl(S, a))) if (Sp.lvl(S, k) >= 15 && Sp.can(S, k) === true) list.add(k);
+      const m0 = Sp.mainOrNat(S), list = new Set([m0 === 'esports' ? Sp.natId(E.iso(S)) : m0]);
+      // e스포츠는 '프로게임단 입단 테스트'(rec.js)에서 따로 본다(피드백 220번)
+      for (const k of Object.keys((S.sp && S.sp.lv) || {}).sort((a, b) => Sp.lvl(S, b) - Sp.lvl(S, a))) if (k !== 'esports' && Sp.lvl(S, k) >= 15 && Sp.can(S, k) === true) list.add(k);
       const out = [];
       [...list].slice(0, 4).forEach((sp, si) => {
         const tiers = Sp.tiers(S, sp);
@@ -28456,7 +28640,7 @@ const Sp = {};
   // 취미 고르기 창: 운동 취미는 종목을 따로 고른다는 안내
   if (C.hobbyEffectText) {
     const he0 = C.hobbyEffectText;
-    C.hobbyEffectText = (h) => { const t = he0(h); return h === 'sport' ? `${t}${t ? ' · ' : ''}종목은 할 일의 '운동 종목 정하기'에서 고릅니다` : t; };
+    C.hobbyEffectText = (h) => { const t = he0(h); return h === 'sport' ? `${t}${t ? ' · ' : ''}선수로 뛸 종목은 할 일의 '선수로 뛸 종목 정하기'에서 고릅니다` : t; };
   }
   // 실력 카드: '운동 실력' 옆에 종목 기술
   if (hasPr() && Pr.view) {
@@ -28489,7 +28673,7 @@ const Sp = {};
     const j = S.work.job;
     Sp.ensureS(S);
     if (!j.sp) j.sp = Sp.mainOrNat(S);
-    if (!S.sp.main) S.sp.main = j.sp;
+    if (!S.sp.main && j.sp !== 'esports') S.sp.main = j.sp; // 프로게이머의 운동 종목은 따로(피드백 220번)
     if (!j.lg) j.lg = E.iso(S);
     if (j.ret === undefined) j.ret = Sp.retAge(j.sp);
   });
@@ -28715,7 +28899,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.6.7';
+E.VERSION = '0.6.8';
 E.BUILD_DATE = '26.10.16';
 
 /* ================================================================ 기본 도구 */
@@ -30027,15 +30211,18 @@ E.choose = (S, idx) => {
   S.stats.choices = (S.stats.choices || 0) + 1;
   const A0 = q.ctx && q.ctx._act;
   const q0 = S.queue.length;
-  const res = ch.run(S, q.ctx);
+  // 일상 할 일(일상 기회)이 연 결정의 선택은 그 효과도 일상 할 일처럼 줄인다(actions.js C.dailyWrap, 피드백 221번 — 연습하기·외국어·생활체육 고르기 등)
+  const res = A0 && A0.k === 'dap' && C.dailyWrap ? C.dailyWrap(S, () => ch.run(S, q.ctx)) : ch.run(S, q.ctx);
   // 할 일이 연 결정에서 고른 것이 다음 결정만 연 '길 고르기'였으면(기록 없음) 이어 열린 결정에도 돌려받기 표시를 넘긴다(피드백 218번)
   if (A0 && (res === null || res === undefined) && S.queue.length > q0) {
     for (let i = q0; i < S.queue.length; i++) { const nq = S.queue[i]; nq.ctx = nq.ctx || {}; if (!nq.ctx._act) nq.ctx._act = A0; }
   }
   // 결정 안에서 따로 돌려주지 않았으면(기회가 아직 줄어 있으면) 여기서 돌려준다
   // 다음 결정을 이어서 연 선택지(앞 목록으로 등)는 돌려주지 않는다 — 이어진 결정에서 고르는 것이 끝이므로
-  if (A0 && E.isCancel(ch) && S.queue.length <= q0 && (S.ap || 0) < A0.ap0) {
-    S.ap = A0.ap0;
+  // 어느 기회 칸(일상 S.dap·큰일 S.ap)에서 썼는지는 A0.k(옛 저장의 기록은 큰일 기회)
+  const k0 = A0 && A0.k === 'dap' ? 'dap' : 'ap';
+  if (A0 && E.isCancel(ch) && S.queue.length <= q0 && (S[k0] || 0) < A0.ap0) {
+    S[k0] = A0.ap0;
     if (A0.cd0 === undefined) delete S.actCd[A0.id]; else S.actCd[A0.id] = A0.cd0;
     if (A0.paid > 0) { if (A0.own) S.money += A0.paid; else E.addMoney(S, A0.paid); }
   }
@@ -30126,7 +30313,7 @@ if (typeof module !== 'undefined') module.exports = E;
  *    (술자리 문화가 강한 나라에서 더). 그 밖에 돈(손 벌리기·사채·탈세·보험 사기·횡령·좀도둑질·음주 운전의 대리비), 공부·일·글 진도(밤샘·약물),
  *    두뇌 겨루기 실력(게임), 매력(성형·문신·굶는 다이어트·사치), 운전 일 벌이(과속), 학대하는 집에서 벗어남(가출·연락 끊기), 거친 동네의 체면(주먹다짐).
  *    기댓값은 대부분 손해이거나 처지에 따라 할 만한 정도로 맞췄다(대가는 그대로).
- *  - 실제 자원으로 주는 이득(피드백 122번): 밤새우기 기회 +1(연달아 하면 줄어듦), 약물 기회 +1·석 달 동안 연습·운동 기술 1.5배·작품 완성도 +5·공부 지식 +1,
+ *  - 실제 자원으로 주는 이득(피드백 122번): 밤새우기 일상 기회 +1(연달아 하면 줄어듦), 약물 일상 기회 +1·석 달 동안 연습·운동 기술 1.5배·작품 완성도 +5·공부 지식 +1,
  *    시험 부정행위(새 할 일, 대학 입학시험 '잘 봄'), 도핑(새 할 일, 한 해 동안 Sp.eff +6~10, 검사·출전 정지·심장 위험은 기존 사인 배수),
  *    탈세(그해 세금의 15~35% — 월급쟁이는 3~8%), 횡령(돈을 만지는 자리 내 월급 6~24달 치·일반 1~4달 치, 클수록 잘 걸림),
  *    인맥 효과 2배(구직 로짓 +0.6·승진 뒤집기 25%, 사람 탭 '인맥' 카드), 연봉 협상 부풀리기(인상 ×1.5), 사치(매력이 한 해 동안 받쳐짐·사교 모임·인맥, 달마다 유지비).
@@ -30304,8 +30491,9 @@ const Vc = {};
 
   /* ---------------------------------------------------------------- 실제 자원으로 주는 이득(피드백 122번) */
   /** 할 일 기회를 더 준다(그 나이의 상한보다 1까지 더 모을 수 있다). 돌려주는 값: 실제로 늘어난 수 */
-  const giveAP = (S, n) => { const cap = (C.apCap ? C.apCap(S) : 8) + 1, b = S.ap || 0; S.ap = Math.max(b, Math.min(cap, b + n)); return S.ap - b; };
-  /** 밤새우기: 6달 안에 몇 번째인지에 따라 기회 +1 이 생길 확률과 깎이는 건강 */
+  // 밤을 새워 버는 것은 몇 시간이므로 일상 기회로 준다(피드백 221번 — 예전에는 하나뿐이던 기회)
+  const giveAP = (S, n) => { const cap = (C.dapCap ? C.dapCap(S) : 6) + 1, b = S.dap || 0; S.dap = Math.max(b, Math.min(cap, b + n)); return S.dap - b; };
+  /** 밤새우기: 6달 안에 몇 번째인지에 따라 일상 기회 +1 이 생길 확률과 깎이는 건강 */
   const NIGHT_AP = [1, 0.7, 0.4, 0.2], NIGHT_HP = [3, 4, 6, 8];
   /** 각성제(약물)의 효과가 남아 있는지(석 달): 연습·창작·공부 효과 1.5배 */
   const stimOn = (S) => !!(S.vc && S.vc.stimUntil !== undefined && S.ageM < S.vc.stimUntil);
@@ -30443,19 +30631,19 @@ const Vc = {};
         return out.join(' ');
       } },
     { id: 'drugs', ko: '약물에 손대기', cat: 'vice', age: [15, 75], cd: 3, ap: 0,
-      hint: (S) => gh('기회 +1 · 석 달 동안 연습·창작·공부 효과 1.5배', DRUG_STRICT.has(E.iso(S)) ? '중독이 빠르게 오름·과다 복용·이 나라는 아주 무거운 처벌' : '중독이 빠르게 오름·과다 복용·체포'),
+      hint: (S) => gh('일상 기회 +1 · 석 달 동안 연습·창작·공부 효과 1.5배', DRUG_STRICT.has(E.iso(S)) ? '중독이 빠르게 오름·과다 복용·이 나라는 아주 무거운 처벌' : '중독이 빠르게 오름·과다 복용·체포'),
       run: (S) => {
         const first = !S.flags.drugTry, strict = DRUG_STRICT.has(E.iso(S));
         S.flags.drugTry = true; vcOf(S).drugM = S.ageM;
         const hooked = H.vlUse ? H.vlUse(S, 'drugs', 14 + vl(S, 'risk') / 8) : false;
         vadd(S, { risk: 3, honest: -1 });
         E.addMoney(S, -H.pay(S, 0.2)); E.stat(S, 'happy', 6); E.stat(S, 'health', -3);
-        // 얻는 것: 밤을 새워 하나를 더 하고(기회 +1), 석 달 동안 연습·창작·공부 효과 1.5배(Pr.gain·Sp.gain·작품 완성도·공부)
+        // 얻는 것: 밤을 새워 하나를 더 하고(일상 기회 +1), 석 달 동안 연습·창작·공부 효과 1.5배(Pr.gain·Sp.gain·작품 완성도·공부)
         const ap = giveAP(S, 1);
         vcOf(S).stimUntil = S.ageM + 3;
         const out = [first ? U.pick(['{N은} 아는 사람을 통해 약을 구해 처음으로 해 보았습니다.', '밤샘에 좋다는 알약을 건네받아 처음 삼켰습니다.'])
           : U.pick(['또 약을 구했습니다. 몇 시간 동안 머릿속이 번쩍 맑아졌습니다.', '약을 하고 며칠 밤을 내리 깨어 있었습니다.'])];
-        out.push(`${ap ? '잠도 잊은 채 하나를 더 해냈습니다(기회 +1). ' : ''}석 달 동안은 연습·작업·공부가 평소보다 잘 늘 것 같습니다.`);
+        out.push(`${ap ? '잠도 잊은 채 하나를 더 해냈습니다(일상 기회 +1). ' : ''}석 달 동안은 연습·작업·공부가 평소보다 잘 늘 것 같습니다.`);
         if (U.chance(0.05)) { E.stat(S, 'health', -12); E.stat(S, 'happy', -10); out.push('몸이 크게 이상해져 응급실에 실려 갔습니다. 며칠 만에 겨우 회복했습니다.'); }
         if (age(S) >= 16 && busted(S, 'drug', strict ? 0.3 : 0.15, clamp((strict ? 0.06 : 0.02) * enforce(S), 0.005, 0.15))) {
           out.push('약을 사고팔던 자리를 경찰이 덮쳤습니다.');
@@ -30487,20 +30675,20 @@ const Vc = {};
           + (pg >= 0.5 ? ' 수 싸움이 늘어 두뇌 겨루기 실력이 조금 올랐습니다.' : ' 머릿속이 텅 빈 채로 실컷 쉬었습니다.') + addFat(S, 4);
       } },
     { id: 'allnight', ko: '밤새우기', cat: 'vice', age: [12, 100], cd: 2, ap: 0,
-      hint: (S) => { const n = recent(vcOf(S).sleep, S, 6); return gh(`기회 +1${n >= 1 ? `(연달아 하면 줄어 약 ${R(100 * NIGHT_AP[Math.min(n, 3)])}%)` : ''}`, `건강 −${NIGHT_HP[Math.min(n, 3)]}${n >= 2 ? '·사고 위험↑' : ''}`); },
+      hint: (S) => { const n = recent(vcOf(S).sleep, S, 6); return gh(`일상 기회 +1${n >= 1 ? `(연달아 하면 줄어 약 ${R(100 * NIGHT_AP[Math.min(n, 3)])}%)` : ''}`, `건강 −${NIGHT_HP[Math.min(n, 3)]}${n >= 2 ? '·사고 위험↑' : ''}`); },
       run: (S) => {
         const n0 = recent(vcOf(S).sleep, S, 6), n = pushRecent(S, 'sleep', 6);
         const k = Math.min(n0, 3);
         // 대가: 건강(연달아 할수록 크게)과 그 뒤의 여운(행동 효과 boost.health — 엔진의 건강 편차로 이어짐)
         E.stat(S, 'health', -NIGHT_HP[k]); S.boost.health -= k + 1;
-        // 얻는 것: 할 일 기회 +1(연달아 하면 줄어듦)
+        // 얻는 것: 일상 기회 +1(연달아 하면 줄어듦)
         const ap = U.chance(NIGHT_AP[k]) ? giveAP(S, 1) : 0;
         let t;
         if (H.inSchool(S)) { E.stat(S, 'smarts', 2); E.stat(S, 'happy', -1); t = '시험을 앞두고 졸음을 참으며 밤을 새웠습니다.'; }
         else if (H.working(S)) { E.stat(S, 'skill', 1); E.stat(S, 'happy', -2); t = '밀린 일을 붙잡고 밤을 꼬박 새웠습니다.'; }
         else if ((S.flags.novel || 0) > 0) { S.wskill = clamp((S.wskill || 0) + 1, 0, 100); t = '밤새 원고를 붙잡고 몇 장을 더 썼습니다.'; }
         else { E.stat(S, 'happy', 2); t = '밤새 놀다 해가 뜨는 것을 보았습니다.'; }
-        t += ap ? ' 밤을 새워 하나를 더 끝냈습니다(기회 +1).' : ' 졸음에 눈만 감겼다 떴다 하다 밤이 다 갔습니다. 해낸 것은 별로 없습니다.';
+        t += ap ? ' 밤을 새워 하나를 더 끝냈습니다(일상 기회 +1).' : ' 졸음에 눈만 감겼다 떴다 하다 밤이 다 갔습니다. 해낸 것은 별로 없습니다.';
         if (n >= 3) t += ` 잠이 모자란 날이 이어집니다. 낮에도 머리가 멍합니다.${drives(S) ? ' 운전대를 잡으면 눈꺼풀이 무겁습니다.' : ''}`;
         return t;
       } },
@@ -31096,7 +31284,9 @@ const Vc = {};
   /** 할 일이 부른 결정에서 '하지 않는다'를 고르면 쓴 기회를 돌려준다 */
   const refundAct = (S, ctx, id) => {
     if (!ctx || !ctx.act || !C.ACTION[id]) return;
-    S.ap = Math.min(C.apCap ? C.apCap(S) : 99, (S.ap || 0) + C.actAP(S, C.ACTION[id]));
+    const a = C.ACTION[id], k = C.actWal ? C.actWal(S, a) : 'ap'; // 일상 할 일이면 일상 기회로(피드백 221번)
+    const cap = k === 'dap' ? (C.dapCap ? C.dapCap(S) : 99) : C.apCap ? C.apCap(S) : 99;
+    S[k] = Math.min(cap, (S[k] || 0) + C.actAP(S, a));
     delete S.actCd[id];
   };
   const refund = (S, ctx) => refundAct(S, ctx, 'divorceask');
@@ -33031,7 +33221,8 @@ const Hl = {};
     if (a && S && S.alive && !S.queue.length && Hl.lv(S, 'dementia') === 1 && COMPLEX.has(id) && C.actionState(S, a) === true && U.chance(0.3)) {
       const cost = C.actionCost(S, a);
       if (cost > 0) { if (S.indep || S.money >= H.pay(S, cost)) S.money -= H.pay(S, cost); else E.addMoney(S, -H.pay(S, cost)); }
-      S.ap = (S.ap || 0) - C.actAP(S, a);
+      const wk = C.actWal ? C.actWal(S, a) : 'ap'; // 일상 할 일은 일상 기회에서(피드백 221번)
+      S[wk] = (S[wk] || 0) - C.actAP(S, a);
       S.actCd[id] = S.ageM;
       S.stats.actions = (S.stats.actions || 0) + 1;
       const t = C.t(S, FIZ[id] || FIZ._);
@@ -33369,6 +33560,7 @@ const Ac = {};
   /** 운동 사고 문장 속 {sport}는 그 사람 자신의 종목으로(sports.js Sp.withSp) */
   const spT = (S, t) => (typeof Sp !== 'undefined' && Sp.withSp ? Sp.withSp(S, () => C.t(S, t)) : C.t(S, t));
   const sportScene = (S) => {
+    if (typeof Rc !== 'undefined' && Rc && Rc.injScene) { const sc = Rc.injScene(S); if (sc) return sc; } // 요즘 하는 생활체육(rec.js, 피드백 220번): 달리기 무릎·등산 낙상·자전거 넘어짐
     const h = S.hobbies.find((x) => SPORTY.includes(x)) || 'sport';
     if (h === 'running') return [U.pick(['산을 오르다 미끄러져 굴렀습니다.', '달리다 발을 잘못 디뎠습니다.']), 'sport'];
     if (h === 'gym') return ['무리하게 무게를 들다 어깨를 다쳤습니다.', 'strain'];
@@ -47199,7 +47391,7 @@ const Si = {};
   // 이미 가진 취미 가운데 못 하는 것은 '쉬는 중' — 효과·연습이 멈췄다가 처지가 풀리면 다시 이어진다.
   const HOB_OK = {
     barracks: ['sport', 'reading', 'music', 'chess', 'running', 'drawing', 'faith', 'gym', 'crafts', 'martial'], // 무술(fitness.js): 부대에서도 수련
-    prison: ['sport', 'reading', 'drawing', 'chess', 'faith', 'crafts', 'music'],
+    prison: ['sport', 'reading', 'drawing', 'chess', 'faith', 'crafts', 'music', 'walk'], // 걷기(rec.js, 피드백 220번): 운동 시간 마당 걷기 — 요가·당구·볼링은 부대·교도소·병원에서 쉼
     hosp: ['reading', 'music', 'drama', 'games', 'sns', 'crafts', 'chess', 'drawing', 'faith'],
   };
   HOB_OK.bed = HOB_OK.hosp;
@@ -51927,8 +52119,8 @@ const Ft = {};
     else if (a < 13) base = 0.45; // 뛰어놀기·체육 시간
     else if (k === 'barracks') base = 0.6; // 훈련·작업
     else if (k === 'prison') base = 0.15;
-    else if (j && j.id === 'athlete') base = 0.95;
-    else if (j && j.id === 'coach') base = 0.55;
+    else if (j && j.id === 'athlete' && j.sp !== 'esports') base = 0.95; // 프로게이머·e스포츠 코치는 앉아서 하는 일(피드백 220번)
+    else if (j && j.id === 'coach' && j.sp !== 'esports') base = 0.55;
     else if (j) base = jd && jd.manual ? 0.3 : 0.1; // 몸 쓰는 일은 조금(일로 하는 활동은 여가 운동만큼 몸에 이롭지 않다)
     else if (a < 25 && S.edu && S.edu.stage !== null) base = a < 19 ? 0.3 : 0.18;
     else base = H.rural(S) ? 0.25 : 0.14;
@@ -56648,11 +56840,728 @@ const Sl = {};
   });
 })();
 
+/* 지구 어딘가에서 — 생활체육('요즘 하는 운동')과 선수 길·e스포츠 길 나누기 (v0.6.8, 피드백 220번)
+ *
+ * 220 "운동이 프로 선수가 되기 위한 선택지로만 보임 — 생활체육(산책·러닝·당구 등)이 없고 e스포츠가 운동에 들어감"
+ *   1. 할 일 '운동하기'(actions.js exercise)를 생활체육 고르기로 바꾼다. 후보는 나라·나이·성별·형편·계절·도시/시골·처지에 맞게
+ *      가중치로 고른다(Rc.cands — 같은 사람·같은 때면 늘 같은 목록). 한 번 고르면 '요즘 하는 운동'(S.ft.rec)으로 남아
+ *      다음부터 '운동하기'가 그 운동을 바로 하고, '요즘 하는 운동 바꾸기'(recpick, 기회를 쓰지 않음)로 바꾼다.
+ *      부대 안(복무)·교도소에서는 그곳에서 할 수 있는 운동만 그때그때 고르고(요즘 하는 운동은 그대로 둠),
+ *      노쇠·거동이 불편하면 걷기·체조 같은 가벼운 것만, 누워 지내면 누운 채 하는 재활 체조만.
+ *      가중치의 근거(근삿값): 한국 국민생활체육조사(걷기·등산·헬스·축구·수영·요가/필라테스·자전거·골프·배드민턴·당구·볼링, 노인 게이트볼),
+ *      미국 BLS 시간 사용 조사·SFIA(걷기·헬스·달리기·자전거·수영·요가·농구·볼링·골프), 일본 사회생활기본조사(걷기·체조·근력 운동·볼링·골프),
+ *      중국 전민건신 조사(걷기·달리기·광장무·배드민턴·탁구·태극권), 인도(걷기·요가·크리켓), 유럽 Eurobarometer 2022(걷기·자전거·달리기·수영·헬스).
+ *      팀·라켓 종목(축구·농구·크리켓·배구·야구·배드민턴·탁구·테니스)은 sports.js 의 나라별 인기(Sp.popW)를 함께 쓴다.
+ *   2. 종목마다 득이 다르다: 운동 습관 강도(Ft.did 에 넘기는 값 — 걷기 0.2·달리기·수영 0.45·당구 0.06·볼링 0.08),
+ *      건강·짧은 건강 보너스, 관계(동호회·동네 친구 — 게이트볼·광장무·당구·볼링·배드민턴·축구는 사교가 큼, 가끔 새 친구),
+ *      돈(골프·필라테스·헬스·수영장·테니스·볼링 이용료 — 할 일의 돈으로 냄), 부상(달리기 무릎·등산 낙상·자전거 넘어짐·공놀이 부딪힘 —
+ *      할 일 때 작게(accident.js Ac.hurt), 그리고 최근 석 달 안에 한 운동은 달마다 운동 사고 비율에 더해 accident.js 가 장면(Rc.injScene)을 씀),
+ *      기분(걷기·요가·태극권 → 스트레스 낮춤·마음 건강, stats2.js S.ab). 할 일 단추에 '얻음 · 위험' 숫자.
+ *   3. 선수 길: '운동 종목 정하기'(sports.js sportpick)를 '선수로 뛸 종목 정하기'로 이름을 바꾸고 '꿈에 도전' 칸으로 옮김(sports.js).
+ *   4. e스포츠: 선수 종목 고르기·입단 테스트 목록·운동 실력에서 빼고(sports.js), 게임 쪽 길로 —
+ *      '게임 실력'(S.sp.lv.esports 를 그대로 씀: 연습하기·레슨의 '게임 실력', 비디오 게임 취미로 조금씩), 할 일 '프로게임단 입단 테스트'(progamer).
+ *      프로게이머는 예전처럼 선수 일자리(athlete, 종목 esports)로 리그·연봉·은퇴를 그대로 쓰되, 운동 습관에는 들어가지 않는다(fitness.js).
+ *      옛 저장에서 내 종목이 e스포츠인 사람은 게임 길로 옮긴다(게임 실력·경력 그대로, 운동 취미는 비디오 게임 취미로).
+ *   5. 취미: 걷기·산책 / 요가(·필라테스) / 당구 / 볼링을 C.HOBBY 에 더함(처지별 취미는 situ.js HOB_OK — 교도소 안 걷기).
+ *   6. 일상 기회(피드백 221번, 다른 파일): 생활체육 할 일(운동하기·헬스장·도장 가기)에 daily: true 표시만 단다.
+ * 상태: S.ft.rec(요즘 하는 운동 id) · recM(마지막으로 한 달) · recN{id: 횟수}, S.sp.gm(게임 길로 옮긴 표시)
+ * 다른 파일의 작은 고침: sports.js(선수 종목 이름·e스포츠 빼기), fitness.js(프로게이머 운동량), accident.js(Rc.injScene), situ.js(HOB_OK).
+ * 사망 위험: 새 장치 없음 — 운동 습관(fitness.js 의 정규화된 배수)만 지나간다. 새 취미(걷기·요가)가 사람들 평균 습관을 올린 만큼(나이·소득 단계별 0~4.6점)
+ *   Ft.NORM 의 평균·분산을 옮겨(DMU·DVZ) 사람들 전체의 위험은 그대로 둔다(점검: 살아 있는 사람의 '배수 넣은 위험 ÷ 안 넣은 위험' 6개국 0.99~1.01).
+ */
+'use strict';
+
+const Rc = {};
+(() => {
+  const clamp = U.clamp, R = Math.round;
+  const hasFt = () => typeof Ft !== 'undefined' && !!Ft && typeof Ft.did === 'function';
+  const hasSp = () => typeof Sp !== 'undefined' && !!Sp && !!Sp.DEF && typeof Sp.popW === 'function';
+  const hasSi = () => typeof Si !== 'undefined' && !!Si && typeof Si.kind === 'function';
+  const hasAc = () => typeof Ac !== 'undefined' && !!Ac && typeof Ac.hurt === 'function';
+  const hasPr = () => typeof Pr !== 'undefined' && !!Pr && typeof Pr.gain === 'function';
+  const hasEl = () => typeof El !== 'undefined' && !!El && typeof El.cxLv === 'function';
+  const isoOf = (S) => E.iso(S);
+  const ageOf = (S) => E.age(S);
+  const band5 = (a) => (a < 13 ? 0 : a < 20 ? 1 : a < 45 ? 2 : a < 65 ? 3 : 4);
+  E.Rc = Rc;
+  Rc.ac = () => (hasAc() ? Ac : null); // 점검 도구용
+  const ens = (S) => (hasFt() && Ft.ensure ? Ft.ensure(S) : (S.ft = S.ft || {}));
+
+  /* ================================================================ 처지 */
+  const taliban = (S) => S.sex === 'f' && typeof H.rx === 'function' && H.rx(S, 'wom') === 'taliban';
+  const mobDis = (S) => !!(S.dis && S.dis.some((d) => (d.k === 'mob' || d.k === 'cp') && d.sev >= 2 && d.src !== 'age'));
+  /** 운동을 고를 때의 처지: barracks 부대 안 · prison 교도소 · bed 누워 지냄 · frail 노쇠·거동 불편 · strict 여성의 바깥 운동이 드문 나라 · normal */
+  Rc.mode = (S) => {
+    const k = hasSi() ? Si.kind(S) : S.prison ? 'prison' : 'home';
+    if (k === 'barracks' || k === 'prison' || k === 'bed') return k;
+    const a = ageOf(S);
+    if (a >= 88 || mobDis(S) || (hasEl() && El.cxLv(S, 'frail') >= 2) || (S.cond && S.cond.disab && S.cond.disab.lv >= 2)) return 'frail';
+    if (a >= 10 && H.strictF(S)) return 'strict';
+    return 'normal';
+  };
+  const CLOSED = { barracks: 1, prison: 1, bed: 1 };
+
+  /* ================================================================ 종목 표
+   * ag: 나이대별 하는 사람 비중 [~12, 13~19, 20~44, 45~64, 65~] · f: 여성 비중(남성 1 대비) · ru: 시골 배수 · o: 바깥 운동인 정도(겨울에 줄어듦)
+   * act: 운동 습관 강도(Ft.did) · soc: 관계 · hap: 행복 · str: 스트레스 덜기 · mh: 마음 건강 · inj: 다치는 정도(1 = 할 일 한 번에 2.5%)
+   * cost: 이용료(보통 월급 몇 달 치) · w: 나라(ISO)·지역(regionKey)·기본(_) 가중치 · link/k: sports.js 종목 인기(Sp.popW) × k
+   * a0·a1: 할 수 있는 나이 · pair: 친구와 함께 하는 일이 많음 · club: 새로 사귀는 친구의 갈래(people.js ctx) */
+  const REC = {
+    walk: { ag: [0.3, 0.4, 1, 2, 3.2], f: 1.4, ru: 1, o: 1, act: 0.2, soc: 0, hap: 2, str: 4, mh: 1, inj: 0.15, fall: 1, w: { _: 10, ssa: 6 }, club: 'neighbor', a0: 6 },
+    run: { ag: [0.5, 1.1, 1.4, 0.7, 0.12], f: 0.8, ru: 0.8, o: 1, act: 0.45, soc: 0, hap: 1, str: 4, inj: 0.9, fall: 1, w: { _: 3, na: 5, eca: 4.5, eap: 3.5, lac: 4, KEN: 6, ETH: 6, JPN: 4.5 }, a0: 8, a1: 80 },
+    hike: { ag: [0.3, 0.4, 0.8, 1.7, 1], f: 0.9, ru: 1.3, o: 1, act: 0.4, soc: 1, hap: 2, str: 5, inj: 0.9, fall: 1,
+      w: { _: 1, na: 3, eca: 2.5, KOR: 9, JPN: 3.5, TWN: 4, HKG: 3, CHE: 5, AUT: 5, NOR: 4, NPL: 4, IRN: 3, DEU: 3, CHN: 1.5, NLD: 0.3, DNK: 0.3, BGD: 0.3 }, club: 'club', a0: 8, a1: 85 },
+    cycle: { ag: [1.5, 1.2, 1, 1, 0.5], f: 0.7, ru: 1.1, o: 1, act: 0.4, soc: 0, hap: 2, str: 3, inj: 0.9, fall: 1,
+      w: { _: 2, eca: 4.5, na: 3, NLD: 10, DNK: 8, DEU: 5, BEL: 5, FRA: 4, ITA: 4, JPN: 3.5, CHN: 3, TWN: 4, VNM: 3, COL: 4, KOR: 2.5 }, a0: 6, a1: 85 },
+    swim: { ag: [1.5, 1, 1, 0.9, 0.6], f: 1.1, ru: 0.5, o: 0, act: 0.45, soc: 0, hap: 2, str: 3, inj: 0.15, cost: 0.02, w: { _: 1.5, na: 3, eca: 4, AUS: 6, NZL: 4, KOR: 2, JPN: 2.5, CHN: 2, SGP: 3 }, a0: 6 },
+    gym: { ag: [0, 0.7, 1.5, 0.9, 0.3], f: 0.75, ru: 0.2, o: 0, act: 0.35, soc: 0, hap: 1, str: 3, inj: 0.6, cost: 0.02,
+      w: { _: 1.5, na: 6, eca: 4, lac: 3.5, mena: 3, KOR: 5, JPN: 2.5, BRA: 5, AUS: 5 }, a0: 14, a1: 90 },
+    yoga: { ag: [0, 0.4, 1.2, 1.1, 0.6], f: 2.5, ru: 0.4, o: 0, act: 0.25, soc: 1, hap: 2, str: 6, mh: 1, inj: 0.25, cost: (S) => (YOGA_HOME.has(isoOf(S)) ? 0 : 0.04),
+      w: { _: 1, na: 3, eca: 2, eap: 1.2, KOR: 3, IND: 6, NPL: 3, LKA: 2, AUS: 2.5 }, club: 'club', a0: 13 },
+    badminton: { link: 'badminton', k: 0.6, ag: [1, 1.2, 1, 1, 0.5], f: 1, ru: 0.8, o: 0.5, act: 0.35, soc: 2, hap: 2, str: 3, inj: 0.6, pair: 1, club: 'club', a0: 7, a1: 85 },
+    tabletennis: { link: 'tabletennis', k: 0.5, ag: [1, 1, 0.8, 1, 1], f: 0.7, ru: 0.7, o: 0, act: 0.25, soc: 1, hap: 2, str: 3, inj: 0.2, pair: 1, club: 'club', a0: 7 },
+    tennis: { link: 'tennis', k: 0.35, ag: [0.4, 0.9, 1, 1, 0.6], f: 0.8, ru: 0.3, o: 0.7, act: 0.4, soc: 1, hap: 2, str: 3, inj: 0.6, cost: 0.015, pair: 1, club: 'club', a0: 8, a1: 85 },
+    billiards: { ag: [0, 0.6, 1.3, 1, 0.5], f: 0.15, ru: 0.5, o: 0, act: 0.06, soc: 2, hap: 3, str: 3, inj: 0.02, cost: 0.005,
+      w: { _: 0.8, KOR: 4, PHL: 4, VNM: 3, CHN: 2, USA: 1.5, GBR: 1.5, IRL: 1, THA: 1.5, TUR: 1.2, EGY: 1, MEX: 1.2, BRA: 1.2 }, pair: 1, club: 'club', a0: 14 },
+    bowling: { ag: [0.6, 1, 1.2, 0.8, 0.4], f: 0.9, ru: 0.1, o: 0, act: 0.08, soc: 2, hap: 3, str: 3, inj: 0.15, cost: 0.008,
+      w: { _: 0.3, na: 2.5, KOR: 2, JPN: 2.5, TWN: 1, SGP: 1.2, MYS: 0.8, AUS: 1, GBR: 0.8, DEU: 0.6 }, pair: 1, club: 'club', a0: 7 },
+    golf: { ag: [0, 0.1, 0.8, 1.6, 1.2], f: 0.5, ru: 0.4, o: 1, act: 0.2, soc: 2, hap: 3, str: 3, inj: 0.3,
+      cost: (S) => clamp(Wd.tradablePrice(isoOf(S), ['KOR', 'JPN'].includes(isoOf(S)) ? 160 : 70) / Math.max(1, H.month(S)), 0.01, 3),
+      w: { _: 0.3, na: 2.5, KOR: 3, JPN: 3, GBR: 1.5, IRL: 2, AUS: 2.5, NZL: 1.5, ZAF: 1.5, SWE: 1, THA: 0.6 }, pair: 1, club: 'club', a0: 14 },
+    gateball: { ag: [0, 0, 0, 0.12, 3], f: 1, ru: 1.2, o: 1, act: 0.12, soc: 3, hap: 2, str: 3, inj: 0.1, w: { _: 0, KOR: 3, JPN: 3, TWN: 1.5, CHN: 1, BRA: 0.2 }, club: 'club', a0: 55 },
+    soccer: { link: 'soccer', k: 0.6, ag: [2.5, 2, 1, 0.35, 0.03], f: 0.12, ru: 1.2, o: 1, act: 0.45, soc: 2, hap: 2, str: 3, inj: 1.2, club: 'club', a0: 6, a1: 70 },
+    basketball: { link: 'basketball', k: 0.5, ag: [1.2, 2, 1, 0.25, 0.02], f: 0.25, ru: 0.8, o: 0.7, act: 0.45, soc: 1, hap: 2, str: 3, inj: 1.1, club: 'club', a0: 8, a1: 65 },
+    cricket: { link: 'cricket', k: 0.6, min: 1, ag: [2, 2, 1, 0.3, 0.03], f: 0.08, ru: 1.3, o: 1, act: 0.3, soc: 2, hap: 2, str: 3, inj: 0.5, club: 'club', a0: 7, a1: 65 },
+    volleyball: { link: 'volleyball', k: 0.4, ag: [0.6, 1.5, 1, 0.5, 0.1], f: 1, ru: 1.1, o: 0.7, act: 0.3, soc: 2, hap: 2, str: 3, inj: 0.6, club: 'club', a0: 10, a1: 70 },
+    baseball: { link: 'baseball', k: 0.25, min: 2, ag: [1, 1.3, 0.8, 0.4, 0.05], f: 0.08, ru: 0.8, o: 1, act: 0.25, soc: 2, hap: 2, str: 3, inj: 0.5, cost: 0.006, club: 'club', a0: 8, a1: 70 },
+    jokgu: { ag: [0, 0.6, 1.2, 0.8, 0.1], f: 0.05, ru: 1, o: 1, act: 0.3, soc: 2, hap: 2, str: 3, inj: 0.6, w: { _: 0, KOR: 2.5 }, pair: 1, club: 'club', a0: 13, a1: 70 },
+    sqdance: { ag: [0, 0, 0.15, 2.5, 2], f: 7, ru: 0.7, o: 1, act: 0.25, soc: 3, hap: 3, str: 4, inj: 0.15, w: { _: 0, CHN: 1.2, MAC: 0.3, TWN: 0.15, HKG: 0.1, SGP: 0.1 }, club: 'neighbor', a0: 35 },
+    taichi: { ag: [0, 0.05, 0.2, 1.2, 3], f: 1.3, ru: 0.6, o: 1, act: 0.2, soc: 1, hap: 2, str: 5, mh: 1, inj: 0.1, w: { _: 0, CHN: 4, TWN: 3, HKG: 3, MAC: 3, SGP: 1.5 }, club: 'neighbor', a0: 30 },
+    parkgym: { ag: [0.1, 0.2, 0.3, 1.5, 2.5], f: 1, ru: 0.4, o: 1, act: 0.18, soc: 1, hap: 1, str: 3, inj: 0.2, w: { _: 0.2, KOR: 4, CHN: 3, TWN: 1.5, RUS: 1, UKR: 0.8 }, club: 'neighbor', a0: 30 },
+    aerobic: { ag: [0.1, 0.5, 1.2, 1.3, 0.5], f: 3.5, ru: 0.4, o: 0, act: 0.4, soc: 2, hap: 3, str: 4, inj: 0.4, cost: 0.006, w: { _: 0.4, lac: 2.5, na: 1, eca: 0.8, ssa: 1, KOR: 1.5, PHL: 1 }, club: 'club', a0: 13, a1: 80 },
+    stretch: { ag: [0.2, 0.3, 0.5, 1, 2.5], f: 1.5, ru: 1, o: 0, act: 0.12, soc: 0, hap: 1, str: 3, inj: 0.05, w: { _: 1.5, JPN: 4 }, a0: 6 },
+    homeex: { ag: [0.6, 1, 1, 0.6, 0.3], f: 1, ru: 1.3, o: 0, act: 0.3, soc: 0, hap: 1, str: 2, inj: 0.3, w: { _: 2, ssa: 4, sas: 2.5, mena: 2.5 }, a0: 8 },
+    milpt: { ag: [0, 1, 1, 1, 1], f: 1, ru: 1, o: 1, act: 0.45, soc: 1, hap: 0, str: 1, inj: 0.6, w: { _: 0 }, club: 'army', only: 1, a0: 16 },
+  };
+  Rc.REC = REC;
+  const YOGA_HOME = new Set(['IND', 'NPL', 'LKA', 'BGD']);
+  const PH_BALL = new Set(['soccer', 'basketball', 'cricket', 'volleyball', 'baseball', 'jokgu']);
+
+  /* ---------------- 처지마다 할 수 있는 것(가중치) */
+  const SITU = {
+    barracks: (S) => ({ milpt: 10, soccer: 4, jokgu: isoOf(S) === 'KOR' ? 6 : 0, gym: isoOf(S) === 'KOR' || H.dev(S) >= 2 ? 3 : 0, homeex: 2, basketball: 1, volleyball: 1 }),
+    prison: () => ({ walk: 8, homeex: 6, soccer: 3, basketball: 1.5, volleyball: 1, tabletennis: 0.8 }),
+    bed: () => ({ stretch: 1 }),
+    frail: (S) => (mobDis(S) ? { stretch: 5, swim: 1 } : { walk: 6, stretch: 5, taichi: baseW(S, 'taichi') > 0 ? 1.5 : 0, gateball: baseW(S, 'gateball') > 0 ? 1 : 0, swim: 0.6 }),
+    strict: (S) => (taliban(S) ? { homeex: 6, stretch: 3 } : { homeex: 6, stretch: 3, walk: 3, badminton: H.dev(S) >= 1 ? 1.5 : 0, tabletennis: H.dev(S) >= 1 ? 1 : 0 }),
+  };
+
+  /* ---------------- 할 수 있는가(시설·형편) */
+  const wp = (S) => E.wealthP(S);
+  const swimPool = (S) => H.urban(S) && H.dev(S) >= 1;
+  const NEED = {
+    swim: (S) => (swimPool(S) || (H.seaside && H.seaside(S)) || H.dev(S) >= 2 ? true : '가까운 곳에 수영할 곳이 없습니다'),
+    gym: (S) => (H.destitute(S) ? '먹고살기도 빠듯합니다' : (H.urban(S) && H.dev(S) >= 1) || H.dev(S) >= 2 ? true : '가까운 곳에 헬스장이 없습니다'),
+    yoga: (S) => (YOGA_HOME.has(isoOf(S)) || (H.urban(S) && H.dev(S) >= 1 && !H.destitute(S)) ? true : '가까운 곳에 요가를 배울 곳이 없습니다'),
+    tennis: (S) => ((H.dev(S) >= 2 && !H.destitute(S)) || (H.urban(S) && wp(S) >= 0.7) ? true : '가까운 곳에 테니스장이 없습니다'),
+    billiards: (S) => (H.urban(S) || H.dev(S) >= 2 ? true : '가까운 곳에 당구장이 없습니다'),
+    bowling: (S) => (H.urban(S) && !H.destitute(S) && (H.dev(S) >= 2 || wp(S) >= 0.7) ? true : '가까운 곳에 볼링장이 없습니다'),
+    golf: (S) => (!H.destitute(S) && (H.dev(S) >= 2 ? wp(S) >= 0.5 : wp(S) >= 0.85) && (H.urban(S) || H.dev(S) >= 2) ? true : '골프를 칠 형편이 아닙니다'),
+    parkgym: (S) => (H.urban(S) || H.dev(S) >= 2 ? true : '가까운 곳에 운동기구가 있는 공원이 없습니다'),
+    aerobic: (S) => (H.urban(S) || H.dev(S) >= 2 ? true : '가까운 곳에 배울 곳이 없습니다'),
+  };
+
+  /* ---------------- 계절: 겨울이 추운 나라의 겨울에는 바깥 운동이 줄고, 더운 철에는 수영이 는다 */
+  const ICE = new Set(['KOR', 'JPN', 'CHN', 'MNG', 'PRK', 'KAZ', 'KGZ', 'TJK', 'UZB', 'AFG', 'IRN', 'TUR', 'ARG', 'CHL', 'GEO', 'ARM', 'AZE', 'NZL']);
+  const DEEP = new Set(['RUS', 'CAN', 'KAZ', 'MNG', 'FIN', 'SWE', 'NOR', 'EST', 'LVA', 'LTU', 'BLR', 'KGZ', 'ISL', 'UKR']);
+  const winter = (S) => (['eca', 'na'].includes(Wd.regionKey(isoOf(S))) || ICE.has(isoOf(S))) && H.coldMons(S).includes(H.mon(S));
+  Rc.winter = winter;
+  const hotNow = (S) => H.hotMons(S).includes(H.mon(S));
+
+  /** 한 종목의 가중치(0 이면 지금은 못 함) */
+  const baseW = (S, id) => {
+    const d = REC[id], c = isoOf(S), rk = Wd.regionKey(c);
+    if (d.link) {
+      if (!hasSp()) return 0;
+      const p = Sp.popW(d.link, c);
+      return d.k * p * (d.min && p < d.min ? 0.1 : 1);
+    }
+    const t = d.w || {};
+    return t[c] !== undefined ? t[c] : t[rk] !== undefined ? t[rk] : t._ || 0;
+  };
+  const wOf = (S, id, base) => {
+    const d = REC[id], a = ageOf(S);
+    if (!d || a < (d.a0 || 0) || a > (d.a1 || 120)) return 0;
+    if (NEED[id] && NEED[id](S) !== true) return 0;
+    let w = base !== undefined ? base : baseW(S, id);
+    if (!(w > 0)) return 0;
+    w *= d.ag[band5(a)];
+    if (S.sex === 'f') w *= d.f;
+    if (H.rural(S)) w *= id === 'yoga' && YOGA_HOME.has(isoOf(S)) ? 0.8 : d.ru;
+    if (d.o && winter(S)) w *= 1 - (1 - (DEEP.has(isoOf(S)) ? 0.35 : 0.6)) * d.o;
+    if (id === 'swim' && hotNow(S)) w *= 1.4;
+    if (id === 'golf') w *= clamp(0.4 + 2 * (wp(S) - 0.5), 0.3, 1.6);
+    const cost = costOf(S, id);
+    if (cost >= 0.015 && H.poor(S)) w *= 0.5;
+    if (a >= 80 && (d.act >= 0.4 || PH_BALL.has(id))) w *= 0.25;
+    return w > 0 ? w : 0;
+  };
+  /** 지금 고를 수 있는 운동: [[id, 가중치], …] 큰 순서 */
+  Rc.cands = (S) => {
+    const m = Rc.mode(S);
+    const out = [];
+    if (SITU[m]) {
+      const t = SITU[m](S);
+      for (const id in t) {
+        if (!(t[id] > 0) || !REC[id]) continue;
+        const a = ageOf(S), d = REC[id];
+        if (a < (d.a0 || 0) || a > (d.a1 || 120)) continue;
+        if (m !== 'barracks' && m !== 'prison' && NEED[id] && NEED[id](S) !== true) continue;
+        out.push([id, t[id]]);
+      }
+    } else {
+      for (const id in REC) {
+        if (REC[id].only) continue;
+        const w = wOf(S, id);
+        if (w > 0.05) out.push([id, w]);
+      }
+    }
+    return out.sort((x, y) => y[1] - x[1]);
+  };
+  /** 고르기 창에 보일 목록(많이 하는 순서로 7개 + 요즘 하는 운동) */
+  Rc.list = (S) => {
+    const c = Rc.cands(S), ids = c.slice(0, 7).map(([id]) => id);
+    const cur = S.ft && S.ft.rec;
+    if (cur && !ids.includes(cur) && c.some(([id]) => id === cur)) ids.push(cur);
+    return ids;
+  };
+  Rc.can = (S, id) => !!REC[id] && Rc.cands(S).some(([x]) => x === id);
+  /** '운동하기'가 바로 할 운동(없으면 고르기 창): 부대 안·교도소·누워 지낼 때는 그때그때 고른다 */
+  const curRec = (S) => {
+    const id = S.ft && S.ft.rec;
+    if (!id || !REC[id] || CLOSED[Rc.mode(S)]) return null;
+    return Rc.can(S, id) ? id : null;
+  };
+  Rc.cur = curRec;
+
+  /* ================================================================ 이름 */
+  const PIT = { USA: 1, CAN: 1, AUS: 1, PHL: 1, NZL: 1 };
+  Rc.ko = (S, id) => {
+    const c = isoOf(S), a = ageOf(S), m = Rc.mode(S);
+    switch (id) {
+      case 'walk': return m === 'prison' ? '운동 시간 걷기' : '걷기·산책';
+      case 'run': return '달리기';
+      case 'hike': return c === 'NPL' ? '산길 걷기' : '등산';
+      case 'cycle': return '자전거 타기';
+      case 'swim': return '수영';
+      case 'gym': return m === 'barracks' ? '체력 단련실 근력 운동' : '헬스(근력 운동)';
+      case 'yoga': return YOGA_HOME.has(c) || !(H.urban(S) && H.dev(S) >= 2) ? '요가' : '요가·필라테스';
+      case 'badminton': return '배드민턴';
+      case 'tabletennis': return '탁구';
+      case 'tennis': return '테니스';
+      case 'billiards': return c === 'GBR' || c === 'IRL' ? '당구(스누커·포켓볼)' : PIT[c] ? '당구(포켓볼)' : '당구';
+      case 'bowling': return '볼링';
+      case 'golf': return '골프';
+      case 'gateball': return '게이트볼';
+      case 'soccer': return m === 'barracks' ? '부대 축구' : m === 'prison' ? '마당 축구' : c === 'KOR' && a >= 20 ? '조기 축구' : (c === 'BRA' || c === 'ARG') && H.urban(S) ? '풋살·동네 축구' : '동네 축구';
+      case 'basketball': return m === 'prison' ? '마당 농구' : m === 'barracks' ? '부대 농구' : '동네 농구';
+      case 'cricket': return '동네 크리켓';
+      case 'volleyball': return c === 'BRA' && H.seaside && H.seaside(S) ? '해변 배구' : m === 'barracks' ? '부대 배구' : m === 'prison' ? '마당 배구' : '동네 배구';
+      case 'baseball': return ['JPN', 'KOR', 'TWN', 'USA'].includes(c) && a >= 20 ? '사회인 야구' : '캐치볼·동네 야구';
+      case 'jokgu': return '족구';
+      case 'sqdance': return '광장무(광장 춤)';
+      case 'taichi': return '공원 태극권';
+      case 'parkgym': return '공원 운동기구';
+      case 'aerobic': return Wd.regionKey(c) === 'lac' ? '줌바·에어로빅' : '에어로빅·생활 댄스';
+      case 'stretch': return m === 'bed' ? '누운 채 하는 재활 체조' : mobDis(S) ? '상체 운동·재활 체조' : c === 'JPN' ? '라디오 체조·스트레칭' : '체조·스트레칭';
+      case 'homeex': return m === 'prison' ? '맨몸 운동' : m === 'strict' ? '집 안 운동·줄넘기' : '맨몸 운동·줄넘기';
+      case 'milpt': return '부대 체력 단련(구보·팔굽혀펴기)';
+      default: return '운동';
+    }
+  };
+
+  /* ================================================================ 득과 위험 */
+  const costOf = (S, id) => { const d = REC[id]; if (!d || !d.cost) return 0; let v = typeof d.cost === 'function' ? d.cost(S) : d.cost; if (id === 'swim' && !swimPool(S)) v = 0; if (CLOSED[Rc.mode(S)]) v = 0; return v > 0 ? v : 0; };
+  Rc.cost = costOf;
+  const hpOf = (d) => (d.act >= 0.4 ? 2 : d.act >= 0.18 ? 1 : 0);
+  const boostOf = (d) => Math.min(3, R(d.act * 7));
+  /** 할 일 한 번에 다칠 가능성 */
+  const injP = (S, id) => { const d = REC[id]; return clamp(0.025 * d.inj * (d.fall && ageOf(S) >= 65 ? 1.5 : 1), 0, 0.08); };
+  /** 이 운동 한 번이 운동 습관을 얼마나 올리는지(최고로 오르는 몫, 점수) */
+  const habGain = (d) => R(10.6 * d.act);
+  const RISK_KO = { run: '무릎·발목', hike: '넘어짐', cycle: '넘어짐', soccer: '부딪힘', basketball: '부딪힘·발목', cricket: '공에 맞음', volleyball: '손가락·발목', baseball: '손가락', jokgu: '발목', gym: '허리·어깨', tennis: '팔꿈치·발목', badminton: '발목', golf: '허리', milpt: '발목·허리' };
+  const pctKo = (p) => (p < 0.01 ? `${(R(p * 1000) / 10).toFixed(1)}%` : `${R(p * 100)}%`);
+  /** '얻음 …' */
+  Rc.gainKo = (S, id) => {
+    const d = REC[id], parts = [];
+    const hg = habGain(d);
+    parts.push(hg >= 1 ? `운동 습관 +${hg}` : '운동 습관 조금');
+    if (hpOf(d)) parts.push(`건강 +${hpOf(d)}`);
+    if (d.soc) parts.push(`관계 +${d.soc}`);
+    if (S.ab && d.str) parts.push(`스트레스 −${d.str}`);
+    if (S.ab && d.mh) parts.push('마음 건강 +');
+    return `얻음 ${parts.join('·')}`;
+  };
+  /** '위험 …' */
+  Rc.riskKo = (S, id) => {
+    const p = injP(S, id);
+    return `위험 ${RISK_KO[id] ? `${RISK_KO[id]} ` : '다칠 확률 '}${pctKo(p)}`;
+  };
+
+  /* ================================================================ 돈 */
+  const payable = (S, m) => {
+    if (!(m > 0)) return true;
+    const amt = H.pay(S, m);
+    if (S.indep) return (typeof Ec !== 'undefined' && Ec.liquid ? Ec.liquid(S) : S.money) >= amt;
+    return S.money >= amt || amt <= S.fam.cons * Wd.payLvl(isoOf(S)) * S.fam.size * 0.04;
+  };
+  const pay = (S, m) => {
+    if (!(m > 0)) return;
+    const amt = H.pay(S, m);
+    if (S.indep) { if (typeof Ec !== 'undefined' && Ec.withdrawBank) Ec.withdrawBank(S, amt); S.money -= amt; }
+    else if (S.money >= amt) S.money -= amt;
+    else E.addMoney(S, -amt);
+  };
+
+  /* ================================================================ 장면 */
+  const urb = (S) => H.urban(S);
+  const kid = (S) => ageOf(S) < 13;
+  const old = (S) => ageOf(S) >= 65;
+  const LINES = {
+    walk: (S, m) => (m === 'prison' ? ['운동 시간에 마당을 몇 바퀴 걸었습니다. 담장 너머로 하늘이 보였습니다.', '운동 시간 내내 마당 가장자리를 따라 걸었습니다.']
+      : m === 'strict' ? ['해 질 녘 식구들과 집 근처를 천천히 걸었습니다.', '저녁을 먹고 식구들과 동네 골목을 한 바퀴 걸었습니다.']
+        : [
+          ...(urb(S) ? ['저녁을 먹고 동네 공원을 한 시간쯤 걸었습니다.', '강변 산책로를 따라 천천히 걸었습니다.'] : ['해 질 녘 마을 길을 따라 걸었습니다.', '이웃 마을까지 걸어서 다녀왔습니다.']),
+          ...(isoOf(S) === 'KOR' && ageOf(S) >= 30 ? ['동네 둘레길을 따라 걸었습니다.'] : []),
+          ...(old(S) ? ['아침마다 동네를 한 바퀴 도는 것이 하루의 시작이 되었습니다.'] : ['새벽에 한 시간을 걸었습니다.']),
+          ...(winter(S) && urb(S) && H.dev(S) >= 2 ? ['날이 추워 큰 상가 안을 몇 바퀴 걸었습니다.'] : []),
+        ]),
+    run: (S) => [
+      winter(S) ? '찬 바람을 맞으며 동네를 몇 킬로미터 달렸습니다. 숨이 차올랐지만 개운했습니다.' : '동네를 5킬로미터쯤 달렸습니다. 숨이 차올랐지만 기분이 개운했습니다.',
+      urb(S) ? '새벽 공기를 마시며 강변을 달렸습니다.' : '아침 일찍 마을 길을 따라 달렸습니다.',
+      ...(urb(S) && H.dev(S) >= 2 && ageOf(S) >= 18 && ageOf(S) < 60 ? ['동네 달리기 모임 사람들과 함께 달렸습니다.', '처음으로 10킬로미터 달리기 대회에 나가 끝까지 달렸습니다.'] : []),
+    ],
+    hike: (S) => [
+      winter(S) ? '눈이 남은 산길을 조심조심 올랐습니다. 정상의 찬 공기가 상쾌했습니다.' : '주말에 가까운 산에 올랐습니다. 정상에서 내려다본 풍경에 땀이 식었습니다.',
+      ...(['KOR', 'JPN', 'TWN'].includes(isoOf(S)) && ageOf(S) >= 30 ? ['산악회 사람들과 능선을 따라 걸었습니다. 쉬는 자리마다 싸 온 음식을 나눠 먹었습니다.'] : ['언덕길을 오르내리며 반나절을 걸었습니다.']),
+    ],
+    cycle: (S) => [
+      ['NLD', 'DNK'].includes(isoOf(S)) ? '자전거를 타고 들판 사이 길을 따라 먼 곳까지 다녀왔습니다.' : urb(S) ? '자전거로 강변을 따라 먼 길을 달렸습니다.' : '자전거로 이웃 마을까지 다녀왔습니다.',
+      '언덕길을 자전거로 몇 번 오르내렸습니다.',
+    ],
+    swim: (S) => (swimPool(S) ? ['동네 수영장에서 한 시간 동안 물살을 갈랐습니다.', '자유형과 평영을 번갈아 몇 바퀴를 돌았습니다.'] : H.seaside && H.seaside(S) ? ['바다에 나가 한참 헤엄을 쳤습니다.'] : ['물가에 나가 한참 헤엄을 쳤습니다.']),
+    gym: (S, m) => (m === 'barracks' ? ['체력 단련실에서 근력 운동을 했습니다.', '일과를 마치고 체력 단련실에서 무거운 것을 들어 올렸습니다.'] : ['헬스장에서 근력 운동을 하고 러닝머신 위를 달렸습니다.', '트레이너에게 자세를 배우며 근력 운동을 했습니다.']),
+    yoga: (S) => (YOGA_HOME.has(isoOf(S)) ? ['아침 공원에서 사람들과 요가를 했습니다. 호흡을 고르자 마음이 가라앉았습니다.', '해 뜰 무렵 요가 자세를 하나씩 따라 했습니다.']
+      : ['요가 수업에서 한 시간 동안 몸을 늘이고 호흡을 골랐습니다.', ...(H.dev(S) >= 2 ? ['필라테스 수업에서 굳은 허리와 어깨를 풀었습니다.'] : [])]),
+    badminton: (S, m, f) => [f ? `동네 공원에서 ${U.j(f.name, '과')} 배드민턴을 쳤습니다.` : '동네 공원에서 배드민턴을 쳤습니다.', ...(kid(S) ? [] : ['배드민턴 동호회 사람들과 몇 게임을 쳤습니다.'])],
+    tabletennis: (S, m, f) => (m === 'prison' ? ['운동 시간에 탁구대 앞에서 몇 게임을 쳤습니다.'] : [f ? `${U.j(f.name, '과')} 탁구를 몇 게임 쳤습니다.` : '동네 탁구장에서 몇 게임을 쳤습니다.', old(S) ? '복지관 탁구장에서 또래들과 공을 주고받았습니다.' : '탁구장에서 처음 본 사람과 한 게임을 쳤습니다.']),
+    tennis: (S, m, f) => [f ? `${U.j(f.name, '과')} 테니스를 몇 게임 쳤습니다.` : '동네 테니스장에서 몇 게임을 쳤습니다.', '테니스 동호회 사람들과 복식을 쳤습니다.'],
+    billiards: (S, m, f) => [f ? `${U.j(f.name, '과')} 당구를 몇 게임 쳤습니다. 진 사람이 저녁을 샀습니다.` : '당구장에서 몇 게임을 쳤습니다.', '당구 모임 사람들과 편을 나눠 겨루었습니다.'],
+    bowling: (S, m, f) => [f ? `${U.j(f.name, '과')} 볼링장에서 세 게임을 쳤습니다.` : '볼링장에서 세 게임을 쳤습니다.', '볼링 동호회 정기전에 나갔습니다. 스트라이크를 연달아 치고 박수를 받았습니다.'],
+    golf: (S, m, f) => ['골프 연습장에서 공을 한 바구니 쳤습니다.', f ? `${U.j(f.name, '과')} 골프장에서 한 바퀴를 돌았습니다.` : '골프장에서 한 바퀴를 돌았습니다. 마지막 홀에서 공이 물에 빠졌습니다.'],
+    gateball: () => ['동네 게이트볼장에서 또래들과 한나절을 보냈습니다.', '게이트볼 모임에서 편을 나눠 시합을 했습니다. 이긴 편이 음료를 샀습니다.'],
+    soccer: (S, m) => (m === 'barracks' ? ['일과를 마치고 부대원들과 편을 나눠 축구를 했습니다.'] : m === 'prison' ? ['운동 시간에 마당에서 편을 나눠 공을 찼습니다.']
+      : kid(S) ? ['동네 아이들과 공터에서 해가 질 때까지 공을 찼습니다.', '골목에서 친구들과 공을 찼습니다.']
+        : isoOf(S) === 'KOR' && ageOf(S) >= 20 ? ['주말 아침 조기 축구회에서 한 경기를 뛰었습니다.', '조기 축구회 사람들과 공을 차고 함께 아침을 먹었습니다.']
+          : ['동네 사람들과 공을 차며 땀을 흘렸습니다.', '주말에 동네 풋살장에서 한 경기를 뛰었습니다.']),
+    basketball: (S, m) => (m === 'prison' || m === 'barracks' ? ['운동 시간에 편을 나눠 농구를 했습니다.'] : isoOf(S) === 'PHL' ? ['마을 농구 코트에서 해가 질 때까지 공을 던졌습니다.'] : ['동네 농구 코트에서 3대3 시합을 했습니다.', '공원 농구 골대에 공을 던지며 땀을 흘렸습니다.']),
+    cricket: (S) => (H.rural(S) ? ['마을 공터에서 친구들과 크리켓을 했습니다. 해가 질 때까지 공을 쳤습니다.'] : ['골목에서 친구들과 크리켓을 했습니다. 친 공이 남의 집 담을 넘어갔습니다.', '공원에서 동네 사람들과 크리켓 한 판을 했습니다.']),
+    volleyball: (S, m) => (m === 'barracks' || m === 'prison' ? ['운동 시간에 편을 나눠 배구를 했습니다.'] : isoOf(S) === 'BRA' && H.seaside && H.seaside(S) ? ['해변에서 친구들과 배구를 했습니다.'] : ['동네 사람들과 그물을 치고 배구를 했습니다.']),
+    baseball: (S, m, f) => [f ? `공원에서 ${U.j(f.name, '과')} 캐치볼을 했습니다.` : '공원에서 캐치볼을 했습니다.', ...(ageOf(S) >= 20 ? ['사회인 야구 경기에 나가 안타를 하나 쳤습니다.'] : ['동네 아이들과 야구를 했습니다.'])],
+    jokgu: (S, m, f) => (m === 'barracks' ? ['일과를 마치고 부대원들과 족구를 했습니다. 진 편이 음료를 샀습니다.'] : [f ? `${U.j(f.name, '과')} 편을 나눠 족구를 했습니다.` : '동네 사람들과 편을 나눠 족구를 했습니다.']),
+    sqdance: () => ['저녁마다 광장에 모인 이웃들과 음악에 맞춰 춤을 추었습니다.', '광장무 모임에서 새 동작을 배웠습니다. 앞줄 사람이 자세를 바로잡아 주었습니다.'],
+    taichi: () => ['이른 아침 공원에서 사람들과 태극권을 했습니다.', '느린 동작으로 태극권을 하고 나니 몸이 한결 풀렸습니다.'],
+    parkgym: (S) => ['공원 운동기구에서 허리 돌리기와 다리 운동을 했습니다.', ['KOR', 'CHN'].includes(isoOf(S)) && urb(S) ? '아파트 단지 운동기구에서 이웃들과 이야기를 나누며 몸을 풀었습니다.' : '공원 운동기구 앞에서 이웃들과 이야기를 나누며 몸을 풀었습니다.'],
+    aerobic: (S) => (Wd.regionKey(isoOf(S)) === 'lac' ? ['동네 광장의 줌바 수업에서 땀을 흘렸습니다.', '음악에 맞춰 한 시간 동안 에어로빅을 했습니다.'] : ['동네 에어로빅 모임에서 음악에 맞춰 땀을 흘렸습니다.', '생활 댄스 모임에서 새 동작을 배웠습니다.']),
+    stretch: (S, m) => (m === 'bed' ? ['누운 채로 팔다리를 천천히 움직이는 재활 운동을 했습니다.'] : mobDis(S) ? ['팔과 어깨를 쓰는 운동과 재활 체조를 했습니다.'] : isoOf(S) === 'JPN' ? ['아침 라디오 체조를 따라 했습니다.', '자기 전에 굳은 몸을 천천히 늘였습니다.'] : old(S) ? ['굳은 무릎과 어깨를 천천히 풀었습니다.', '아침에 일어나 체조로 몸을 풀었습니다.'] : ['아침에 일어나 체조와 스트레칭으로 몸을 풀었습니다.']),
+    homeex: (S, m) => (m === 'prison' ? ['좁은 방에서 팔굽혀펴기와 윗몸일으키기를 했습니다.'] : m === 'strict' ? ['집 안마당에서 줄넘기를 하며 땀을 흘렸습니다.', '집 안에서 맨몸 운동을 했습니다.'] : ['집에서 팔굽혀펴기와 줄넘기를 했습니다.', '맨몸 운동을 하며 땀을 흘렸습니다.']),
+    milpt: () => ['아침 점호 뒤 구보로 연병장을 몇 바퀴 돌았습니다.', '체력 측정을 앞두고 팔굽혀펴기와 윗몸일으키기를 연습했습니다.'],
+  };
+  /** 다친 장면: [문장, 다친 모양(accident.js HURT)] */
+  const HURTS = {
+    walk: [['걷다가 길 턱에 걸려 넘어졌습니다.', '걷다가 길 턱에 걸려 크게 넘어졌습니다.', 'fall']],
+    run: [['달리다 무릎이 시큰거려 한동안 쉬었습니다.', '달리다 발을 헛디뎌 크게 넘어졌습니다.', 'sport'], ['달리다 발목을 접질렸습니다.', '달리다 발을 헛디뎌 크게 넘어졌습니다.', 'sport']],
+    hike: [['산에서 내려오는 길에 미끄러져 넘어졌습니다.', '산에서 내려오는 길에 미끄러져 굴렀습니다.', 'fall'], ['바위를 디디다 발목을 접질렸습니다.', '바위를 디디다 미끄러져 떨어졌습니다.', 'fall']],
+    cycle: [['자전거를 타다 모퉁이에서 미끄러져 넘어졌습니다.', '자전거를 타다 모퉁이에서 미끄러져 크게 넘어졌습니다.', 'fall'], ['자전거를 타다 길 턱에 걸려 넘어졌습니다.', '자전거를 타다 길 턱에 걸려 크게 넘어졌습니다.', 'fall']],
+    swim: [['무리하게 헤엄치다 어깨가 결렸습니다.', '무리하게 헤엄치다 허리에 탈이 났습니다.', 'strain']],
+    gym: [['무리하게 무게를 들다 허리를 삐끗했습니다.', '무리하게 무게를 들다 허리를 다쳤습니다.', 'strain'], ['무리하게 무게를 들다 어깨가 결렸습니다.', '무리하게 무게를 들다 허리를 다쳤습니다.', 'strain']],
+    yoga: [['무리하게 몸을 늘이다 허리를 삐끗했습니다.', '무리하게 몸을 늘이다 허리를 다쳤습니다.', 'strain']],
+    badminton: [['셔틀콕을 쫓다 발목을 접질렸습니다.', '셔틀콕을 쫓다 크게 넘어졌습니다.', 'sport']],
+    tabletennis: [['공을 쫓다 발을 잘못 디뎠습니다.', '공을 쫓다 크게 넘어졌습니다.', 'sport']],
+    tennis: [['테니스를 치다 팔꿈치가 시큰거렸습니다.', '공을 쫓다 크게 넘어졌습니다.', 'sport'], ['공을 쫓다 발목을 접질렸습니다.', '공을 쫓다 크게 넘어졌습니다.', 'sport']],
+    billiards: [['큐를 잘못 짚어 손가락을 찧었습니다.', '당구장 계단에서 미끄러져 넘어졌습니다.', 'fall']],
+    bowling: [['무거운 공을 던지다 손목을 삐끗했습니다.', '무거운 공을 던지다 허리를 다쳤습니다.', 'strain']],
+    golf: [['골프채를 무리하게 휘두르다 허리를 삐끗했습니다.', '골프채를 무리하게 휘두르다 허리를 다쳤습니다.', 'strain']],
+    gateball: [['공을 치다 허리를 삐끗했습니다.', '공을 치다 허리를 다쳤습니다.', 'strain']],
+    soccer: [['공을 다투다 상대와 부딪혀 넘어졌습니다.', '공을 다투다 상대와 세게 부딪혀 넘어졌습니다.', 'sport'], ['발을 잘못 디뎌 발목을 접질렸습니다.', '공을 차다 발을 잘못 디뎌 크게 넘어졌습니다.', 'sport']],
+    basketball: [['리바운드를 하다 착지하며 발목을 접질렸습니다.', '리바운드를 하다 착지하며 크게 넘어졌습니다.', 'sport'], ['공을 다투다 상대와 부딪혀 넘어졌습니다.', '공을 다투다 상대와 세게 부딪혀 넘어졌습니다.', 'sport']],
+    cricket: [['날아온 공에 손가락을 맞았습니다.', '공을 쫓아 달리다 크게 넘어졌습니다.', 'sport']],
+    volleyball: [['공을 받다 손가락을 삐었습니다.', '공을 받으려 몸을 날리다 크게 넘어졌습니다.', 'sport']],
+    baseball: [['공을 잡다 손가락을 삐었습니다.', '베이스로 달리다 크게 넘어졌습니다.', 'sport']],
+    jokgu: [['공을 차다 발목을 접질렸습니다.', '공을 차다 크게 넘어졌습니다.', 'sport']],
+    sqdance: [['춤을 추다 발목을 접질렸습니다.', '춤을 추다 발이 엉켜 크게 넘어졌습니다.', 'fall']],
+    taichi: [['무리하게 몸을 돌리다 무릎이 시큰거렸습니다.', '동작을 하다 중심을 잃고 넘어졌습니다.', 'fall']],
+    parkgym: [['운동기구를 무리하게 쓰다 허리를 삐끗했습니다.', '운동기구에서 미끄러져 떨어졌습니다.', 'fall']],
+    aerobic: [['춤을 추다 발목을 접질렸습니다.', '춤을 추다 발이 엉켜 크게 넘어졌습니다.', 'fall']],
+    stretch: [['무리하게 몸을 늘이다 허리를 삐끗했습니다.', '무리하게 몸을 늘이다 허리를 다쳤습니다.', 'strain']],
+    homeex: [['무리하게 팔굽혀펴기를 하다 손목을 삐끗했습니다.', '줄넘기를 하다 줄에 걸려 크게 넘어졌습니다.', 'fall']],
+    milpt: [['구보를 하다 발목을 접질렸습니다.', '구보를 하다 발을 헛디뎌 크게 넘어졌습니다.', 'sport'], ['무리하게 팔굽혀펴기를 하다 허리를 삐끗했습니다.', '무리하게 체력 단련을 하다 허리를 다쳤습니다.', 'strain']],
+  };
+  /** 다친 장면 하나: 가벼우면 다친 곳까지, 중간 이상이면 일어난 일만(다친 곳은 accident.js 가 정함). 노인이 넘어지면 노인 낙상(엉덩이뼈·손목) */
+  const hurtOf = (S, id, big) => {
+    const h = U.pick(HURTS[id] || [['몸을 무리하게 쓰다 다쳤습니다.', '몸을 무리하게 쓰다 크게 다쳤습니다.', 'sport']]);
+    return [big ? h[1] : h[0], h[2] === 'fall' && ageOf(S) >= 65 ? 'hip' : h[2]];
+  };
+  const GOOD = (S) => ['꾸준히 해 온 덕에 계단을 올라도 숨이 차지 않습니다.', '몸이 가벼워져 아침에 일어나기가 수월합니다.', '잠이 잘 오고 낮에도 덜 피곤합니다.', ...(ageOf(S) >= 40 ? ['또래보다 걸음이 빠르다는 말을 들었습니다.'] : [])];
+  const BAD = ['오랜만에 움직였더니 숨이 금세 찼습니다. 꾸준히 해야 몸이 따라옵니다.', '다음 날 온몸이 쑤셨습니다. 몸이 많이 굳어 있었습니다.'];
+
+  /* ================================================================ 하기 */
+  /** 생활체육 한 번: 결과 문장 */
+  Rc.doRec = (S, id) => {
+    const d = REC[id], f = ens(S), m = Rc.mode(S);
+    f.recM = S.ageM;
+    f.recN = f.recN || {};
+    f.recN[id] = (f.recN[id] || 0) + 1;
+    const h0 = typeof f.hab === 'number' ? f.hab : 50;
+    // 다침: 대개 가볍고(며칠), 가끔 중간 정도(몇 달) — 치료비·쉬는 동안의 벌이는 accident.js 가 매긴다
+    if (U.chance(injP(S, id))) {
+      const sev = U.chance(0.15) ? 'moderate' : 'minor', [t0, ty] = hurtOf(S, id, sev !== 'minor');
+      if (hasFt()) Ft.did(S, d.act * 0.3);
+      if (hasAc()) {
+        const r = Ac.hurt(S, sev, ty, { noQuit: true });
+        if (Ac.st) Ac.st(S).last.sport = S.ageM;
+        return `${t0} ${r.t}`;
+      }
+      E.stat(S, 'health', -3);
+      return `${t0} 며칠 쉬었습니다.`;
+    }
+    if (hasFt()) Ft.did(S, d.act);
+    S.boost.health = Math.min(8, (S.boost.health || 0) + boostOf(d));
+    if (hpOf(d)) E.stat(S, 'health', hpOf(d));
+    if (d.hap) E.stat(S, 'happy', d.hap);
+    if (d.soc) E.stat(S, 'social', d.soc);
+    if (S.ab) {
+      if (d.str && typeof S.ab.str === 'number') S.ab.str = clamp(S.ab.str - d.str, 0, 100);
+      if (d.mh && typeof S.ab.mh === 'number') S.ab.mh = clamp(S.ab.mh + d.mh, 0, 100);
+    }
+    // 이어지는 종목 기술(동네 축구 → 축구 기술 조금, 공원 태극권 → 태극권 실력)
+    const SPL = { soccer: 'soccer', basketball: 'basketball', cricket: 'cricket', volleyball: 'volleyball', baseball: 'baseball', badminton: 'badminton', tabletennis: 'tabletennis', tennis: 'tennis', golf: 'golf', swim: 'swimming', run: 'athletics', cycle: 'cycling' };
+    if (SPL[id] && hasSp() && Sp.gain) Sp.gain(S, SPL[id], 0.6);
+    if (id === 'taichi' && hasFt() && Ft.gain && Ft.ARTS && Ft.ARTS.taichi) Ft.gain(S, 'taichi', 1.5);
+    // 사람: 함께 하는 친구와 가까워지고, 동호회·동네 모임에서 가끔 새 친구
+    const fr = d.pair && !CLOSED[m] && ageOf(S) >= 10 ? H.friend(S) : null;
+    if (fr) fr.close = clamp((fr.close || 45) + 3, 0, 100);
+    let tail = '';
+    if (d.soc && !CLOSED[m] && U.chance(0.02 * d.soc)) {
+      const a = ageOf(S), sx = U.chance(0.75) ? S.sex : S.sex === 'm' ? 'f' : 'm';
+      const nf = H.addFriend(S, 'friend', H.newPerson(S, sx, a < 20 ? U.randInt(-1, 1) : U.randInt(-10, 10)));
+      if (nf) { nf.ctx = d.club === 'neighbor' ? 'neighbor' : 'club'; if (nf.name) tail = ` 함께 운동하던 ${U.j(nf.name, '과')} 가까워졌습니다.`; }
+    }
+    const L = LINES[id] ? LINES[id](S, m, fr) : ['땀을 흠뻑 흘렸습니다.'];
+    let t = U.pick(L.length ? L : ['땀을 흠뻑 흘렸습니다.']) + tail;
+    // 쌓인 습관을 가끔 알려 준다(숨이 차는 운동만)
+    if (d.act >= 0.18 && U.chance(0.3)) {
+      if (h0 >= 62) t += ` ${U.pick(GOOD(S))}`;
+      else if (h0 < 25 && ageOf(S) >= 25) t += ` ${U.pick(BAD)}`;
+    }
+    return t;
+  };
+
+  /* ================================================================ 고르기 창 */
+  const popKo = (w) => (w >= 8 ? '또래가 흔히 함' : w >= 3 ? '하는 사람 많음' : w >= 1 ? '하는 사람 조금' : '하는 사람 드묾');
+  const pickSub = (S, id, w) => {
+    const cost = costOf(S, id);
+    const parts = [CLOSED[Rc.mode(S)] ? '이곳에서 할 수 있음' : popKo(w), Rc.gainKo(S, id), Rc.riskKo(S, id), cost > 0 ? `돈 ${H.amt(S, cost)}` : '돈 안 듦'];
+    return parts.join(' · ');
+  };
+  const LEAD = { barracks: '부대 안에서 할 수 있는 운동만 고를 수 있습니다. 요즘 하던 운동은 전역한 뒤에 이어 갑니다. ', prison: '교도소 운동 시간에 할 수 있는 것만 고를 수 있습니다. ', bed: '누운 채로 할 수 있는 운동만 할 수 있습니다. ', frail: '몸이 예전 같지 않아 가벼운 운동만 고를 수 있습니다. ' };
+  C.DEC.rc_pick = {
+    title: (S, ctx) => (ctx.change ? '요즘 하는 운동을 바꿀까요?' : '어떤 운동을 할까요?'),
+    text: (S, ctx) => {
+      const m = Rc.mode(S), cur = S.ft && S.ft.rec && REC[S.ft.rec] ? S.ft.rec : null;
+      return `${LEAD[m] || ''}생활체육은 종목마다 몸에 남는 것이 다릅니다. 달리기·수영처럼 숨이 차는 운동은 운동 습관이 빨리 붙고, 걷기·요가는 마음을 가라앉히며, 당구·볼링·게이트볼처럼 함께 하는 운동은 사람을 만나는 재미가 큽니다.${CLOSED[m] ? '' : ' 고른 운동은 \'요즘 하는 운동\'으로 남아 다음부터 바로 할 수 있습니다.'}${cur && !CLOSED[m] ? ` 요즘 하는 운동은 ${U.j(Rc.ko(S, cur), '이')}고, 운동 습관은 '${hasFt() ? Ft.habKo(S) : '보통'}'입니다.` : ''}`;
+    },
+    choices: (S, ctx) => {
+      const c = Rc.cands(S), wm = {};
+      for (const [id, w] of c) wm[id] = w;
+      const m = Rc.mode(S), cur = S.ft && S.ft.rec;
+      const out = Rc.list(S).map((id, i) => {
+        const cost = costOf(S, id), ok = ctx.change || payable(S, cost);
+        return {
+          label: `${Rc.ko(S, id)}${id === cur && !CLOSED[m] ? ' (요즘 하는 운동)' : ''}`,
+          sub: ok ? pickSub(S, id, wm[id] || 0) : `돈이 모자랍니다(필요 ${H.amt(S, cost)})`,
+          disabled: !ok,
+          typ: i === 0,
+          run: (S2) => {
+            const f = ens(S2), before = f.rec && REC[f.rec] ? f.rec : null;
+            if (!CLOSED[Rc.mode(S2)]) f.rec = id;
+            if (ctx.change) return before && before !== id ? `요즘 하는 운동을 ${Rc.ko(S2, before)}에서 ${U.j(Rc.ko(S2, id), '으로')} 바꿨습니다.` : `${U.j(Rc.ko(S2, id), '을')} 요즘 하는 운동으로 정했습니다.`;
+            pay(S2, costOf(S2, id));
+            return Rc.doRec(S2, id);
+          },
+        };
+      });
+      out.push({ label: ctx.change ? '지금처럼 둔다' : '다음에 한다', cancel: true, run: () => null });
+      return out;
+    },
+  };
+
+  /* ================================================================ 할 일 '운동하기'를 생활체육으로 */
+  {
+    const ex = C.ACTION.exercise;
+    if (ex && !ex._rc) {
+      const r0 = ex.run;
+      ex.daily = true; // 일상 기회(피드백 221번 — 기회 체계 파일이 읽는 표시)
+      ex.koS = (S) => { const id = curRec(S); return id ? `운동하기 — ${Rc.ko(S, id)}` : CLOSED[Rc.mode(S)] ? '운동하기' : '운동하기(생활체육 고르기)'; };
+      ex.hint = (S) => {
+        const id = curRec(S);
+        if (id) return `${Rc.gainKo(S, id)} · ${Rc.riskKo(S, id)}`;
+        const c = Rc.cands(S);
+        return c.length ? `${c.slice(0, 3).map(([x]) => Rc.ko(S, x)).join('·')} 등 · 운동 습관: ${hasFt() ? Ft.habKo(S) : '보통'}` : `운동 습관: ${hasFt() ? Ft.habKo(S) : '보통'}`;
+      };
+      ex.cost = (S) => { const id = curRec(S); return id ? costOf(S, id) : 0; };
+      ex.run = (S) => {
+        const id = curRec(S);
+        if (id) return Rc.doRec(S, id);
+        if (!Rc.cands(S).length) return r0(S);
+        E.ask(S, 'rc_pick', { act: true });
+        return null;
+      };
+      ex._rc = true;
+    }
+    // 요즘 하는 운동 바꾸기(기회를 쓰지 않음) — '운동하기' 바로 다음
+    if (!C.ACTION.recpick) {
+      const a = { id: 'recpick', ko: '요즘 하는 운동 바꾸기', cat: 'body', age: [6, 120], cd: 0, free: true,
+        where: (S) => !!(S.ft && S.ft.rec && REC[S.ft.rec]) && !CLOSED[Rc.mode(S)],
+        hint: (S) => `지금: ${Rc.ko(S, S.ft.rec)}`,
+        need: (S) => (Rc.cands(S).length > 1 ? true : '지금 처지에서는 고를 수 있는 운동이 많지 않습니다'),
+        run: (S) => { E.ask(S, 'rc_pick', { change: true }); return null; } };
+      const i = C.ACTIONS.findIndex((x) => x.id === 'exercise');
+      C.ACTIONS.splice(i >= 0 ? i + 1 : C.ACTIONS.length, 0, a);
+      C.ACTION.recpick = a;
+    }
+    // 생활체육 할 일에 일상 기회 표시(도장 가기 fitness.js)
+    if (C.ACTION.martial) C.ACTION.martial.daily = true;
+    // '헬스장 다니기'(values.js gym)는 운동하기의 '헬스(근력 운동)'와 겹쳐 운동하기로 합친다(피드백 221번 기준표):
+    // 목록에서 숨기고 막아 둔다(할 일 자체는 남겨 옛 저장의 쿨다운 기록·다른 파일의 목록이 그대로 읽히게)
+    if (C.ACTION.gym) { const g = C.ACTION.gym; g.daily = true; g.where = () => false; g.need = () => "운동하기에서 '헬스(근력 운동)'를 고를 수 있습니다"; }
+  }
+
+  /* ================================================================ 사람 탭: 운동 습관 줄에 '요즘 하는 운동' */
+  if (typeof H.exHabitLine === 'function') {
+    const ex0 = H.exHabitLine;
+    H.exHabitLine = (S) => {
+      const t = ex0(S), id = S && S.ft && S.ft.rec;
+      if (!t || !id || !REC[id]) return t;
+      const add = ` · 요즘 하는 운동: ${Rc.ko(S, id)}`, i = t.indexOf(' — ');
+      return i < 0 ? t + add : t.slice(0, i) + add + t.slice(i);
+    };
+  }
+
+  /* ================================================================ 다침: accident.js 의 운동 사고와 잇기 */
+  // 걷기·요가·당구·볼링 취미(이 파일)도 아주 작게
+  const HOB_REC = { walk: 'walk', yoga: 'yoga', billiards: 'billiards', bowling: 'bowling' };
+  const recent = (S) => { const f = S.ft; return f && f.rec && REC[f.rec] && f.recM !== undefined && S.ageM - f.recM <= 3 ? f.rec : null; };
+  Rc.injRate = (S) => {
+    let r = 0;
+    const id = recent(S);
+    if (id) r += 0.02 * REC[id].inj;
+    for (const h of C.activeHobbies(S)) if (HOB_REC[h]) r += 0.02 * REC[HOB_REC[h]].inj;
+    return r;
+  };
+  if (hasAc() && typeof Ac.rates === 'function') {
+    const ar0 = Ac.rates;
+    Ac.rates = (S) => {
+      const out = ar0(S), a = ageOf(S);
+      if (a >= 8 && a < 85 && !(S.work.job && S.work.job.id === 'athlete')) { const r = Rc.injRate(S); if (r > 0) out.sport = (out.sport || 0) + r; }
+      return out;
+    };
+  }
+  /** accident.js 운동 사고의 장면(생활체육을 하는 사람이면): [문장, 다친 모양] | null */
+  const SPORTY0 = ['sport', 'running', 'gym', 'dance', 'martial', 'trad'];
+  Rc.injScene = (S) => {
+    const opts = [];
+    const id = recent(S);
+    if (id) opts.push([id, REC[id].inj]);
+    for (const h of C.activeHobbies(S)) if (HOB_REC[h]) opts.push([HOB_REC[h], REC[HOB_REC[h]].inj]);
+    if (!opts.length) return null;
+    if ((S.hobbies || []).some((h) => SPORTY0.includes(h)) && U.chance(0.5)) return null; // 운동 취미의 장면도 반쯤
+    const pick = U.weighted(opts);
+    return pick && HURTS[pick] ? hurtOf(S, pick, true) : null;
+  };
+
+  /* ================================================================ 취미: 걷기·요가·당구·볼링 */
+  if (C.HOBBY) {
+    const add = (id, d) => { if (!C.HOBBY[id]) C.HOBBY[id] = d; };
+    add('walk', { ko: '걷기·산책', health: 0.8, happy: 0.6, social: 0.2, need: (S) => ageOf(S) >= 25 && !taliban(S) });
+    add('yoga', { ko: (S) => (YOGA_HOME.has(isoOf(S)) || !(H.urban(S) && H.dev(S) >= 2) ? '요가' : '요가·필라테스'), health: 1, happy: 0.7, need: (S) => ageOf(S) >= 14 && NEED.yoga(S) === true, cost: 0.02 });
+    add('billiards', { ko: (S) => Rc.ko(S, 'billiards'), social: 1, happy: 0.8, health: 0.1, need: (S) => ageOf(S) >= 15 && NEED.billiards(S) === true && !H.strictF(S), cost: 0.01 });
+    add('bowling', { ko: '볼링', social: 0.9, happy: 0.8, health: 0.3, need: (S) => ageOf(S) >= 10 && NEED.bowling(S) === true && !H.strictF(S), cost: 0.02 });
+  }
+  // 몸을 움직인 정도(fitness.js Ft.activity): 새 취미의 몫
+  const HOB_ACT2 = { walk: 0.22, yoga: 0.22, billiards: 0.03, bowling: 0.05 };
+  if (hasFt() && typeof Ft.activity === 'function') {
+    const ac0 = Ft.activity;
+    /** [새 취미를 빼고 움직인 정도, 새 취미가 더하는 몫] */
+    const actSplit = (S) => {
+      const x = ac0(S);
+      if (!S || S.alive === false || !S.hobbies || !S.hobbies.length) return [x, 0];
+      const k = hasSi() ? Si.kind(S) : 'home';
+      if (k === 'hosp' || k === 'bed') return [x, 0];
+      let add = 0;
+      for (const h of C.activeHobbies(S)) add += HOB_ACT2[h] || 0;
+      if (!add) return [x, 0];
+      if (S.cond && S.cond.disab && S.cond.disab.lv) add *= S.cond.disab.lv >= 2 ? 0.5 : 0.8;
+      const a = ageOf(S);
+      return [x, Math.max(0, clamp(Math.min(x + add, a >= 85 ? 0.6 : a >= 75 ? 0.8 : 1), 0, 1) - x)];
+    };
+    Ft.activity = (S) => { const [x, add] = actSplit(S); return x + add; };
+    /* 정규화: 운동 습관의 사망 위험 배수(fitness.js)는 같은 나이·소득 단계 사람들의 평균 습관(Ft.NORM.MU)과 견준다.
+     * 새 취미(걷기·요가 등)가 사람들 평균 습관을 올린 만큼 MU 를 올려(DMU), 사람들 전체의 위험은 그대로 두고
+     * 새 취미를 가진 사람만 그만큼 덜 위험해지게 한다. 새 취미가 습관에 보탠 몫(S.ft.habX)을 따로 따라가 잰 값:
+     * 보통 선택 인생, 소득 단계마다 1~2개 나라 — 아래 표(나이 20·30·…·90세). */
+    E.hook('month', (S) => {
+      if (!S.alive || !S.ft || typeof S.ft.hab !== 'number') return;
+      const add = actSplit(S)[1], f = S.ft;
+      f.habX = clamp((f.habX || 0) + (100 * add - (f.habX || 0)) / 24, 0, 100);
+    });
+    // 잰 인생(v0.6.8, 위험 가중 평균): 저소득 ETH·UGA·AFG·COD, 중하위 IND·NGA·EGY·PAK, 중상위 CHN·BRA·MEX·TUR, 고소득 KOR·USA·DEU·JPN — 나라마다 60명
+    const DMU = [
+      [0, 0.2, 1, 1.1, 1.6, 1.9, 2, 2.9],
+      [0.6, 1.1, 2.3, 2.5, 3.4, 3.4, 2.9, 2.7],
+      [1, 1.6, 2.4, 2.7, 2.9, 2.9, 2.4, 1.3],
+      [0.5, 1, 3, 2.7, 3.5, 4.6, 4.6, 2.6],
+    ];
+    // 새 취미 몫의 분산 ÷ 50²(z 분산이 그만큼 커짐 — 배수의 exp(−b²·VZ/2) 보정)
+    const DVZ = [
+      [0, 0.001, 0.007, 0.008, 0.011, 0.014, 0.015, 0.021],
+      [0.004, 0.008, 0.017, 0.018, 0.022, 0.024, 0.021, 0.02],
+      [0.006, 0.011, 0.016, 0.018, 0.016, 0.017, 0.015, 0.005],
+      [0.002, 0.005, 0.019, 0.018, 0.023, 0.031, 0.03, 0.017],
+    ];
+    Rc.DMU = DMU;
+    if (Ft.NORM && Array.isArray(Ft.NORM.MU) && Array.isArray(Ft.NORM.VZ) && !Ft.NORM._rc) {
+      Ft.NORM.MU.forEach((row, dv) => row.forEach((v, i) => { row[i] = v + ((DMU[dv] || [])[i] || 0); }));
+      Ft.NORM.VZ.forEach((row, dv) => row.forEach((v, i) => { row[i] = v + ((DVZ[dv] || [])[i] || 0); }));
+      Ft.NORM._rc = true;
+    }
+  }
+
+  /* ================================================================ e스포츠: 운동이 아니라 게임 쪽 길 */
+  const gameLv = (S) => (hasSp() ? Sp.lvl(S, 'esports') : 0);
+  Rc.gameLv = gameLv;
+  const gameOK = (S) => (hasSp() && Sp.DEF.esports ? Sp.can(S, 'esports') : '게임을 할 수 없습니다');
+  // 옛 저장: 내 종목이 e스포츠면 게임 길로(게임 실력·노력 횟수는 그대로, 운동 취미는 비디오 게임 취미로)
+  E.hook('ensure', (S) => {
+    if (!S || !S.sp || S.sp.main !== 'esports') return;
+    S.sp.main = null;
+    S.sp.gm = 1;
+    if ((S.hobbies || []).includes('sport') && !S.hobbies.includes('games')) S.hobbies = S.hobbies.map((h) => (h === 'sport' ? 'games' : h));
+  });
+  // 비디오 게임 취미는 게임 실력을 조금씩 쌓는다(sports.js 가 쓰지 않는 기술을 달마다 녹이는 몫보다 조금 크게)
+  E.hook('month', (S) => {
+    if (!S.alive || !hasSp() || ageOf(S) < 10 || !C.activeHobbies(S).includes('games')) return;
+    Sp.ensureS(S);
+    Sp.gain(S, 'esports', ageOf(S) < 13 ? 0.08 : 0.12);
+  });
+  /** 게임 실력 연습(연습하기·레슨 받기) */
+  Rc.gamePractice = (S, lesson) => {
+    const b = gameLv(S);
+    Sp.ensureS(S);
+    S.sp.n = S.sp.n || {};
+    S.sp.n.esports = (S.sp.n.esports || 0) + (lesson ? 1.5 : 1);
+    S.sp.gm = 1;
+    Sp.gain(S, 'esports', lesson ? 10 : 6);
+    if (hasPr()) { Pr.effortUp(S, 'mind', lesson ? 1.5 : 1); Pr.gain(S, 'mind', lesson ? 7 : 4); } // 예전 'e스포츠 연습'과 같은 몫(반응·판단은 두뇌 겨루기 실력과 함께 본다)
+    E.stat(S, 'happy', 1);
+    E.stat(S, 'smarts', 0.5);
+    const t = lesson ? U.pick(['게임 코치에게 운영과 판단을 배웠습니다.', '프로 출신 코치에게 경기 영상을 함께 보며 지도를 받았습니다.'])
+      : U.pick(['랭크 게임을 하며 손을 풀었습니다.', '경기 영상을 돌려 보며 실수를 하나하나 짚었습니다.', '잘 안 되던 상황을 될 때까지 되풀이해 연습했습니다.']);
+    return `${t} (게임 실력 ${R(b)} → ${R(gameLv(S))})`;
+  };
+  if (C.DEC.practicePick && !C.DEC.practicePick._rc) {
+    const c0 = C.DEC.practicePick.choices;
+    C.DEC.practicePick.choices = (S, ctx) => {
+      const out = c0(S, ctx);
+      if (!hasSp() || ageOf(S) < 10) return out;
+      const ok = gameOK(S);
+      const mx = Sp.tryMaxLv('esports', 1);
+      out.push({ label: '게임 실력(e스포츠)', disabled: ok !== true,
+        sub: ok !== true ? ok : `지금 게임 실력 ${R(gameLv(S))} · 쓰이는 곳: 프로게임단 입단 테스트(${mx}세까지)·게임 방송 · 운동 습관에는 들어가지 않습니다`,
+        run: (S2) => Rc.gamePractice(S2, !!ctx.lesson) });
+      return out;
+    };
+    C.DEC.practicePick._rc = true;
+  }
+  // 실력 카드: 'e스포츠 기술' 대신 '게임 실력'
+  if (hasPr() && typeof Pr.view === 'function') {
+    const pv0 = Pr.view;
+    Pr.view = (S) => {
+      const v = pv0(S);
+      if (!Array.isArray(v)) return v;
+      const row = v.find((x) => x.k === 'sp_esports');
+      if (row) row.ko = '게임 실력(e스포츠)';
+      else if (gameLv(S) >= 1) v.push({ k: 'sp_esports', ko: '게임 실력(e스포츠)', v: gameLv(S), talent: null });
+      return v;
+    };
+  }
+  // 사람 탭 '운동 종목' 줄: 프로게이머는 운동 종목이 아님을 밝힌다
+  if (hasSp() && typeof Sp.view === 'function') {
+    const sv0 = Sp.view;
+    Sp.view = (S) => {
+      const j = S.work && S.work.job;
+      if (j && j.id === 'athlete' && j.sp === 'esports') return { ko: '프로게이머(e스포츠 — 게임)', lv: R(gameLv(S)), league: Sp.leagueKo(S, 'esports'), pro: true, ret: j.ret || null };
+      return sv0(S);
+    };
+  }
+  /* 할 일 '프로게임단 입단 테스트'(꿈에 도전): 선수 일자리(athlete, 종목 esports)의 리그·연봉·은퇴를 그대로 쓴다 */
+  C.DEC.gm_tryout = {
+    title: () => '프로게임단 입단 테스트',
+    text: (S) => `게임 실력 ${R(gameLv(S))}${hasPr() ? ` · 두뇌 겨루기 ${R(Pr.lvl(S, 'mind'))}` : ''} · 지식 ${R(S.st.smarts)}. 프로게임단은 반응 속도와 판단력을 봅니다. 낮은 단계(세미프로)부터 올라가는 선수가 많고, 이 나라에 리그가 없으면 해외 팀 테스트를 봐야 해 훨씬 어렵습니다. 선수 생활은 보통 20대 중반에 끝납니다.`,
+    choices: (S) => {
+      const tiers = Sp.tiers(S, 'esports');
+      const levels = tiers.length ? tiers.slice().reverse() : [null];
+      const out = levels.map((lv) => {
+        const r = Sp.tryP(S, 'esports', lv || undefined);
+        const old = ageOf(S) > Sp.tryMaxLv('esports', r.lg.lv || 1);
+        const where = r.lg.abroad ? `해외(${r.lg.iso ? Wd.name(r.lg.iso) : '먼 나라'}) ${Sp.tierKo(S, 'esports', r.lg.lv)}` : `이 나라 ${Sp.tierKo(S, 'esports', r.lg.lv)}`;
+        const mu = r.lg.lv ? Math.exp(Sp.payMu('esports', r.lg.iso || isoOf(S), r.lg.lv, S)) : 0;
+        return { label: `프로게임단 입단 테스트${lv && levels.length > 1 ? ` — ${Sp.tierKo(S, 'esports', lv)}` : ''}`, disabled: old,
+          sub: old ? `${Sp.tryMaxLv('esports', r.lg.lv || 1)}세가 넘으면 이 단계에는 들어가기 어렵습니다` : `${where} · 합격 가능성 약 ${Math.max(1, R(r.p * 100))}%${r.lg.lv ? ` · 연봉 ${mu >= 4 ? '높음' : mu >= 1.6 ? '보통' : '낮음'}` : ''}`,
+          run: (S2) => Sp.doTryout(S2, 'esports', lv || undefined) };
+      });
+      out.push({ label: '그만둔다', typ: true, cancel: true, run: () => null });
+      return out;
+    },
+  };
+  if (!C.ACTION.progamer && hasSp() && Sp.DEF.esports) {
+    const a = { id: 'progamer', ko: '프로게임단 입단 테스트', cat: 'dream', age: [15, 32], cd: 12, ap: 2,
+      where: (S) => !H.jobIs(S, 'athlete') && (C.activeHobbies(S).includes('games') || gameLv(S) >= 10 || !!S.flags.progamer || !!(S.sp && S.sp.gm)),
+      need: (S) => {
+        const ok = gameOK(S);
+        if (ok !== true) return ok;
+        const mx = Sp.tryMaxLv('esports', 1);
+        if (ageOf(S) > mx) return `${mx}세가 넘으면 프로게임단에 들어가기 어렵습니다`;
+        const lg = Sp.bestLeague(S, 'esports');
+        if (!lg.lv && !lg.iso) return '뛸 수 있는 프로 리그가 없습니다';
+        return true;
+      },
+      hint: (S) => { const r = Sp.tryP(S, 'esports'); return `게임 실력 ${R(gameLv(S))} · ${r.lg.abroad ? '해외 리그 · ' : ''}합격 가능성 약 ${Math.max(1, R(r.p * 100))}%`; },
+      run: (S) => { E.ask(S, 'gm_tryout', {}); return null; } };
+    const i = C.ACTIONS.findIndex((x) => x.id === 'tryout');
+    C.ACTIONS.splice(i >= 0 ? i + 1 : C.ACTIONS.length, 0, a);
+    C.ACTION.progamer = a;
+  }
+})();
+
+if (typeof module !== 'undefined') module.exports = Rc;
+
 /* 80억분의 1 — 업데이트 기록(게임 정보 → 업데이트 기록). 새 판을 낼 때 맨 위에 한 줄 더한다.
  * v: 판, d: 날짜(YY.MM.DD), t: 한 줄 제목, items: 바뀐 것(짧게)
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.6.8', d: '26.10.18', t: '일상 기회·생활체육·젠더 표시', items: ["기회를 둘로 나눔: 몇 시간이면 하는 일상(운동·공부·친구·쉬기·데이트·가족·종교 모임·쇼핑 등)은 한 달에 2번 생기는 '일상 기회'(석 달 치 6번까지 모아 둠)를 쓰고, 큰일 기회(한 해 4번)는 큰일에만. 어린이·수감·복무·누워 지내는 동안은 한 달 1번", "모든 할 일의 기회 수와 쿨다운을 '드는 시간 × 남는 크기' 기준표로 다시 정함(청혼하기 큰일 2, 일 그만두기·은퇴 1, 차 사기·보험은 결정만, 가족 여행·연애 상대 찾기 1, 쿨다운도 대부분 짧아짐). 일상을 몰아서 해도 능력치가 쉽게 차지 않게 최근에 오른 몫이 클수록 덜 오름", "할 일 탭 맨 위에 '일상 기회 n/6 · 큰일 기회 n/8', 단추마다 '일상' 또는 '큰일 기회 n번'", "운동하기 → 생활체육 고르기: 걷기·달리기·등산·자전거·수영·헬스·요가·배드민턴·탁구·테니스·당구·볼링·골프·게이트볼·동네 축구·농구·크리켓·족구·광장무·태극권·공원 운동기구 등을 나라·나이·성별·계절에 맞게, 고른 운동은 '요즘 하는 운동'으로 이어짐. 종목마다 운동 습관·관계·스트레스·부상·이용료가 다름", "선수 길은 '선수로 뛸 종목 정하기'로 나누고, e스포츠는 운동에서 빼 '프로게임단 입단 테스트'(게임 실력)로. 취미에 걷기·요가·당구·볼링", "이름 옆에 젠더 표시(♂ 남성 · ♀ 여성 · ⚧ 논바이너리 — 스스로 깨달은 성별 정체성을 따름)"] },
   { v: '0.6.7', d: '26.10.18', t: '알려진 정도·종교 모임 지도자·떠난 사람·기회 돌려받기', items: ["작품과 책의 '알려진 정도': 그 분야 이름값에 다른 분야 명성의 일부(배우·운동선수·방송인 등)와 지위(정치인·고위 공무원·기업 대표)를 더해 그림 판매·전시 관객·무대 관객·음원·영상 재생·책 판매·보도에 반영. 유명인의 첫 작품은 관심이 크고, 완성도가 낮으면 혹평으로 이름값이 깎임. 지위로 팔리는 그림은 청탁 의혹 위험. 공모전 심사는 명성을 보지 않음", "원고 계약 가능성은 까닭을 더해서: 원고 완성도·작가 이력(베스트셀러·전작 판매·문학상)·알려진 정도·팬과 구독자·지위(회고록·에세이는 크게, 소설·시는 작게)·장르와 경력 — 창에 까닭을 모두 표시", "종교 모임을 이끄는 동안 개종하려 하면 먼저 모임을 해산·맡기기·모임과 함께 옮기기 가운데 고름. 따르는 사람 수에 따라 인도자 → 목자 → 지도자(사이비는 교주) 단계, 명성·권력·평판과 상태 줄에 반영, 모임 규칙·떠받드는 사람들·언론 취재·수사 결정", "사람 탭에서 세상을 떠난 가족·친척에게 '2053년, 62세에 떠나심 · 42년 전(내가 27세 때)'", "4살 기질 고르기에 '앞 목록으로 돌아간다'", "할 일이 연 결정에서 '거절한다·사양한다·생각을 접는다·마음만 받는다'를 골라도 기회를 돌려받고, 이어서 열린 결정에서 '하지 않기'를 골라도 돌려받음", "자서전이 책이 되는 기준을 명성 대신 '글 분야에서 알려진 정도'로"] },
   { v: '0.6.6', d: '26.10.18', t: '새 능력치·매력 나누기·입양·반려동물·이민 2세·교육열', items: ["매력을 외모와 인품·카리스마·말솜씨로 나눔: 외모는 나이·건강·꾸밈으로 오르내리고 인품은 경험·관계·명성·말하기로 쌓여 나이로는 거의 줄지 않음. 화면의 매력은 둘의 평균이고 누르면 따로 보임. 오디션·첫 만남은 외모, 선거·면접·협상·방송 진행은 인품·말솜씨", "새 능력치: 키(나라·성별 평균 근삿값 — '175cm, 대한민국 남성 평균쯤'), 마음 건강(스트레스·우울·불안 — 진료·상담·휴직 결정, 행복과 이어짐), 언변(연습으로 오름 — 면접·연봉 협상·선거·말로 하는 일), 카리스마·창의성·신용 등급(계산값), 주변의 별명(의리 있는 사람·마당발·동네 말썽꾼 등 — 화면과 부고)", "입양한 자녀의 삶: 입양 사실 알려 주기·뿌리 찾기·친부모 재회·해외 입양의 국적과 정체성·놀림, 드물게 파양", "입양·위탁·보육원·친척 손에서 자라는 출생(나라별 비율), 해외 입양인의 태어난 나라 방문·국적 문제, 부모를 모두 잃으면 조부모·친척·보육원·위탁·입양으로 이어지고 형편·학업이 바뀜, 18세 보호 종료", "이민 2세 출생(미국 약 23%·캐나다 약 30%·스위스 약 40% 등): 부모의 출신 나라·계승어·국적 규칙(출생지주의·18세 신고·걸프는 국적 없음), 통역하는 아이·이름·부모 나라 방문·문화 충돌·'돌아가라'는 말", "반려동물의 오래가는 영향: 산책 이웃·아이의 정서·혼자 사는 사람의 외로움 덜기·병원비 결정·늙은 반려동물의 마지막·새 식구", "한국 아이는 대부분 입학 전에 한글을 뗌(일본 히라가나 등도), 교육열(한국 사교육 약 79% 등): 학원비 결정의 빈도와 보통 선택, 학생의 학원 생활·성적표 기대, 아시아계 이민 가정의 교육열과 주말 계승어 학교"] },
   { v: '0.6.5', d: '26.10.17', t: '앓다가 떠나는 과정·건강 카드·운동 습관·무술·명절 놀이', items: ["갑작스러운 죽음(사고·급사 등)이 아니면 떠나기 6~24개월 전부터 말기로 들어가 장기부전(입원 반복)·노쇠(점점 누워 지냄)·뇌졸중 뒤 쇠약 같은 과정을 겪음 — 집·방문 간호·요양 시설·호스피스·병원 가운데 어디서 지낼지, 유언·화해·여행 같은 마지막 정리. 기대수명은 그대로", "당뇨·고혈압 합병증 단계와 노쇠(기력 저하 → 거동 불편 → 누워 지냄), 오래 앓는 병의 증상·악화·검진 사건, 단계가 나빠지면 기록에 '(심부전: 초기 → 중등도)'", "사람 탭 맨 위 '건강' 카드(앓는 병·단계·최근 변화·운동 습관), 부고에 '○년 동안 ○○을 앓다가'", "누워 지내는 사람의 나날: 재활 치료·요양보호사·가족의 돌봄 교대·욕창·삼킴 곤란·문병·창밖 계절, 요양 시설 입소 결정. 몸을 쓰거나 밖에 나가는 사건은 더 걸러냄", "운동 습관: 운동하기·운동 취미·몸 쓰는 일·부대 생활로 쌓이고, 심장병·뇌졸중·당뇨·치매·노년 낙상 위험에 반영(사람들 평균은 그대로), '계단을 올라도 숨이 차지 않습니다'·'숨이 쉽게 찹니다'", "무술·격투기: 선수 종목 태권도·유도·가라테·펜싱(실업팀)·킥복싱/무에타이, 취미 '무술·격투기'(나라·나이에 맞게 24가지), 어린이 도장·띠 심사·일본 부활동·공원 태극권, 호신으로 폭행·괴롭힘을 막아 냄, 경찰·경호·군 지원 가산, 부상·뇌진탕·길거리 시비", "전통 운동은 시작한 사람에게만(동호회 권유·취미), 민속놀이는 명절 달에만 '명절 놀이'(설·추석 윷놀이·제기차기·연날리기, 몽골 나담 씨름, 인도 연날리기)"] },
@@ -57103,11 +58012,17 @@ UI.tick = () => {
   }
 };
 
+/** 젠더 표시: ♂ 남성 · ♀ 여성 · ⚧ 논바이너리 */
+UI.genderMark = (S) => {
+  const I = S.idn, g = I && I.known && I.gender !== 'cis' ? I.gid : S.sex;
+  return g === 'nb' ? { s: '⚧', ko: '논바이너리' } : g === 'f' ? { s: '♀', ko: '여성' } : { s: '♂', ko: '남성' };
+};
 UI.render = (full) => {
   const S = UI.S;
   if (!S) return;
   const iso = E.iso(S);
-  $('#p-name').textContent = S.name.full;
+  // 이름 옆 젠더 표시(v0.6.8): 스스로 깨달은 성별 정체성이 있으면 그것(identity.js), 아니면 태어난 성별
+  { const g = UI.genderMark(S); $('#p-name').textContent = `${S.name.full} ${g.s}`; $('#p-name').title = g.ko; $('#p-name').setAttribute('aria-label', `${S.name.full}, ${g.ko}`); }
   $('#p-age').textContent = `${UI.ageText(S)} · ${E.year(S)}년`;
   // 아바타는 나이·기분이 바뀔 때만
   const ak = [Math.floor(S.ageM / 12 / 3), Math.round(S.st.happy / 30), !!S.ill, !!S.mil, !!S.prison].join();
@@ -57127,8 +58042,10 @@ UI.render = (full) => {
   if (typeof Ab !== 'undefined' && Ab.nickKo && Ab.nickKo(S)) tl.push(`'${Ab.nickKo(S)}'`); // 주변의 평가·별명(stats2.js, 피드백 150번)
   $('#p-talents').textContent = tl.join(' · ');
   const badge = $('#ap-badge');
-  badge.hidden = !(S.ap > 0 && C.apCap(S) > 0); // 할 일을 고를 수 없는 나이에는 숫자를 띄우지 않는다
-  badge.textContent = S.ap;
+  // 할 일을 고를 수 없는 나이에는 숫자를 띄우지 않는다. 숫자는 일상 기회와 큰일 기회를 더한 것(피드백 221번)
+  const apN = (C.apCap(S) > 0 ? S.ap || 0 : 0) + (C.dapCap && C.dapCap(S) > 0 ? S.dap || 0 : 0);
+  badge.hidden = !(apN > 0);
+  badge.textContent = apN;
   // 능력치
   const st = S.st;
   const bars = [['건강', 'health'], ['지식', 'smarts'], ['행복', 'happy'], ['관계', 'social'], ['매력', 'charm'], ['운', 'luck'], ['경력', 'skill']];
@@ -57509,7 +58426,7 @@ UI.confirmQuit = () => {
   ]);
 };
 UI.openAbout = () => {
-  UI.openSheet(`지구 어딘가에서 v${E.VERSION} (${E.BUILD_DATE})`, '80억 명 가운데 한 아이로 무작위로 태어나, 그 나라의 실제 통계를 따라 한 사람의 일생을 살아 보는 게임입니다. 태어날 나라는 나라별 연간 출생아 수로 정하고, 사망 시점과 원인·학교·일·소득과 재산·결혼과 출산·이주·범죄·사고와 재해·질병까지 세계은행·WHO·UN 등의 최신 통계(2024~25년)에 맞춰 움직입니다. 일부 값은 같은 지역·소득 그룹 값이나 공개 자료의 근삿값으로 메웠습니다. 할 일 기회는 석 달(어린이는 여섯 달)마다 생깁니다.', [
+  UI.openSheet(`지구 어딘가에서 v${E.VERSION} (${E.BUILD_DATE})`, '80억 명 가운데 한 아이로 무작위로 태어나, 그 나라의 실제 통계를 따라 한 사람의 일생을 살아 보는 게임입니다. 태어날 나라는 나라별 연간 출생아 수로 정하고, 사망 시점과 원인·학교·일·소득과 재산·결혼과 출산·이주·범죄·사고와 재해·질병까지 세계은행·WHO·UN 등의 최신 통계(2024~25년)에 맞춰 움직입니다. 일부 값은 같은 지역·소득 그룹 값이나 공개 자료의 근삿값으로 메웠습니다. 몇 시간이면 하는 일상은 달마다 2번(어린이는 1번) 생기는 일상 기회를, 하루 이상 걸리거나 삶에 오래 남는 큰일은 석 달(어린이는 여섯 달)마다 생기는 큰일 기회를 씁니다.', [
     { label: '업데이트 기록', sub: `v0.1.0부터 지금까지 ${(C.HISTORY || []).length}번의 업데이트`, run: () => UI.openHistory() },
     { label: '닫기', run: () => UI.closeSheet() },
   ]);
@@ -57680,9 +58597,15 @@ UI.showLives = () => {
 /* ================================================================ 할 일 */
 UI.actHTML = (S) => {
   const ap = S.ap || 0, max = C.apCap(S);
-  if (max === 0) return '<div class="card"><h3>할 일</h3><p class="src">여섯 살부터 스스로 할 일을 고를 수 있어요. 지금은 부모님 품에서 자라는 중입니다.</p></div>';
-  const pips = Array.from({ length: max }, (_, i) => `<i class="${i < ap ? 'on' : ''}"></i>`).join('');
-  let html = `<div class="ap"><div><b>지금 쓸 수 있는 기회 ${ap}번</b><div class="src" style="margin:2px 0 0">${C.apEvery(S) === 3 ? '석 달' : C.apEvery(S) === 6 ? '여섯 달' : '1년'}마다 1번씩 생기고 ${max}번까지 모아 둘 수 있습니다. 일상은 기회 1번, 노력이 드는 일은 2번, 삶의 큰일은 3번을 씁니다.${ap < max ? ` 다음 기회까지 ${C.apNext(S)}달.` : ' 더 모이지 않으니 써 보세요.'} 시간은 계속 흐릅니다.</div></div><div class="pips">${pips}</div></div>`;
+  // 일상 기회(몇 시간이면 하는 일)와 큰일 기회(하루 이상·삶에 오래 남는 일)를 따로 보여 준다(피드백 221번)
+  const dap = S.dap || 0, dm = C.dapMonth ? C.dapMonth(S) : 0, dmax = dm * 3;
+  if (max === 0 && dmax === 0) return '<div class="card"><h3>할 일</h3><p class="src">여섯 살부터 스스로 할 일을 고를 수 있어요. 지금은 부모님 품에서 자라는 중입니다.</p></div>';
+  const pips = (n, on, cls) => `<div class="pips${cls}">${Array.from({ length: n }, (_, i) => `<i class="${i < on ? 'on' : ''}"></i>`).join('')}</div>`;
+  const every = C.apEvery(S) === 3 ? '석 달' : C.apEvery(S) === 6 ? '여섯 달' : '1년';
+  const nextD = dmax ? (dap < dmax ? `다음 달에 일상 기회 +${Math.min(dm, dmax - dap)}` : '일상 기회가 가득 찼습니다') : '';
+  const nextB = max ? (ap < max ? `다음 큰일 기회까지 ${C.apNext(S)}달` : '큰일 기회가 가득 찼습니다') : '';
+  const how = `몇 시간이면 하는 일상(운동·공부·친구·쉬기·가족 등)은 일상 기회 1번 — 달마다 ${dm}번씩 생기고 ${dmax}번(석 달 치)까지 모입니다. 하루 이상 걸리거나 삶에 오래 남는 일은 큰일 기회 1~3번 — ${every}마다 1번씩 생기고 ${max}번(2년 치)까지 모입니다.`;
+  let html = `<div class="ap"><div><b>일상 기회 ${dap}/${dmax} · 큰일 기회 ${ap}/${max}</b><div class="src" style="margin:2px 0 0">${[nextD, nextB].filter(Boolean).join(' · ')}. ${how} 시간은 계속 흐릅니다.</div></div><div class="pipbox">${dmax ? pips(dmax, dap, ' d') : ''}${max ? pips(max, ap, '') : ''}</div></div>`;
   // 스스로 결정할 수 없는 상태·병의 단계 안내(health.js C.actBanner)
   const bn = C.actBanner ? C.actBanner(S) : null;
   if (bn) html = `<div class="card"><h3>${esc(bn.t)}</h3><p class="src">${esc(bn.s)}</p></div>` + html;
@@ -57693,12 +58616,14 @@ UI.actHTML = (S) => {
     for (const a of list) {
       const st = C.actionState(S, a);
       const cost = C.actionCost(S, a);
-      const w = C.actAP(S, a);
+      const info = C.actInfo ? C.actInfo(S, a) : { daily: false, ap: C.actAP(S, a) };
+      const w = info.ap;
       const ok = st === true;
       const hint = st === true && a.hint ? a.hint(S) + ' · ' : '';
-      // 기회 수와 돈을 함께 적는다(피드백 63번: '비용 없음'이 기회도 안 쓰는 것처럼 읽힘)
-      const sub = st !== true ? st : a.free ? '기회를 쓰지 않습니다' : `기회 ${w}번 · ` + hint + (a.moneyNote ? a.moneyNote(S) : cost > 0 ? `돈 ${H.amt(S, cost)}` : '돈은 들지 않음');
-      const wTag = w > 1 ? `<span class="apw" aria-label="기회 ${w}번">${'●'.repeat(w)}</span>` : '';
+      // 어느 기회를 몇 번 쓰는지와 돈을 함께 적는다(피드백 63번: '비용 없음'이 기회도 안 쓰는 것처럼 읽힘 · 221번: 일상/큰일)
+      const money = a.moneyNote ? a.moneyNote(S) : cost > 0 ? `돈 ${H.amt(S, cost)}` : '돈은 들지 않음';
+      const sub = st !== true ? st : w === 0 ? (a.free ? '기회를 쓰지 않습니다' : '기회를 쓰지 않음 · ' + hint + money) : `${info.daily ? '일상' : `큰일 기회 ${w}번`} · ` + hint + money;
+      const wTag = !info.daily && w > 0 ? `<span class="apw" aria-label="큰일 기회 ${w}번">${'●'.repeat(w)}</span>` : '';
       html += `<button class="act" data-act="${a.id}" aria-disabled="${!ok}"><b>${esc(tx(S, a.koS ? a.koS(S) : a.ko))}${wTag}</b><small>${esc(tx(S, sub))}</small></button>`;
     }
     html += '</div>';
@@ -57867,7 +58792,7 @@ UI.moreHTML = (S) => {
       const v = Ar.view(S) || {};
       const sp = typeof Sp !== 'undefined' && Sp.view ? Sp.view(S) : null;
       const rows = (v.rows || []).slice(0, 14);
-      if (sp) rows.unshift(['운동 종목', `${sp.ko} · 기술 ${sp.lv}${sp.pro && sp.ret ? ` · 은퇴 예정 ${sp.ret}세쯤` : ''} · ${sp.league}`]);
+      if (sp) rows.unshift([/e스포츠|프로게이머/.test(sp.ko || '') ? '게임(프로게이머)' : '운동 종목', `${sp.ko} · 기술 ${sp.lv}${sp.pro && sp.ret ? ` · 은퇴 예정 ${sp.ret}세쯤` : ''} · ${sp.league}`]);
       if (rows.length || (v.sum || []).length) html += `<div class="card"><h3>작품과 글</h3>${(v.sum || []).length ? `<p class="src" style="margin:0 0 8px">${esc(v.sum.join(' · '))}</p>` : ''}<dl class="kv">${rows.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(String(x))}</dd>`).join('')}</dl></div>`;
     }
   } catch (e) { /* 모듈 화면 오류는 무시 */ }
@@ -58509,8 +59434,9 @@ const Ad = {};
     ${moreHTML(S)}
     <label>현금(${esc(unit)}) · 지금 ${esc(Wd.money(iso, S.money))}, 순자산 ${esc(Wd.money(iso, nw))}<input type="number" inputmode="numeric" id="adm-money" value="${Math.round(S.money * ppp)}"></label>
     ${types ? `<div class="adm-row"><label>재산 더하기<select id="adm-atype">${types}</select></label><label>금액(${esc(unit)})<input type="number" inputmode="numeric" id="adm-aamt" min="0" value="0"></label></div>` : ''}
-    <div class="adm-row">
-      <label>할 일 기회(최대 ${C.apCap(S)})<input type="number" inputmode="numeric" id="adm-ap" min="0" max="${C.apCap(S)}" value="${S.ap || 0}"></label>
+    <div class="adm-row3">
+      <label>일상 기회(최대 ${C.dapCap ? C.dapCap(S) : 0})<input type="number" inputmode="numeric" id="adm-dap" min="0" max="${C.dapCap ? C.dapCap(S) : 0}" value="${S.dap || 0}"></label>
+      <label>큰일 기회(최대 ${C.apCap(S)})<input type="number" inputmode="numeric" id="adm-ap" min="0" max="${C.apCap(S)}" value="${S.ap || 0}"></label>
       <label>빚(${(S.loans || []).length}건)<select id="adm-loans"><option value="">그대로</option><option value="clear">모두 없애기</option></select></label>
     </div>
     ${!S.indep ? `<label>집안 형편 <span id="adm-pfamv">${pctLabel(Math.round((S.fam.famP || 0.5) * 100))}</span><input type="range" id="adm-pfam" min="1" max="99" step="1" value="${Math.round((S.fam.famP || 0.5) * 100)}"></label>` : ''}
@@ -58567,6 +59493,7 @@ const Ad = {};
       if (home) S.flags.house = true;
     }
     S.ap = U.clamp(Math.round(num($('#adm-ap').value, S.ap || 0)), 0, C.apCap(S));
+    if ($('#adm-dap') && C.dapCap) S.dap = U.clamp(Math.round(num($('#adm-dap').value, S.dap || 0)), 0, C.dapCap(S)); // 일상 기회(피드백 221번)
     if ($('#adm-loans').value === 'clear') S.loans = [];
     const pf = $('#adm-pfam');
     if (pf && !S.indep) {
