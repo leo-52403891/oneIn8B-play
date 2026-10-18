@@ -1897,7 +1897,9 @@ C.DEC.temperament = {
         return C.t(S2, d.t);
       } };
     });
-    if (!ctx.n) out.push({ label: '다른 모습도 떠올려 본다', sub: '다른 기질을 더 봅니다', run: (S2) => { E.ask(S2, 'temperament', { n: 1, seen: ctx.opts }); return null; } });
+    // 두 쪽짜리 목록: 다음 목록 / 앞 목록으로(피드백 217번 — 꿈 고르기와 같게). 한 번 본 목록은 그대로 다시 보인다
+    if (!ctx.n) out.push({ label: '다른 모습도 떠올려 본다', sub: '다른 기질을 더 봅니다', run: (S2) => { E.ask(S2, 'temperament', { n: 1, seen: ctx.opts, opts: ctx.next }); return null; } });
+    else out.push({ label: '앞 목록으로 돌아간다', sub: '앞에서 본 모습을 다시 봅니다', run: (S2) => { E.ask(S2, 'temperament', { opts: ctx.seen, next: ctx.opts }); return null; } });
     return out;
   },
 };
@@ -5247,7 +5249,7 @@ C.ACTIONS = [
   { id: 'will', ko: '유언장 쓰기', cat: 'life', age: [45, 120], cd: 120, need: (S) => reason(!S.flags.will, '이미 써 두었습니다'),
     run: (S) => { E.ask(S, 'x_core_will', {}); return null; } },
   { id: 'memoir', ko: '자서전 쓰기', cat: 'life', age: [55, 120], cd: 60,
-    hint: (S) => ((S.fame || 0) >= 30 ? '이름이 알려져 출판사가 책으로 낼 수 있습니다' : '가족에게 남기는 기록'),
+    hint: (S) => (A.memoirKnown(S) >= 30 ? '이름이 알려져 출판사가 책으로 낼 수 있습니다' : '가족에게 남기는 기록'),
     run: (S) => A.memoir(S) },
   { id: 'grandkids', ko: '손주 돌보기', cat: 'life', age: [40, 120], cd: 2, need: (S) => reason((S.fam.grandkids || 0) > 0, '손주가 없습니다'),
     run: (S) => { E.stat(S, 'happy', 5); E.stat(S, 'social', 3); return U.pick(['손주에게 옛날이야기를 들려주었습니다.', '손주 손을 잡고 시장에 갔습니다.', '손주가 그린 할머니·할아버지 그림을 받았습니다.']); } },
@@ -5270,6 +5272,8 @@ C.actAP = (S, a) => (a.free ? 0 : a.ap !== undefined ? (typeof a.ap === 'functio
  *  - 누구나: 행복, 마음의 상처가 조금 아묾, 배우자·다 큰 자녀·손주와 가까워짐(살아온 이야기를 돌려 읽음)
  *  - 이름이 알려진 사람(명성 30 이상): 출판사가 책으로 낸다 — 계약금과 인세(career.js 의 책), 명성
  *  - 그 밖의 사람: 가끔 작은 출판사·자비 출판으로 몇백 부를 찍고 지역 신문에 소개됨(평판·명성 조금) */
+/** 자서전이 책이 될 만큼 알려졌는가: 글 분야 알려진 정도(없으면 명성) */
+A.memoirKnown = (S) => (typeof Ar !== 'undefined' && Ar.known ? Ar.known(S, 'lit').v : S.fame || 0);
 A.memoir = (S) => {
   S.flags.memoir = (S.flags.memoir === true ? 1 : S.flags.memoir || 0) + 1;
   E.stat(S, 'happy', 6);
@@ -5284,7 +5288,7 @@ A.memoir = (S) => {
   if (fam) out.push(S.fam.kids.some((k) => k.alive && !k.estranged) ? '자녀들이 돌려 읽으며 처음 듣는 이야기가 많았다고 합니다. 가족이 한층 가까워졌습니다.' : '배우자가 밤새 읽고 눈시울을 붉혔습니다.');
   if ((S.fam.grandkids || 0) > 0) out.push(`손주들은 ${S.sex === 'f' ? '할머니' : '할아버지'}의 어린 시절 이야기를 신기해했습니다.`);
   // 책으로 나오나
-  const fame = S.fame || 0;
+  const fame = A.memoirKnown(S); // 글 분야에서 알려진 정도(명성·작가 이력·지위 — arts.js Ar.known, 피드백 228번)
   const q = U.clamp(Math.round(40 + S.st.smarts / 4 + (S.wskill || 0) / 4 + U.normal(0, 8)), 20, 95);
   if (fame >= 30 && typeof Cr !== 'undefined' && Cr.publish && S.books) {
     const b = Cr.publish(S, q, 'memoir');
@@ -13615,6 +13619,13 @@ const Cr = {};
   Cr.reach = (S) => (S.stream ? S.stream.fans || 0 : 0) + ((S.cr && S.cr.readers) || 0) * 0.5 + Cr.fameReach(S);
   /** 영향력 0~100: 1천 명 0 · 1만 20 · 10만 40 · 100만 60 · 1천만 80 · 1억 100 */
   Cr.influence = (S) => U.clamp(20 * Math.log10(Math.max(1, Cr.reach(S))) - 60, 0, 100);
+  /** 따르는 사람(피드백 229번 — 명성으로 아는 사람은 빼고): 채널 구독자 + 팬덤(media.js) + 웹소설·연재 독자 */
+  Cr.followers = (S) => {
+    const f = typeof Md !== 'undefined' && Md && Md.fandom ? Md.fandom(S) : { dom: 0, intl: 0 };
+    return (S.stream ? S.stream.fans || 0 : 0) + f.dom + f.intl + ((S.cr && S.cr.wread) || 0) + (S.books && S.books.length ? 0 : (S.cr && S.cr.serial) || 0);
+  };
+  /** 따르는 사람의 영향력(영향력과 같은 눈금) */
+  Cr.folInf = (S) => U.clamp(20 * Math.log10(Math.max(1, Cr.followers(S))) - 60, 0, 100);
 
   /* ================================================================ 기록(피드백 3·4번: 성공은 흔적을 남긴다) */
   Cr.honor = (S, k, ko, extra = {}) => {
@@ -13932,34 +13943,72 @@ const Cr = {};
   Cr.bestSold = (S) => S.books.reduce((m, b) => Math.max(m, b.sold || 0), 0);
   Cr.isBestAuthor = (S) => S.books.some((b) => b.best);
 
-  /** 출판사 계약 가능성과 이유 */
+  /** 전작 판매(갓 나온 책은 첫해 예상 판매까지 — 출판사는 주문·추세를 본다) */
+  Cr.bestEst = (S) => S.books.reduce((m, b) => Math.max(m, b.sold || 0, S.ageM - b.m < 24 ? (b.total || 0) * 0.3 : 0), 0);
+  /** 베스트셀러 작가이거나, 표시는 아직이어도 판매가 기준을 넘은 책(b.bestM 예약)이 있음 */
+  Cr.hotAuthor = (S) => Cr.isBestAuthor(S) || S.books.some((b) => !b.best && b.bestM !== undefined);
+  /** 지위가 계약에 힘을 쓰는 정도(글 종류별): 회고·에세이·교양서는 크게, 소설·시·동화는 작게. 종류가 없는 옛 원고·출간 제안은 에세이처럼 */
+  const ST_K = { essay: 1, nonfic: 0.85, novel: 0.3, short: 0.2, kids: 0.25, web: 0.2 };
+  /** 명성(다른 분야에서 빌린 몫)이 계약에 힘을 쓰는 정도(글 종류별) */
+  const FM_K = { essay: 1.25, nonfic: 1, novel: 0.9, short: 0.7, kids: 0.8 };
+  /** 출판사 계약 가능성과 이유(피드백 229번 — 까닭 하나의 최댓값 → 까닭마다 로짓을 더함, 2~98%)
+   *  바탕(원고 완성도): −2.2 + 0.55·tanh((완성도−55)/18) → 첫 원고 6~15%
+   *  작가 이력: 낸 책 +2.0 + 전작 판매 최대 +1.4(1천 부 +0.2 · 1만 부 +0.7 · 10만 부 +1.4), 책을 낸 작가는 원고 완성도가 더 중요((완성도−55)/40),
+   *            베스트셀러(또는 판매 추세가 기준을 넘음) +2.0 · 문학상 +0.5 · 작품집: 등단 +0.6 / 등단 전 −0.8
+   *  명성(다른 분야에서 빌린 몫, Ar.known — 같은 분야 명성은 작가 이력에 들어 있음): 글 종류 배수 × 5 × (1 − e^(−몫/35))
+   *  따르는 사람(구독자·팬덤·연재 독자): 0.9 × (log10(수) − 3.3), 0~2.5 — 명성과 겹치는 만큼 둘 가운데 작은 쪽은 35%만
+   *  지위(글 종류 배수 ST_K): 현직 지방의원 1.9 · 단체장 2.8 · 국회의원 3.9 · 국가 지도자 6.0(전직은 0.6배), 고위 공무원·기업 대표 등은 관심 ÷ 10
+   *  장르와 경력: 교양서는 전문성(Ar.expertise) −0.4 + 전문성/14, 소설·에세이·동화는 그 일 3년 이상이면 +0.3~0.6(Ar.careerGenre) */
   Cr.acceptP = (S, ctx) => {
     msCtx(S, ctx);
-    const why = [];
-    let p;
-    const inf = Cr.influence(S);
-    if (Cr.isBestAuthor(S)) { p = 0.95; why.push('베스트셀러 작가'); }
-    else if (S.books.length) {
-      const best = Cr.bestSold(S);
-      p = 0.5 + 0.3 * U.clamp(Math.log10(1 + best / 1000) / 2, 0, 1) + (ctx.q - 55) / 250;
-      why.push(`전작 ${U.fmtKo(best)}부`);
-    } else {
-      p = 0.05 + 0.1 * sig((ctx.q - 55) / 8);
-      why.push('첫 원고');
+    const k = ctx.wk || '', q = ctx.q;
+    const hasAr = typeof Ar !== 'undefined' && !!Ar && typeof Ar.known === 'function';
+    const T = []; // [까닭, 로짓, 종류]
+    let L = -2.2 + 0.55 * Math.tanh((q - 55) / 18);
+    // 작가 이력
+    if (S.books.length) {
+      L += (q - 55) / 40;
+      const best = Cr.bestEst(S), hot = Cr.hotAuthor(S);
+      T.push([hot ? (Cr.isBestAuthor(S) ? '베스트셀러 작가' : `판매가 크게 늘고 있는 전작(${U.fmtKo(Math.round(best))}부)`) : `전작 ${U.fmtKo(Math.round(best))}부`, 2.0 + 1.4 * U.clamp(Math.log10(1 + best / 1000) / 2, 0, 1) + (hot ? 2.0 : 0), hot ? 'best' : 'author']);
     }
-    why.push(`원고 완성도 ${ctx.q}`);
-    const ot = Cr.officeTier(S);
-    if (ot.t) {
-      const po = [0, 0.55, 0.7, 0.85, 0.97][ot.t] * (ot.f < 1 ? 0.8 : 1);
-      if (po > p) { p = po; why.push(ot.f < 1 ? '정치인 출신' : '현직 정치인'); }
+    const pz = (S.honors || []).filter((h) => h.k === 'prize'); // 문학상(…상 수상)·신춘문예·시나리오 공모 당선
+    if (pz.length) T.push([pz.some((h) => /수상/.test(h.ko || '')) ? '문학상' : '공모 당선', 0.5, 'prize']);
+    if (k === 'short' && !S.books.length) { const db = S.cr.lit && S.cr.lit.debut; T.push(db ? ['등단 작가', 0.6, 'debut'] : ['등단 전', -0.8, 'debut']); } // 책을 낸 작가는 작가 이력이 대신함
+    if (k === 'kids') L += -0.3 + H.talent(S, 'art') / 200; // 그림 재능(드러나지 않은 재능이라 까닭에는 적지 않음)
+    // 명성과 따르는 사람
+    let K = 0;
+    if (hasAr) {
+      const kn = Ar.known(S, 'lit', k);
+      const e = Ar.orK(kn.cross, S.books.length ? 0 : kn.same);
+      K = (FM_K[k] || 1) * 5 * (1 - Math.exp(-e / 35));
+      if (K >= 0.25) T.push([`명성 ${Math.round(S.fame || 0)}`, K, 'fame']);
     }
-    if (inf >= 35) {
-      const pi = U.clamp(0.25 + (inf - 35) / 50, 0, 0.92);
-      if (pi > p) { p = pi; why.push('알려진 이름'); }
+    const fol = Cr.followers(S), F = U.clamp(0.9 * (Math.log10(Math.max(1, fol)) - 3.3), 0, 2.5);
+    if (F >= 0.25) T.push([`구독자·팬 ${U.fmtKo(Math.round(fol))}명`, F, 'fol']);
+    L -= 0.65 * Math.min(K, F); // 명성과 따르는 사람은 겹치므로 작은 쪽은 35%만
+    // 지위
+    const st = hasAr ? Ar.status(S) : (() => { const ot = Cr.officeTier(S); return { t: ot.t, f: ot.f, att: 0, ko: ot.t ? `${ot.f >= 1 ? '현직' : '전직'} ${Cr.tierTitle(S, ot.t)}` : '' }; })();
+    if (st.ko) {
+      const sk = ST_K[k] !== undefined ? ST_K[k] : 1;
+      const v = (st.t ? [0, 1.9, 2.8, 3.9, 6.0][st.t] * (st.f >= 1 ? 1 : 0.6) : st.att / 10) * sk;
+      if (v >= 0.15) T.push([st.ko, v, 'status']);
     }
-    if (Cr.honorN(S, ['prize']) && !Cr.isBestAuthor(S)) { p += 0.05; why.push('문학상'); }
+    // 장르와 경력
+    if (hasAr && k === 'nonfic') {
+      const ex = Ar.expertise(S), cg = Ar.careerGenre ? Ar.careerGenre(S, k) : null;
+      T.push([cg ? cg.ko : ex >= 6 ? `전문 분야 경력 ${Math.round(Ar.fieldYears(S))}년` : '전문 경력이 짧음', -0.4 + ex / 14 + (cg ? 0.2 : 0), 'expert']);
+    } else if (hasAr && Ar.careerGenre && ['novel', 'essay', 'kids'].includes(k)) {
+      const cg = Ar.careerGenre(S, k);
+      if (cg) T.push([cg.ko, cg.v, 'expert']);
+    }
+    for (const t of T) L += t[1];
+    let p = U.clamp(sig(L), 0.02, 0.98);
     if (ctx.off) p = Math.max(p, 0.97);
-    return { p: U.clamp(p, 0.03, 0.97), why: why.join(', ') };
+    const shown = T.filter((t) => Math.abs(t[1]) >= 0.25).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 4);
+    const top = T.filter((t) => t[1] > 0).sort((a, b) => b[1] - a[1])[0];
+    ctx.top = top ? top[2] : '';
+    const why = shown.map(([t, v]) => `${t} ${v > 0 ? '+' : '−'}`).concat(S.books.length ? [] : ['첫 원고'], [`원고 완성도 ${q}`]).join(', ');
+    return { p, why, top: ctx.top };
   };
 
   /** 책을 낸다 → S.books 에 기록하고 계약금을 받는다 */
@@ -13969,17 +14018,22 @@ const Cr = {};
     const prevBest = S.books.reduce((m, b) => Math.max(m, b.total), 0);
     let total = Math.exp(U.normal(Math.log(1500), 1.05)) * Math.exp((q - 55) / 22) * sm * (1 + 0.3 * Math.log10(1 + prevBest / 3000));
     // 이미 따르는 사람이 많으면 처음부터 많이 알려진다(품질이 낮으면 덜 이어진다)
-    const reach = (S.stream ? S.stream.fans : 0) * 0.01 + Cr.fameReach(S) * [0.0001, 0.0002, 0.0004, 0.001][Wd.dev(E.iso(S))];
+    // 피드백 228번: 이름을 아는 사람은 알려진 정도로 — 같은 분야(책·글) 명성은 그대로, 다른 분야 명성은 글 종류별 몫 × 처음 몇 권의 관심(Ar.known)
+    const wk = S.cr && S.cr._wk;
+    const fameB = typeof Ar !== 'undefined' && Ar && Ar.known ? (() => { const kn = Ar.known(S, 'lit', wk); return Ar.orK(kn.same, Math.min(95, kn.cross * (FM_K[wk] || 1) * kn.hype)); })() : S.fame || 0;
+    const fr = typeof Ar !== 'undefined' && Ar && Ar.popReach ? Ar.popReach(S) * Math.pow(fameB / 100, 3) : Cr.fameReach(S);
+    const reach = (S.stream ? S.stream.fans : 0) * 0.01 + fr * [0.0001, 0.0002, 0.0004, 0.001][Wd.dev(E.iso(S))];
     total += reach * Math.exp(U.normal(0, 0.5)) * U.clamp(Math.exp((q - 55) / 25), 0.3, 2);
-    // 정치인의 책은 지지자·지역 주민이 사 준다(피드백 72번)
+    // 정치인의 책은 지지자·지역 주민이 사 준다(피드백 72번). 소설·시·동화·웹소설은 정치 에세이가 아니라 덜(피드백 229번)
     const ot = Cr.officeTier(S);
-    if (ot.t) total += [0, 1500, 6000, 20000, 120000][ot.t] * ot.f * Cr.officeScale(S) * Math.exp(U.normal(0, 0.35));
+    const polOK = !wk || wk === 'essay' || wk === 'nonfic';
+    if (ot.t) total += [0, 1500, 6000, 20000, 120000][ot.t] * ot.f * Cr.officeScale(S) * Math.exp(U.normal(0, 0.35)) * (polOK ? 1 : 0.3);
     total = Math.round(Math.max(50, Math.min(total, Cr.pool(lang, S).n * 0.02)));
     const per = Wd.workerMedian(E.iso(S)) * 0.000045; // 한 권당 인세(정가의 약 10%)
     const idea = Cr.bookIdea(S);
     const b = { t: idea.t, g: idea.g, y: E.year(S), m: S.ageM, iso: E.iso(S), lang, total, sold: 0, per, q: Math.round(q), bestAt: Math.round(10000 * U.clamp(sm, 0.15, 3)), best: false };
     if (how === 'ghost') b.ghost = true;
-    if (ot.t && how !== 'memoir') {
+    if (ot.t && how !== 'memoir' && polOK) {
       b.t = U.pick(['다시, 우리 동네', '현장에 답이 있다', '사람이 먼저입니다', '내일을 여는 약속', '골목에서 배운 정치', '함께 걷는 길']) + ` — ${S.name.given}의 이야기`;
       b.pol = true;
       b.g = '정치 에세이';
@@ -14008,15 +14062,21 @@ const Cr = {};
   Cr.submit = (S, ctx, p) => {
     msCtx(S, ctx);
     S.cr.sub++;
-    const first = !S.books.length, best = Cr.isBestAuthor(S), inf = Cr.influence(S);
+    const first = !S.books.length, best = Cr.isBestAuthor(S);
+    // 계약의 가장 큰 까닭(Cr.acceptP 가 ctx.top 에 남김): 'best'·'author'·'fame'·'fol'·'status'·'expert'·'prize'·'debut'
+    const top = ctx.top !== undefined ? ctx.top : Cr.acceptP(S, ctx).top;
+    const kn0 = typeof Ar !== 'undefined' && Ar && Ar.known ? Ar.known(S, 'lit', S.cr._wk || ctx.wk) : null;
     if (U.chance(p)) {
       const b = Cr.publish(S, ctx.q, ctx.off ? 'offer' : 'submit');
       const exp = U.fmtKo(Math.round(b.total * 0.3 / 100) * 100 || 100);
       const launch = b.launch ? ` 출판기념회에 지지자들이 몰려 책에 사인을 해 주었고, 후원금 ${fj(S, b.launch, '이')} 모였습니다.` : '';
-      if (b.pol) return C.t(S, `${Cr.curTier(S) ? '현직 정치인' : '정치인 출신'}의 책이라 출판사가 선뜻 계약했습니다. ${bk(b.t, '이')} 나왔고, 계약금 ${fj(S, b.adv, '을')} 받았습니다. 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.${launch}`);
-      if (ctx.off || (first && inf >= 45)) return C.t(S, `출판사 여러 곳이 서로 내겠다고 나섰습니다. ${bkg(b, '이')} 나왔고, 계약금 ${fj(S, b.adv, '을')} 받았습니다. 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.`);
-      if (first) return C.t(S, `출판사에서 책을 내자는 연락이 왔습니다! 첫 책 ${bkg(b, '이')} 서점에 나왔습니다. {N은} 작가가 되었습니다. (계약금 ${fmt(S, b.adv)})`);
-      return C.t(S, `${S.books.length}번째 책 ${bkg(b, '이')} 나왔습니다. 계약금 ${fj(S, b.adv, '을')} 받았고, 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.`);
+      // 유명인·지위 있는 사람의 책: 완성도가 낮으면 '이름값만 하는 책'이라는 혹평(피드백 228번)
+      const rc = kn0 && Ar.reception ? Ar.reception(S, ctx.q, kn0) : '';
+      if (b.pol && top === 'status') return C.t(S, `${Cr.curTier(S) ? '현직 정치인' : '정치인 출신'}의 책이라 출판사가 선뜻 계약했습니다. ${bk(b.t, '이')} 나왔고, 계약금 ${fj(S, b.adv, '을')} 받았습니다. 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.${launch}${rc}`);
+      if (b.pol) return C.t(S, `${bk(b.t, '이')} 나왔습니다. 계약금 ${fj(S, b.adv, '을')} 받았고, 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.${launch}${rc}`);
+      if (ctx.off || (first && ['fame', 'fol', 'status'].includes(top))) return C.t(S, `출판사 여러 곳이 서로 내겠다고 나섰습니다. ${bkg(b, '이')} 나왔고, 계약금 ${fj(S, b.adv, '을')} 받았습니다. 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.${rc}`);
+      if (first) return C.t(S, `출판사에서 책을 내자는 연락이 왔습니다! 첫 책 ${bkg(b, '이')} 서점에 나왔습니다. {N은} 작가가 되었습니다. (계약금 ${fmt(S, b.adv)})${rc}`);
+      return C.t(S, `${S.books.length}번째 책 ${bkg(b, '이')} 나왔습니다. 계약금 ${fj(S, b.adv, '을')} 받았고, 첫해에 약 ${exp}부가 팔릴 것으로 보입니다.${rc}`);
     }
     S.cr.rej = (S.cr.rej || 0) + 1;
     if (best) { E.stat(S, 'happy', -2); return '편집자와 방향이 맞지 않아 이번 원고는 계약하지 않기로 했습니다.'; }
@@ -14025,7 +14085,7 @@ const Cr = {};
       return U.pick(['편집자가 이번 원고는 전작만 못하다며 고쳐 쓰자고 했습니다.', '출판사가 계약을 다음으로 미뤘습니다. 전작 판매가 기대에 못 미쳤다고 합니다.', '담당 편집자가 회사를 옮기면서 원고가 갈 곳을 잃었습니다.']);
     }
     E.stat(S, 'happy', -5);
-    if (inf >= 30) return '출판사가 관심을 보였지만, 원고를 읽어 보고는 조금 더 다듬자고 했습니다.';
+    if (['fame', 'fol', 'status', 'expert'].includes(top)) return '출판사가 관심을 보였지만, 원고를 읽어 보고는 조금 더 다듬자고 했습니다.';
     return U.pick(['출판사 열 곳에서 거절 편지가 왔습니다.', '투고한 출판사 어디에서도 답이 오지 않았습니다.', '한 출판사에서 "문장은 좋지만 지금 시장에는 맞지 않는다"는 답장이 왔습니다.', '출판사 세 곳에서 정중한 거절 편지가 왔습니다. 그중 한 곳은 다음 원고를 기다리겠다고 적었습니다.']);
   };
 
@@ -14082,6 +14142,8 @@ const Cr = {};
       else if (S.books.length) parts.push(`새 원고를 완성했습니다. 지금까지 ${S.books.length}권을 냈고 누적 ${U.fmtKo(Math.round(S.cr.sold))}부가 팔렸습니다.`);
       else parts.push('처음으로 원고 한 편을 끝까지 썼습니다. 처음 투고한 원고가 책이 되는 경우는 열에 한 번이 채 되지 않습니다.');
       parts.push(`글솜씨 ${Math.round(S.wskill)}, 이번 원고 완성도 ${ctx.q}.`);
+      // 알려진 정도(피드백 228·229번): 명성·글 이름값·지위
+      if (typeof Ar !== 'undefined' && Ar && Ar.known) { const kn = Ar.known(S, 'lit', ctx.wk); if (kn.v >= 5) parts.push(`${Ar.knownTxt(S, kn)}.`); }
       return C.t(S, parts.join(' '));
     },
     choices: (S, ctx) => {
@@ -15153,9 +15215,11 @@ const Cr = {};
         const b = S.books.slice().sort((x, y) => y.q - x.q || y.m - x.m)[0];
         if (!b) return;
         if (U.chance(sig((b.q - 72) / 7) * 0.6 + 0.05)) {
-          H.fameUp(S, 3); E.stat(S, 'happy', 10); b.total = Math.round(b.total * 1.3);
+          // 심사는 원고만 보지만(명성 무관), 이름난 사람(명성 30 이상)의 수상은 크게 보도된다(피드백 228번)
+          const fm = S.fame || 0, big = fm >= 30;
+          H.fameUp(S, 3 + (big ? fm / 30 : 0)); E.stat(S, 'happy', 10); b.total = Math.round(b.total * (big ? 1.45 : 1.3));
           Cr.honor(S, 'prize', `${bk(b.t)} 문학상 수상`);
-          return `${bk(b.t, '이')} 문학상을 받았습니다! 시상식에서 떨리는 목소리로 소감을 말했습니다.`;
+          return C.t(S, `${bk(b.t, '이')} 문학상을 받았습니다! 시상식에서 떨리는 목소리로 소감을 말했습니다.${big ? ` ${Cr.fameLabel(fm)}인 {N}의 수상이라 신문과 방송이 크게 다뤘습니다.` : ''}`);
         }
         E.stat(S, 'happy', 3); b.total = Math.round(b.total * 1.05);
         return `${bk(b.t, '이')} 문학상 후보에 올랐습니다. 상은 놓쳤지만 후보에 오른 덕에 책이 더 팔렸습니다.`;
@@ -17719,6 +17783,68 @@ const Pp = {};
       step, home: fam.gpHome ? `${fam.gpHome === 'p' ? '친가' : '외가'} 조부모님과 한집에서 자람` : '', here: Wd.name(iso),
     };
   };
+
+  /* ================================================================ 떠난 때(피드백 223번)
+   * 가족·친척이 떠나면 그달의 내 나이(달)와 그때 나이를 남긴다: o.diedM(내 S.ageM) · o.diedAge
+   * diedM -1 = 옛 저장이라 모름, -2 = 내가 태어나기 전에 떠나심. 사람 탭 줄에 '2071년, 82세에 떠나심 · 12년 전(내가 45세 때)' */
+  const gonePool = (S) => {
+    const F = S.fam, out = [];
+    for (const o of [F.father, F.mother, F.partner]) if (o) out.push(o);
+    for (const a of [F.sibs, F.kids, F.gp, F.gk, F.unc && F.unc.list, F.step && F.step.sibs]) if (Array.isArray(a)) for (const o of a) if (o) out.push(o);
+    if (F.step && F.step.par) out.push(F.step.par);
+    for (const f of S.friends || []) out.push(f);
+    for (const p of S.pets || []) out.push(p);
+    return out;
+  };
+  // 부모님의 diedAt 은 '여읜 때의 내 나이'라 쓰지 않는다 — 나이 칸(떠난 뒤 멈춤)을 먼저, 자녀·손주는 태어난 달로
+  const ageAtNow = (S, o) => (typeof o.age === 'number' ? o.age : o.bornM !== undefined ? (S.ageM - o.bornM) / 12 : undefined);
+  const markGone = (S, newLife) => {
+    for (const o of gonePool(S)) {
+      if (o.alive !== false || o.diedM !== undefined) continue;
+      o.diedM = newLife ? -2 : -1;
+      const a = ageAtNow(S, o);
+      if (a !== undefined && o.diedAge === undefined) o.diedAge = Math.max(0, Math.floor(a));
+    }
+  };
+  E.hook('ensure', (S) => markGone(S, S.ageM <= 0));
+  E.hook('month', (S) => {
+    for (const o of gonePool(S)) {
+      if (o.alive !== false || o.diedM !== undefined) continue;
+      o.diedM = S.ageM;
+      const a = ageAtNow(S, o);
+      if (a !== undefined) o.diedAge = Math.max(0, Math.floor(a));
+    }
+  });
+  /** 떠난 사람 한 줄. hon: 웃어른(떠나심) */
+  Pp.goneTxt = (S, o, hon) => {
+    if (!o) return '';
+    const v = hon ? '떠나심' : '떠남';
+    const age = o.diedAge !== undefined ? o.diedAge : ageAtNow(S, o);
+    const ageT = Number.isFinite(age) && age > 0 ? `${Math.floor(age)}세에 ` : '';
+    if (o.diedM === -2) return `${ageT}${v} · 내가 태어나기 전`;
+    if (o.diedM === undefined || o.diedM < 0) return ageT ? `${ageT}${v}` : `세상을 ${v}`;
+    const yrs = Math.floor((S.ageM - o.diedM) / 12);
+    const y = E.year(S) - Math.round((S.ageM - o.diedM) / 12);
+    const ago = yrs <= 0 ? '올해' : `${yrs}년 전`;
+    const me = Math.floor(o.diedM / 12);
+    return `${y}년, ${ageT}${v} · ${ago}${me > 0 ? `(내가 ${me}세 때)` : '(내가 아기였을 때)'}`;
+  };
+  // 사람 탭 자료의 떠난 사람 줄에 붙인다(이름으로 찾음 — 가족 안에서 이름은 겹치지 않게 지음)
+  {
+    const v0 = Pp.view;
+    Pp.view = (S) => {
+      const v = v0(S);
+      const pool = gonePool(S);
+      const find = (name) => pool.find((o) => o.name === name && o.alive === false);
+      const put = (rows, hon) => { for (const x of rows || []) if (x && !x.alive) { const o = find(x.name); if (o) x.gone = Pp.goneTxt(S, o, hon); } };
+      put(v.parents, true); put(v.sibs, false); put(v.kids, false);
+      const t = v.tree || {};
+      put(t.grandparents, true); put(t.uncles, true); put(t.step, false);
+      for (const f of t.kidsFamilies || []) put(f.gk, false);
+      if (S.fam.partner && S.fam.partner.alive === false) v.partnerGone = Pp.goneTxt(S, S.fam.partner, false);
+      return v;
+    };
+  }
 })();
 
 /* 80억분의 1 — 가치관·종교의 변화, 부정적 선택이 남기는 길, 사는 곳마다 다른 할 일 (피드백 28번)
@@ -26265,7 +26391,9 @@ const Cm = {};
  *   옛 저장: 쓰던 원고(S.cr.ms)는 장편 소설 원고로, 낸 책(종류 없음)은 소설로 본다.
  * 상태
  *   S.works  [{ k, t, y, m, iso, q, out, sold, earn, r, prize, hit }]  만든 작품(최근 60점)
- *   S.art    { prog: {종류: 횟수}, rep, made, yNow, yLast, fullAskM }
+ *   S.art    { prog: {종류: 횟수}, rep, made, yNow, yLast, fullAskM, kx: {분야: 다른 분야 명성을 빌려 오는 몫 0.25~1, 혹평으로 줄어듦} }
+ * 228·229번 '알려진 정도'(Ar.known): 그 분야 이름값 + 다른 분야 명성의 일부 + 지위 — 판매·전시 관객·개인전 문턱·무대 관객·음원·영상 재생·책 판매·보도에 쓰고,
+ *   현직 지위로 사 주는 곳(ar_statusBuy)은 나라 뇌물 경험률에 따라 붙고 청탁 의혹 위험이 따른다. 공모전·문학상 심사는 보지 않는다. 원고 계약은 career.js Cr.acceptP.
  *   S.cr.wp  {글 종류: 횟수}  쓰던 원고 · S.cr.wk 마지막으로 쓴 종류 · S.cr.web [연재] · S.cr.lit { shorts, poems, debut, pieces }
  *   S.cr.scripts · S.cr.papers · S.cr.cols { n, reg } · S.cr.winc 연재·칼럼 수입(인세에 더함)
  * 창작을 막는 상태(치매 중등도 이상 등): 질병 모듈이 판정 함수를 Ar.BLOCK 에 넣거나 H.noCreate(S) 를 두면 '작품 만들기'·'글쓰기'가 잠긴다.
@@ -26398,7 +26526,7 @@ const Ar = {};
   /* ---------------- 할 일: 작품 만들기 */
   C.DEC.ar_artPick = {
     title: () => '무엇을 만들까요?',
-    text: (S) => C.t(S, `작품은 몇 철에 걸쳐 만들고, 다 만들면 공모전·전시·발표·판매 가운데 내보일 길을 고릅니다. 완성도는 재능과 연습 실력(연습하기·레슨)에 달렸고, 대부분의 작품은 작게 팔리거나 팔리지 않습니다.${S.art && S.art.rep >= 5 ? ` 지금 예술가로서의 이름값은 ${Math.round(S.art.rep)}입니다.` : ''}`),
+    text: (S) => C.t(S, `작품은 몇 철에 걸쳐 만들고, 다 만들면 공모전·전시·발표·판매 가운데 내보일 길을 고릅니다. 완성도는 재능과 연습 실력(연습하기·레슨)에 달렸고, 대부분의 작품은 작게 팔리거나 팔리지 않습니다.${S.art && S.art.rep >= 5 ? ` 지금 예술가로서의 이름값은 ${Math.round(S.art.rep)}입니다.` : ''}${(() => { const kn = Ar.known(S, 'art'); return kn.borrowed >= 10 ? ` 다른 데서 얻은 이름과 자리 덕에 작품의 ${Ar.knownTxt(S, kn)}입니다.` : ''; })()}`),
     choices: (S) => {
       const out = [];
       for (const [k, d] of Object.entries(AK)) {
@@ -26450,8 +26578,8 @@ const Ar = {};
   const prizeLv = (S) => S.works.filter((w) => w.prize).length;
   const LK = ['지역', '전국', '국제'];
   const repUp = (S, n) => { S.art.rep = U.clamp((S.art.rep || 0) + n, 0, 100); };
-  /** 그림 값(보통 월급 몇 달 치): 완성도·이름값·나라 소득 수준 */
-  const priceM = (S, w) => 0.15 * Math.exp((w.q - 55) / 13) * (1 + (S.art.rep || 0) / 20) * devF(S, [0.6, 0.8, 1, 1.2]) * (S.place.urban ? 1 : 0.75);
+  /** 그림 값(보통 월급 몇 달 치): 완성도·이름값(r — 주지 않으면 작품 이름값, 전시·판매는 알려진 정도를 섞은 값)·나라 소득 수준 */
+  const priceM = (S, w, r = S.art.rep || 0) => 0.15 * Math.exp((w.q - 55) / 13) * (1 + r / 20) * devF(S, [0.6, 0.8, 1, 1.2]) * (S.place.urban ? 1 : 0.75);
   /** 미술 시장이 큰 나라(세계 미술품 거래의 대부분이 미국·중국·영국·프랑스에 몰림, 근삿값) */
   const ART_HUB = { USA: 1.4, GBR: 1.3, CHN: 1.3, HKG: 1.3, FRA: 1.2, CHE: 1.2, DEU: 1.1, JPN: 1.05, KOR: 1.05, ITA: 1.05, ARE: 1.1, SGP: 1.1 };
   const buyers = (S) => devF(S, [0.35, 0.55, 0.85, 1]) * (S.place.urban ? 1 : 0.6) * (ART_HUB[E.iso(S)] || 1) * Ar.dealMult(S);
@@ -26459,6 +26587,189 @@ const Ar = {};
   Ar.deal = (S) => (S.art && S.art.deal && S.ageM < S.art.deal.endM ? S.art.deal : null);
   Ar.dealMult = (S) => { const d = Ar.deal(S); return d ? d.mult : 1; };
   const firstShow = (S, w) => { if (!w.out) H.ach(S, 'art_debut'); };
+
+  /* ================================================================ 알려진 정도(피드백 228·229번) */
+  /* 작품·글이 얼마나 많은 사람 눈에 띄는가 = 그 분야 이름값 + 다른 분야 명성의 일부 + 지위(관심).
+   *   그 분야 이름값: 미술·영상·무대 S.art.rep · 음악 S.md.mus.rep(media.js) · 글 Ar.litRep(독자 수·베스트셀러·문학상·등단)
+   *   명성(S.fame): 명성이 난 곳(Cr.fameTarget 의 출처, 지금 출처가 없는 몫은 지난 경력)을 보고 같은 분야면 그대로, 다른 분야면 3~6할(ORIG).
+   *     '이름값만 하는 작품'이라는 혹평을 받으면 그 분야에서 빌려 오는 몫이 줄고(S.art.kx[분야] ×0.7, 0.25까지) 잘 만든 작품으로 되찾는다.
+   *   지위(Ar.status): 현직·전직 공직(Cr.officeTier), 고위 공무원·경찰 고위 간부·고위 장교(직급 부장 이상), 기업·농장 대표(권력 25 이상).
+   *     att 관심(알려진 정도에 더함) · buy '인맥 구매' 바탕(현직만) × 나라의 뇌물 경험률(Ar.corrF).
+   *   합치기: 100 × (1 − (1 − 이름값/100)(1 − 빌린 몫/100)) — 하나만 있으면 그 값, 여럿이면 100을 넘지 않게 겹쳐 오른다.
+   *   그 분야에서 처음 네 작품까지는 '유명인이 낸 작품'이라 빌린 몫이 1.8배 → 1.2배(hype, 판매·관객·재생에 쓰는 vd).
+   * 공모전·문학상(익명 심사)은 이 값을 보지 않는다(수상 뒤 보도만 커짐). */
+  const orK = (a, b) => 100 * (1 - (1 - U.clamp(a, 0, 100) / 100) * (1 - U.clamp(b, 0, 100) / 100));
+  Ar.orK = orK;
+  const ORIG = {
+    '예술': { art: 1, music: 0.4, lit: 0.45 }, '책·글': { art: 0.45, music: 0.35, lit: 1 }, '방송': { art: 0.5, music: 0.55, lit: 0.6 },
+    '연예': { art: 0.55, music: 0.55, lit: 0.55 }, '그룹 인기': { art: 0.5, music: 1, lit: 0.5 }, '운동': { art: 0.4, music: 0.4, lit: 0.5 },
+    '정치': { art: 0.3, music: 0.25, lit: 0.3 }, '악명': { art: 0.3, music: 0.35, lit: 0.4 }, '수상·이력': { art: 0.35, music: 0.3, lit: 0.45 },
+  };
+  const was = (S, id) => H.jobIs(S, id) || (S.work.history || []).some((h) => h.id === id);
+  /** 지금 출처가 없는 명성이 난 곳(지난 경력) */
+  const pastOrigin = (S) => {
+    if ((S.cr && S.cr.offices && S.cr.offices.length) || (S.honors || []).some((h) => h.k === 'office')) return '정치';
+    if (was(S, 'entertainer')) return '연예';
+    if (was(S, 'athlete')) return '운동';
+    if ((S.stream && S.stream.fans >= 1000) || was(S, 'streamer')) return '방송';
+    if ((S.books && S.books.length) || was(S, 'writer')) return '책·글';
+    if ((S.art && S.art.rep > 5) || (S.works || []).some((w) => w.prize || w.hit)) return '예술';
+    if (S.cr && S.cr.notor) return '악명';
+    return '수상·이력';
+  };
+  /** 명성을 난 곳별로 나눔 [[출처, 몫]] (몫의 합 = 명성) */
+  Ar.fameOrigin = (S) => {
+    const fame = S.fame || 0;
+    if (fame < 0.5) return [];
+    const src = hasCr() && Cr.fameTarget ? Cr.fameTarget(S).src : [];
+    const out = [];
+    let top = 0, sum = 0;
+    for (const [k, v] of src) { const x = Math.min(v, fame); if (x > 0.5) { out.push([k, x]); sum += x; top = Math.max(top, x); } }
+    if (fame - top > 0.5) { out.push([pastOrigin(S), fame - top]); sum += fame - top; }
+    return out.map(([k, x]) => [k, (fame * x) / sum]);
+  };
+  /** 글 이름값(0~90): 책·연재 독자 수(명성의 '책·글'과 같은 꼴), 베스트셀러 35 이상, 문학상 하나에 4(3개까지), 등단 3 */
+  Ar.litRep = (S) => {
+    if (!S.cr) return 0;
+    const rd = S.cr.readers || 0;
+    let r = rd > 0 ? U.clamp(16 * Math.log10(Math.max(1, rd)) - 60, 0, 75) : 0;
+    if (hasCr() && S.books && Cr.isBestAuthor(S)) r = Math.max(r, 35);
+    r += 4 * Math.min(3, hasCr() && Cr.honorN ? Cr.honorN(S, ['prize']) : 0) + (S.cr.lit && S.cr.lit.debut ? 3 : 0);
+    return U.clamp(r, 0, 90);
+  };
+  const STJ = { civil: '고위 공무원', police: '경찰 고위 간부', soldier: '고위 장교' };
+  /** 지위 { att 관심, buy 인맥 구매 바탕(현직 0~1), ko 이름, t 공직 단계(공직이 가장 클 때), f 1 현직 · 0.4 전직 } */
+  Ar.status = (S) => {
+    const o = { att: 0, buy: 0, ko: '', t: 0, f: 0 };
+    if (!hasCr() || !Cr.officeTier) return o;
+    const ot = Cr.officeTier(S);
+    if (ot.t) {
+      o.t = ot.t; o.f = ot.f;
+      o.att = [0, 10, 22, 35, 60][ot.t] * (ot.f >= 1 ? 1 : 0.5);
+      o.ko = `${ot.f >= 1 ? '현직' : '전직'} ${Cr.tierTitle(S, ot.t)}`;
+      if (ot.f >= 1) o.buy = [0, 0.3, 0.55, 0.75, 1][ot.t];
+    }
+    const j = S.work.job, pw = S.power || 0;
+    const set = (att, ko, buy) => { if (att > o.att) { o.att = att; o.ko = ko; o.t = 0; o.f = 1; } o.buy = Math.max(o.buy, buy); };
+    if (j && STJ[j.id] && (j.lv || 0) >= 3) set(j.lv >= 4 ? 12 : 6, STJ[j.id], j.lv >= 4 ? 0.4 : 0.2);
+    if (j && ['entrepreneur', 'farmowner'].includes(j.id) && pw >= 25) set(U.clamp((pw - 20) * 0.45, 2, 25), j.id === 'farmowner' ? '농장 대표' : '기업 대표', U.clamp((pw - 25) / 70, 0.05, 0.5));
+    else if (j && (j.lv || 0) >= 4 && !STJ[j.id] && j.id !== 'politician') set(5, '기업 임원', 0.15);
+    return o;
+  };
+  /** 지위를 보고 사 주는 사람이 붙는 정도: 공공 서비스에서 뇌물을 낸 사람 비율(Cm.c(S).bribe, 세계부패바로미터) 1% 0.29 · 10% 0.65 · 40% 1.85 */
+  Ar.corrF = (S) => (typeof Cm !== 'undefined' && Cm && Cm.c ? U.clamp(0.25 + Cm.c(S).bribe / 25, 0.25, 2) : 0.5);
+  /** 작품 종류 → 분야(음악 music, 나머지 art). 글은 'lit' */
+  Ar.fieldOf = (k) => (k === 'music' ? 'music' : 'art');
+  /** 그 분야에서 이미 내보인 작품 수(글은 낸 책 수), cur 는 빼고 */
+  const shownN = (S, field, cur) => (field === 'lit' ? (S.books || []).length : (S.works || []).filter((w) => w !== cur && w.out && Ar.fieldOf(w.k) === field).length);
+  /** 알려진 정도 { v, vd(처음 몇 작품의 관심 포함), rep, fame, same(같은 분야 명성), cross(다른 분야에서 빌린 명성), st(지위), borrowed(빌린 몫 = 다른 분야 명성 + 지위), hype, n, buy } */
+  Ar.known = (S, field = 'art', kind, cur) => {
+    Ar.ensure(S);
+    const fame = S.fame || 0;
+    const rep = field === 'music' ? (S.md && S.md.mus ? S.md.mus.rep || 0 : 0) : field === 'lit' ? Ar.litRep(S) : S.art.rep || 0;
+    const sing = field === 'music' && typeof Md !== 'undefined' && Md && Md.proMusic && Md.proMusic(S);
+    let same = 0, cross = 0;
+    for (const [k, x] of Ar.fameOrigin(S)) {
+      let f = (ORIG[k] || ORIG['수상·이력'])[field];
+      if (k === '연예' && (sing || kind === 'film' || kind === 'dance')) f = sing ? 1 : 0.7; // 가수의 음악, 배우의 영상·춤
+      // 상·이력이 그 분야에서 받은 것(책을 낸 작가의 문학상·번역, 그 분야 작품의 수상)이면 같은 분야
+      if (k === '수상·이력' && (field === 'lit' ? !!(S.books && S.books.length) : (S.works || []).some((w) => w.prize && Ar.fieldOf(w.k) === field))) f = 1;
+      if (f >= 1) same += x; else cross += x * f;
+    }
+    const kx = S.art.kx && S.art.kx[field] !== undefined ? S.art.kx[field] : 1;
+    cross *= kx;
+    const st = Ar.status(S);
+    const n = shownN(S, field, cur);
+    const hype = 1 + 0.8 * Math.max(0, 1 - n / 4);
+    // 지위의 관심은 전시·책(찾아가 보고 사 주는 사람)에서 크고, 음원(혼자 찾아 듣는 사람)에서는 절반
+    const base = Math.max(rep, same), borrowed = orK(cross, st.att * (field === 'music' ? 0.5 : 1));
+    return { v: orK(base, borrowed), vd: orK(base, Math.min(95, borrowed * hype)), rep, fame, same, cross, kx, st, borrowed, hype, n, field, buy: st.buy * Ar.corrF(S) };
+  };
+  /** 창에 쓰는 말: '알려진 정도 42 (명성 60 · 이름값 5 · 현직 국회의원)' */
+  Ar.knownTxt = (S, kn) => `알려진 정도 ${Math.round(kn.v)} (명성 ${Math.round(kn.fame)} · ${kn.field === 'music' ? '음악 ' : kn.field === 'lit' ? '글 ' : ''}이름값 ${Math.round(kn.rep)}${kn.st.ko ? ` · ${kn.st.ko}` : ''})`;
+  /** 이름을 아는 사람 수(Cr.fameReach 와 같은 꼴): 인구와 5천만 명의 기하평균 × 0.6, 인구를 넘지 않음 */
+  Ar.popReach = (S) => { const pop = Wd.c(E.iso(S)).pop || 1e7; return Math.min(pop, 0.6 * Math.sqrt(pop * 5e7)); };
+  /** 이름을 보고 새 작품을 찾아 듣거나 보는 사람(재생 수에 더함): 빌린 몫 × 처음 몇 작품의 관심 × 완성도.
+   *  같은 분야 명성은 팬덤·청취자층·구독자(media.js·채널)에 이미 들어 있어 뺀다. 예) 명성 60 배우의 첫 곡(완성도 55, 한국) 약 32만 회 */
+  Ar.knownPlays = (S, w, kn, share = 0.03) => {
+    const k = kn || Ar.known(S, Ar.fieldOf(w.k), w.k, w);
+    const v = Math.min(95, k.borrowed * k.hype);
+    if (v < 3) return 0;
+    return Ar.popReach(S) * Math.pow(v / 100, 2) * share * U.clamp(Math.exp((w.q - 55) / 25), 0.3, 2);
+  };
+  /** 명성이 난 곳의 이름(보도 문구) */
+  const whoKo = (S, kn) => {
+    if (kn.st.ko && kn.st.att >= kn.cross) return kn.st.ko;
+    const o = Ar.fameOrigin(S).sort((a, b) => b[1] - a[1])[0];
+    const j = S.work.job, k = o ? o[0] : '';
+    if (k === '연예' || k === '그룹 인기') return H.jobIs(S, 'entertainer') && j.title ? j.title : '연예인 출신';
+    if (k === '운동') return H.jobIs(S, 'athlete') && j.title ? j.title : '운동선수 출신';
+    return { 방송: '방송인', '책·글': '작가', 정치: '정치인 출신', 예술: '작가', 악명: '구설에 올랐던' }[k] || '이름난';
+  };
+  /** 유명인·지위 있는 사람의 작품 발표 보도(그 분야 첫 세 작품까지, 빌린 몫 20 이상) */
+  Ar.pressTxt = (S, kn, what) => {
+    if (kn.borrowed < 20 || kn.n >= 3) return '';
+    H.fameUp(S, 0.5);
+    return ` 신문과 방송이 '${whoKo(S, kn)} {N}의 ${kn.n ? '새' : '첫'} ${what}'${U.j(what, '을').slice(what.length)} 다뤘습니다.`;
+  };
+  /** 유명인이 낸 작품의 평(빌린 몫 15 이상): 완성도가 낮으면 '이름값만 하는 작품' 혹평 — 그 분야 이름값 −3, 빌려 오는 몫 ×0.7(0.25까지).
+   *  잘 만들면(68 이상) 실력을 인정받아 이름값 +2, 빌려 오는 몫을 되찾음(+0.15) */
+  Ar.reception = (S, q, kn) => {
+    if (!kn || kn.borrowed < 15) return '';
+    const f = kn.field;
+    S.art.kx = S.art.kx || {};
+    const repAdd = (d) => { if (f === 'music') { if (S.md && S.md.mus) S.md.mus.rep = U.clamp((S.md.mus.rep || 0) + d, 0, 100); } else if (f === 'art') repUp(S, d); };
+    if (q < 52 && U.chance(U.clamp((56 - q) / 24, 0.15, 0.85) * U.clamp(kn.borrowed / 40, 0.4, 1) * (kn.n < 4 ? 1 : 0.6))) {
+      S.art.kx[f] = Math.max(0.25, kn.kx * 0.7);
+      repAdd(-3); E.stat(S, 'happy', -4);
+      return ` 그러나 평론가들은 '이름값만 하는 ${f === 'lit' ? '책' : '작품'}'이라고 혹평했습니다. 다음부터는 이름만 보고 찾아오는 사람이 줄 것입니다.`;
+    }
+    if (q >= 68 && U.chance(0.6)) {
+      S.art.kx[f] = Math.min(1, kn.kx + 0.15);
+      repAdd(2);
+      return kn.kx < 1 || kn.n < 2 ? ' 반신반의하던 평론가들도 \'이름값 이상\'이라며 실력을 인정했습니다.' : '';
+    }
+    return '';
+  };
+  /** 지위를 보고 사 주는 곳(현직 정치인·고위 공무원·기업 대표의 작품, 인맥 구매 바탕 × 뇌물 경험률): 판매 결과 뒤에 묻는다 */
+  const statusBuyAsk = (S, w, kn, pr) => {
+    if (!(kn.buy >= 0.08) || !U.chance(U.clamp(kn.buy * 0.6, 0, 0.9))) return;
+    const n = 1 + poisson(1.5 * Math.min(1.5, kn.buy));
+    const amt = Math.round(n * pr * (2 + 2 * Math.min(1, kn.buy)));
+    const risk = U.clamp((typeof Cm !== 'undefined' && Cm.catchP ? Cm.catchP(S, 'corrupt', 0.3) : 0.15) * (0.7 + 0.15 * n), 0.03, 0.75);
+    E.ask(S, 'ar_statusBuy', { wi: S.works.indexOf(w), n, amt, risk, who: kn.st.ko });
+  };
+  C.DEC.ar_statusBuy = {
+    title: () => '작품을 사겠다는 곳',
+    text: (S, ctx) => {
+      const w = curW(S, ctx);
+      const note = typeof Cm !== 'undefined' && Cm.c ? ` ({country}에서 지난 한 해 공공 서비스를 쓰며 뇌물을 낸 사람 약 ${Math.max(1, Math.round(Cm.c(S).bribe))}% · 세계부패바로미터)` : '';
+      return C.t(S, `${ctx.who || '이름난 사람'}인 {N}에게 기업과 단체 ${ctx.n}곳이 ${w ? `${wj(w, '을')} 비롯한 ` : ''}작품을 사겠다고 연락해 왔습니다. 값은 시세의 몇 배인 ${fmt(S, ctx.amt)}이고, 그중 몇 곳은 {N}의 일과 이해관계가 얽혀 있습니다.${note}`);
+    },
+    choices: (S, ctx) => {
+      const hon = H.vl(S, 'honest');
+      const vadd = (S2, d) => { if (typeof Vl !== 'undefined' && Vl && Vl.add) Vl.add(S2, d); };
+      return [
+        { label: '사겠다는 곳에 판다', sub: `${fmt(S, ctx.amt)} · 갚아야 할 신세가 생김 · 청탁 의혹으로 보도될 가능성 약 ${Math.max(1, P(ctx.risk))}%`, typ: hon < 45, run: (S2, c2) => {
+          const w = curW(S2, c2);
+          earn(S2, c2.amt);
+          if (w) { w.sold = (w.sold || 0) + c2.n; w.earn = (w.earn || 0) + c2.amt; }
+          if (S2.cr) S2.cr.favors = (S2.cr.favors || 0) + 1;
+          vadd(S2, { honest: -1 });
+          if (U.chance(c2.risk)) {
+            if (S2.cr) S2.cr.notor = (S2.cr.notor || 0) + 0.5;
+            H.fameUp(S2, 1); E.stat(S2, 'happy', -8);
+            S2.power = Math.max(0, (S2.power || 0) - 3);
+            vadd(S2, { rep: -4 });
+            if (H.jobIs(S2, 'politician') && c2.amt >= H.pay(S2, 6)) S2.flags.scandal = true;
+            return C.t(S2, `작품 ${c2.n}점을 ${fmt(S2, c2.amt)}에 팔았습니다. 몇 주 뒤 언론이 '일과 얽힌 기업들이 {N}의 작품을 시세의 몇 배에 사 갔다'고 보도했습니다. 청탁 의혹이 일어 해명에 나서야 했습니다.`);
+          }
+          return C.t(S2, `작품 ${c2.n}점을 ${fmt(S2, c2.amt)}에 팔았습니다. 별일 없이 넘어갔지만, 사 간 곳들에 갚아야 할 신세가 생겼습니다.`);
+        } },
+        { label: '정중히 거절한다', sub: '오해를 살 만한 곳에는 팔지 않습니다', typ: hon >= 45, run: (S2) => { vadd(S2, { honest: 1 }); E.stat(S2, 'happy', 1); return C.t(S2, '오해를 살 만한 곳의 제안은 모두 거절했습니다. 작품은 전시장을 찾은 사람들에게만 팔기로 했습니다.'); } },
+      ];
+    },
+  };
 
   /** 계약 종류(작품 종류별) */
   const DEAL = {
@@ -26491,7 +26802,7 @@ const Ar = {};
     },
     choices: (S, ctx) => {
       const w = curW(S, ctx), dk = DEAL[w.k], out = [];
-      const sell = (S2) => { const amt = ctx.sale; earn(S2, amt); w.sold = (w.sold || 0) + 1; w.earn = (w.earn || 0) + amt; repUp(S2, 2); return `수상작 ${wj(w, '을')} ${U.j(fmt(S2, amt), '에')} 팔았습니다.`; };
+      const sell = (S2) => { const amt = ctx.sale; earn(S2, amt); w.sold = (w.sold || 0) + 1; w.earn = (w.earn || 0) + amt; repUp(S2, 2); return `수상작 ${wj(w, '을')} ${fmt(S2, amt)}에 팔았습니다.`; };
       const sign = (S2) => { S2.art.deal = { ko: dk.ko, endM: S2.ageM + 36, amtY: ctx.deal.amtY, mult: dk.mult, iso: E.iso(S2), k: w.k }; repUp(S2, 5); H.fameUp(S2, 2); honor(S2, 'award', `${dk.ko} 계약`); return `${U.j(dk.who, '과')} ${dk.ko} 계약을 맺었습니다. 앞으로 3년 동안 작품이 훨씬 많은 사람에게 닿을 것입니다.`; };
       if (ctx.sale > 0 && ctx.deal) out.push({ label: '작품도 팔고 계약도 맺는다', sub: `${fmt(S, ctx.sale)} + 한 해 ${fmt(S, ctx.deal.amtY)}`, typ: true, run: (S2) => C.t(S2, `${sell(S2)} ${sign(S2)}`) });
       if (ctx.deal) out.push({ label: `${dk.ko} 계약을 맺는다`, sub: ctx.sale > 0 ? '수상작은 간직합니다' : `한 해 약 ${fmt(S, ctx.deal.amtY)} · 3년`, typ: !(ctx.sale > 0), run: (S2) => C.t(S2, sign(S2)) });
@@ -26518,11 +26829,14 @@ const Ar = {};
       H.ach(S, 'art_prize');
       if (lv >= 1) Ar.prizeRipple(S, w, lv);
       let extra = '';
+      // 익명 심사라 명성은 당선을 돕지 않지만, 이름난 사람(명성 30 이상)의 수상은 크게 보도된다(피드백 228번)
+      const fm = S.fame || 0;
+      if (fm >= 30) { H.fameUp(S, 1 + fm / 30); repUp(S, Math.round(fm / 8)); extra += ` ${hasCr() && Cr.fameLabel ? Cr.fameLabel(fm) : '이름난 사람'}인 {N}의 수상이라 신문과 방송이 크게 다뤘습니다.`; }
       // 영화제에서 상을 받은 좋은 작품은 드물게 장편 연출 제안으로 이어진다
       if (w.k === 'film' && lv >= 1 && w.q >= 72 && U.chance(0.3)) {
         const fee = H.pay(S, U.randInt(6, 18) * devF(S, [0.4, 0.6, 0.85, 1]));
         earn(S, fee); repUp(S, 15); H.fameUp(S, 6); honor(S, 'award', '장편 영화 연출');
-        extra = ` 이 작품을 본 제작사가 장편 영화 연출을 맡겼습니다. 연출료로 ${U.j(fmt(S, fee), '을')} 받았습니다.`;
+        extra += ` 이 작품을 본 제작사가 장편 영화 연출을 맡겼습니다. 연출료로 ${U.j(fmt(S, fee), '을')} 받았습니다.`;
       }
       return C.t(S, `${wj(w, '이')} ${lk} ${d.cn}에서 상을 받았습니다! 상금 ${U.j(fmt(S, amt), '을')} 받았습니다.${extra}`);
     }
@@ -26531,18 +26845,21 @@ const Ar = {};
     return C.t(S, `${wj(w, '을')} ${lk} ${d.cn}에 냈지만 떨어졌습니다. 심사평에 이름조차 오르지 못했습니다.`);
   };
   Ar.exhibit = (S, w, solo) => {
+    const kn = Ar.known(S, 'art', w.k, w);
     firstShow(S, w);
     w.out = 'exhibit';
-    const rep = S.art.rep || 0;
-    const n = poisson((solo ? 5 : 2.5) * sig((w.q - 58 + rep / 3) / 9) * buyers(S));
-    const pr = H.pay(S, priceM(S, w));
+    // 팔리는 수는 알려진 정도(처음 몇 작품의 관심 포함), 값은 이름값과 알려진 정도의 6할 가운데 큰 쪽(피드백 228번)
+    const kv = kn.vd, pRep = Math.max(S.art.rep || 0, 0.6 * kn.v);
+    const n = poisson((solo ? 5 : 2.5) * sig((w.q - 58 + kv / 3) / 9) * buyers(S));
+    const pr = H.pay(S, priceM(S, w, pRep));
     let amt = n * pr, big = '';
-    const pBig = U.clamp(0.012 * Math.exp((w.q - 70) / 8) * (1 + rep / 40) * (solo ? 1 : 0.5) * (ART_HUB[E.iso(S)] || devF(S, [0.4, 0.6, 0.85, 1])), 0, 0.15);
+    const vis = kn.borrowed >= 15 ? Math.round(Math.exp(U.normal(Math.log(40) + kv / 18 + (w.q - 55) / 30, 0.4)) * buyers(S)) : 0;
+    const pBig = U.clamp(0.012 * Math.exp((w.q - 70) / 8) * (1 + pRep / 40) * (solo ? 1 : 0.5) * (ART_HUB[E.iso(S)] || devF(S, [0.4, 0.6, 0.85, 1])), 0, 0.15);
     if (U.chance(pBig)) {
       const b = H.pay(S, (6 + 24 * U.rand()) * devF(S, [0.5, 0.7, 1, 1.3]));
       amt += b; repUp(S, 20); H.fameUp(S, 6); w.hit = true;
       honor(S, 'award', `${wt(w)} 미술관·컬렉터 매입`);
-      big = ` 이름난 컬렉터가 대표작을 ${U.j(fmt(S, b), '에')} 사 갔습니다. 신문에 이름이 실렸습니다.`;
+      big = ` 이름난 컬렉터가 대표작을 ${fmt(S, b)}에 사 갔습니다. 신문에 이름이 실렸습니다.`;
     }
     w.sold = n; w.earn = (w.earn || 0) + amt;
     earn(S, amt);
@@ -26550,10 +26867,13 @@ const Ar = {};
     if (n > 0) H.fameUp(S, 0.5);
     E.stat(S, 'happy', n > 0 ? 5 : -3);
     const kind = solo ? '개인전' : '단체전';
-    if (!n && !big) return C.t(S, `${wj(w, '을')} ${kind}에 걸었습니다. 찾아온 사람은 가족과 친구들뿐이었고, 한 점도 팔리지 않았습니다.`);
-    return C.t(S, `${wj(w, '을')} ${kind}에 걸었습니다. ${n ? `${n}점이 팔려 ${U.j(fmt(S, n * pr), '을')} 벌었습니다.` : ''}${big}`);
+    const tail = Ar.pressTxt(S, kn, '전시') + Ar.reception(S, w.q, kn);
+    statusBuyAsk(S, w, kn, pr);
+    if (!n && !big) return C.t(S, vis ? `${wj(w, '을')} ${kind}에 걸었습니다. 이름이 알려진 사람의 전시라 관람객 ${U.fmtKo(vis)}명이 다녀갔지만 한 점도 팔리지 않았습니다.${tail}` : `${wj(w, '을')} ${kind}에 걸었습니다. 찾아온 사람은 가족과 친구들뿐이었고, 한 점도 팔리지 않았습니다.${tail}`);
+    return C.t(S, `${wj(w, '을')} ${kind}에 걸었습니다.${vis ? ` 이름이 알려진 사람의 전시라 관람객 ${U.fmtKo(vis)}명이 다녀갔습니다.` : ''} ${n ? `${n}점이 팔려 ${U.j(fmt(S, n * pr), '을')} 벌었습니다.` : ''}${big}${tail}`);
   };
   Ar.sell = (S, w) => {
+    const kn = Ar.known(S, 'art', w.k, w);
     firstShow(S, w);
     w.out = 'sell';
     const rep = S.art.rep || 0;
@@ -26562,21 +26882,26 @@ const Ar = {};
       const r = H.pay(S, 0.03 * Math.exp((w.q - 55) / 15) * (1 + rep / 30) * devF(S, [0.5, 0.7, 1, 1.2]));
       w.r = r;
       E.stat(S, 'happy', 2);
-      return C.t(S, `${wj(w, '을')} 사진 판매 사이트에 올렸습니다. 한 해 ${U.j(fmt(S, r), '쯤')} 들어올 것 같습니다.`);
+      return C.t(S, `${wj(w, '을')} 사진 판매 사이트에 올렸습니다. 한 해 ${fmt(S, r)}쯤 들어올 것 같습니다.`);
     }
-    const n = poisson(2 * sig((w.q - 55 + rep / 3) / 10) * buyers(S));
-    const amt = n * H.pay(S, priceM(S, w) * 0.6);
+    // 인터넷·장터 판매도 알려진 정도로(스톡 사진은 이름을 보지 않음)
+    const kv = kn.vd, pRep = Math.max(rep, 0.6 * kn.v);
+    const n = poisson(2 * sig((w.q - 55 + kv / 3) / 10) * buyers(S));
+    const amt = n * H.pay(S, priceM(S, w, pRep) * 0.6);
     w.sold = n; w.earn = (w.earn || 0) + amt;
     earn(S, amt);
     if (n) repUp(S, 0.5);
     E.stat(S, 'happy', n ? 3 : -2);
-    return n ? C.t(S, `${wj(w, '을')} ${H.internet(S) > 0.3 ? '인터넷에' : '장터에'} 내놓아 ${n}점을 팔았습니다. ${U.j(fmt(S, amt), '을')} 벌었습니다.`) : C.t(S, `${wj(w, '을')} 내놓았지만 사겠다는 사람이 없었습니다.`);
+    const tail = Ar.reception(S, w.q, kn);
+    statusBuyAsk(S, w, kn, H.pay(S, priceM(S, w, pRep)));
+    return n ? C.t(S, `${wj(w, '을')} ${H.internet(S) > 0.3 ? '인터넷에' : '장터에'} 내놓아 ${n}점을 팔았습니다. ${U.j(fmt(S, amt), '을')} 벌었습니다.${tail}`) : C.t(S, `${wj(w, '을')} 내놓았지만 사겠다는 사람이 없었습니다.${tail}`);
   };
   Ar.market = (S, w) => {
+    const kn = Ar.known(S, 'art', w.k, w);
     firstShow(S, w);
     w.out = 'market';
-    const rep = S.art.rep || 0;
-    const n = poisson(6 * sig((w.q - 45 + rep / 4) / 10) * buyers(S));
+    const rep = Math.max(S.art.rep || 0, 0.6 * kn.v), kv = kn.vd;
+    const n = poisson(6 * sig((w.q - 45 + kv / 4) / 10) * buyers(S));
     const amt = n * H.pay(S, 0.04 * Math.exp((w.q - 55) / 20) * (1 + rep / 30) * devF(S, [0.7, 0.85, 1, 1.1]));
     w.sold = n; w.earn = (w.earn || 0) + amt;
     earn(S, amt);
@@ -26584,16 +26909,17 @@ const Ar = {};
     let extra = '';
     if (w.q >= 70 && U.chance(0.04 + rep / 500)) { w.r = (w.r || 0) + H.pay(S, 2); repUp(S, 10); w.hit = true; extra = ' 이름난 가게에서 작품을 꾸준히 받아 팔겠다고 연락해 왔습니다.'; honor(S, 'award', `${wt(w)} 공예 상점 입점`); }
     E.stat(S, 'happy', n ? 3 : -2);
+    extra += Ar.reception(S, w.q, kn);
     return n ? C.t(S, `${wj(w, '을')} 장터와 인터넷 가게에 내놓아 ${n}점을 팔았습니다. ${U.j(fmt(S, amt), '을')} 벌었습니다.${extra}`) : C.t(S, `${wj(w, '을')} 장터에 내놓았지만 구경하는 사람뿐이었습니다.${extra}`);
   };
-  /** 음원·영상 조회: 언어권 크기·완성도·이미 따르는 사람 */
-  const plays = (S, w, med) => {
+  /** 음원·영상 조회: 언어권 크기·완성도·이미 따르는 사람 + 이름을 보고 찾아보는 사람(Ar.knownPlays, 피드백 228번) */
+  const plays = (S, w, med, kn) => {
     const lang = hasCr() ? Cr.nativeLang(S) : 'en';
     const pool = hasCr() ? Cr.pool(lang, S).n : 5e7;
     const poolF = U.clamp(Math.pow(pool / 5e7, 0.3), 0.3, 3);
     let n = Math.exp(U.normal(Math.log(med) + (w.q - 55) / 8, 1.9)) * poolF;
     const fans = S.stream ? S.stream.fans : 0;
-    n += fans * (0.05 + U.rand() * 0.25) + (hasCr() ? Cr.fameReach(S) * 0.002 : 0);
+    n += fans * (0.05 + U.rand() * 0.25) + (hasCr() ? Cr.fameReach(S) * 0.002 : 0) + Ar.knownPlays(S, w, kn, 0.025) * Math.exp(U.normal(0, 0.4));
     n *= Ar.dealMult(S);
     return Math.round(Math.min(n, pool * 0.3));
   };
@@ -26618,29 +26944,34 @@ const Ar = {};
     return C.t(S, `${wj(w, '을')} 음원으로 발표했습니다. ${t}${w.r >= H.pay(S, 0.05) ? ` 음원 수입은 한 해 약 ${fmt(S, w.r)}입니다.` : ''}`);
   };
   Ar.video = (S, w) => {
+    const kn = Ar.known(S, Ar.fieldOf(w.k), w.k, w);
     firstShow(S, w);
     w.out = 'video';
-    const n = plays(S, w, 250);
+    const n = plays(S, w, 250, kn);
     w.plays = n;
     const amt = (n >= 1000 ? n * U.clamp(rpmOf(S), 0.1, 6) / 1000 : 0) / Wd.priceLevel(E.iso(S));
     earn(S, amt);
     H.fameUp(S, U.clamp(Math.log10(Math.max(1, n)) - 4.2, 0, 4));
-    if (n >= 1e6) { repUp(S, 12); E.stat(S, 'happy', 12); w.hit = true; honor(S, 'award', `${wt(w)} 영상 조회 100만`); return C.t(S, `${wj(w, '을')} 인터넷에 올렸더니 크게 퍼졌습니다! ${U.fmtKo(n)}명이 보았습니다.`); }
-    if (n >= 2e4) { repUp(S, 3); E.stat(S, 'happy', 6); return C.t(S, `${wj(w, '을')} 인터넷에 올렸습니다. ${U.fmtKo(n)}명이 보았습니다.`); }
+    const tail = Ar.pressTxt(S, kn, '영상') + Ar.reception(S, w.q, kn);
+    if (n >= 1e6) { repUp(S, 12); E.stat(S, 'happy', 12); w.hit = true; honor(S, 'award', `${wt(w)} 영상 조회 100만`); return C.t(S, `${wj(w, '을')} 인터넷에 올렸더니 크게 퍼졌습니다! ${U.fmtKo(n)}명이 보았습니다.${tail}`); }
+    if (n >= 2e4) { repUp(S, 3); E.stat(S, 'happy', 6); return C.t(S, `${wj(w, '을')} 인터넷에 올렸습니다. ${U.fmtKo(n)}명이 보았습니다.${tail}`); }
     E.stat(S, 'happy', -1);
-    return C.t(S, `${wj(w, '을')} 인터넷에 올렸습니다. 본 사람은 ${U.fmtKo(n)}명이었습니다.`);
+    return C.t(S, `${wj(w, '을')} 인터넷에 올렸습니다. 본 사람은 ${U.fmtKo(n)}명이었습니다.${tail}`);
   };
   Ar.stage = (S, w) => {
+    const kn = Ar.known(S, Ar.fieldOf(w.k), w.k, w);
     firstShow(S, w);
     w.out = 'stage';
-    const rep = S.art.rep || 0;
-    const aud = Math.round(Math.max(5, Math.exp(U.normal(Math.log(40) + (w.q - 55) / 15 + rep / 30, 0.6)) * buyers(S)));
+    // 관객은 알려진 정도(이름값 + 다른 분야 명성의 일부 + 지위, 처음 몇 무대의 관심 포함)를 따른다(피드백 228번)
+    const kv = kn.vd;
+    const aud = Math.round(Math.max(5, Math.exp(U.normal(Math.log(40) + (w.q - 55) / 15 + kv / 30, 0.6)) * buyers(S)));
     const amt = aud * H.pay(S, 0.006 * devF(S, [0.6, 0.8, 1, 1.2]));
     w.sold = aud; w.earn = (w.earn || 0) + amt;
     earn(S, amt);
     repUp(S, w.q >= 60 ? 2 : 0.5); E.stat(S, 'happy', 5); E.stat(S, 'social', 2);
     if (w.q >= 60 && aud >= 60) H.fameUp(S, 0.5);
-    return C.t(S, `${wj(w, '을')} 무대에 올렸습니다. 관객 ${aud}명이 찾아왔고, 표를 판 돈은 ${fmt(S, amt)}이었습니다.`);
+    const tail = Ar.pressTxt(S, kn, '무대') + Ar.reception(S, w.q, kn);
+    return C.t(S, `${wj(w, '을')} 무대에 올렸습니다. 관객 ${U.fmtKo(aud)}명이 찾아왔고, 표를 판 돈은 ${fmt(S, amt)}이었습니다.${tail}`);
   };
   Ar.keep = (S, w) => {
     E.stat(S, 'happy', 3);
@@ -26654,7 +26985,10 @@ const Ar = {};
       if (!w) return '작품을 완성했습니다.';
       const d = AK[w.k];
       const tip = { gallery: '공모전은 상금과 이름을, 전시는 판매를 노립니다. 대관료를 내고도 한 점도 못 파는 일이 흔합니다.', market: '공예품은 값이 싸지만 잘 만들면 단골이 생깁니다.', release: '음원은 재생 수만큼 수입이 들어옵니다. 대부분의 곡은 몇백 번 재생에 그칩니다.', festival: '영화제는 상과 이름을, 인터넷은 조회 수를 얻습니다.', stage: '공연은 관객을, 경연은 상을 노립니다.' }[d.show];
-      return C.t(S, `${d.ko} ${wj(w, '을')} 완성했습니다. 완성도 ${w.q}${S.art.rep >= 1 ? `, 이름값 ${Math.round(S.art.rep)}` : ''}. ${tip}`);
+      // 알려진 정도(피드백 228번): 다른 분야 명성이나 지위가 있으면 '알려진 정도 ○○ (명성 ○○ · 이름값 ○○ · 지위)'
+      const kn = Ar.known(S, Ar.fieldOf(w.k), w.k, w);
+      const kt = kn.borrowed >= 3 ? `, ${Ar.knownTxt(S, kn)}${kn.hype > 1.05 && kn.borrowed >= 15 ? ' — 처음 몇 작품은 \'유명인이 낸 작품\'이라 관심이 큽니다. 완성도가 낮으면 혹평을 받을 수 있습니다' : ''}` : S.art.rep >= 1 ? `, 이름값 ${Math.round(S.art.rep)}` : '';
+      return C.t(S, `${d.ko} ${wj(w, '을')} 완성했습니다. 완성도 ${w.q}${kt}. ${tip}`);
     },
     choices: (S, ctx) => {
       const w = curW(S, ctx);
@@ -26666,7 +27000,7 @@ const Ar = {};
       const contest = { label: `${LK[lv]} ${d.cn}에 낸다`, sub: `수상 가능성 약 ${Math.max(1, P(pC))}%`, run: (S2, c2) => Ar.contest(S2, curW(S2, c2)) };
       if (d.show === 'gallery') {
         out.push(contest);
-        const solo = (S.art.rep || 0) >= 15;
+        const solo = Ar.known(S, 'art', w.k, w).v >= 15; // 개인전 문턱: 이름값 대신 알려진 정도(피드백 228번)
         const cost = solo ? 1 : 0.3;
         out.push({ label: solo ? '개인전을 연다' : '단체전에 건다', sub: `대관료 약 ${H.amt(S, cost)} · 팔리는 만큼 벌고, 아주 드물게 컬렉터 눈에 듭니다`, disabled: !canAfford(S, cost),
           run: (S2, c2) => { E.addMoney(S2, -H.pay(S2, cost)); return Ar.exhibit(S2, curW(S2, c2), solo); } });
@@ -26771,6 +27105,34 @@ const Ar = {};
   const topField = (S) => { const e = Object.entries((S.work.exp && S.work.exp.f) || {}).sort((a, b) => b[1] - a[1])[0]; return e && e[1] >= 36 ? e[0] : null; };
   /** 전문성: 한 분야 경력·학력(논픽션·칼럼에 쓴다) 0~20 */
   Ar.expertise = (S) => Math.min(14, fieldYears(S) * 1.2) + (S.edu.level >= 4 ? 3 : 0) + (S.edu.level >= 5 ? 3 : 0);
+  Ar.fieldYears = fieldYears;
+  /** 장르와 경력이 맞는 원고(피드백 229번 — 의사의 의학 소설·건강 교양서, 변호사의 법정 소설 등): 그 일 3년 이상이면 { ko, v(계약 로짓) } */
+  const CGEN = [
+    [['doctor', 'nurse', 'care'], { novel: '의학 소설', essay: '의료 현장 에세이', nonfic: '건강 교양서' }],
+    [['lawyer'], { novel: '법정 소설', essay: '법정 에세이', nonfic: '법 교양서' }],
+    [['police', 'guard', 'journalist'], { novel: '범죄 소설', essay: '현장 기록', nonfic: '사회 교양서' }],
+    [['teacher', 'tutor'], { essay: '교단 에세이', nonfic: '교육서', kids: '동화' }],
+    [['researcher', 'engineer'], { novel: 'SF 소설', nonfic: '과학 교양서' }],
+    [['programmer', 'freedev'], { novel: 'SF 소설', nonfic: 'IT 교양서' }],
+    [['athlete', 'coach'], { novel: '스포츠 소설', essay: '선수의 기록', nonfic: '운동 교양서' }],
+    [['soldier'], { novel: '전쟁 소설', essay: '복무 기록' }],
+    [['cook', 'chef'], { essay: '음식 에세이', nonfic: '요리책' }],
+    [['entertainer', 'artist'], { essay: '무대 에세이' }],
+  ];
+  Ar.careerGenre = (S, k) => {
+    if (!hasCr() || !Cr.expY) return null;
+    let best = null;
+    for (const [ids, g] of CGEN) {
+      if (!g[k]) continue;
+      for (const id of ids) {
+        const y = Cr.expY(S, 'j', id);
+        if (y >= 3 && (!best || y > best.y)) best = { y, id, g: g[k] };
+      }
+    }
+    if (!best) return null;
+    const jk = (C.JOB[best.id] && C.JOB[best.id].ko) || '그 일';
+    return { ko: `${jk} 경력 ${Math.floor(best.y)}년의 ${best.g}`, v: U.clamp(0.25 + best.y / 20, 0.3, k === 'novel' ? 0.6 : 0.5), g: best.g };
+  };
   const researcher = (S) => H.jobIs(S, 'researcher') || (hasCr() && Cr.expY(S, 'j', 'researcher') >= 1);
   const WK = {
     novel: { ko: '장편 소설', need: (S) => (S.books.some((b) => !b.wk || b.wk === 'novel') ? 2 : 3), age: 12, path: 'book', mult: () => 1, sub: '출판사 투고 → 책·인세·문학상' },
@@ -26785,7 +27147,7 @@ const Ar = {};
     paper: { ko: '학술 논문', need: () => 2, age: 18, path: 'paper', sub: '학술지 투고 → 연구 이력',
       can: (S) => (researcher(S) || S.edu.level >= 5 || (S.edu.level >= 4 && S.st.smarts >= 60) || (H.college(S) && S.st.smarts >= 60) ? true : '연구원·교수이거나 대학을 마쳐야 합니다(지식 60)') },
     column: { ko: '칼럼·기사', need: () => 1, age: 16, path: 'column', sub: '신문·잡지 기고 → 원고료, 고정 칼럼',
-      can: (S) => (H.jobIs(S, 'journalist') || (S.fame || 0) >= 15 || fieldYears(S) >= 5 || S.edu.level >= 4 ? true : '기자이거나, 한 분야 경력 5년·대학 학력·이름값이 있어야 합니다') },
+      can: (S) => (H.jobIs(S, 'journalist') || (S.fame || 0) >= 15 || Ar.known(S, 'lit', 'column').v >= 15 || fieldYears(S) >= 5 || S.edu.level >= 4 ? true : '기자이거나, 한 분야 경력 5년·대학 학력·이름값이 있어야 합니다') },
   };
   Ar.WK = WK;
   const wkCan = (S, k) => {
@@ -26928,19 +27290,7 @@ const Ar = {};
       }
       return b;
     };
-    const ap0 = Cr.acceptP;
-    Cr.acceptP = (S, ctx) => {
-      const r = ap0(S, ctx);
-      const k = ctx.wk;
-      if (!k || !WK[k] || ctx.off) return r;
-      let p = r.p;
-      const why = [r.why];
-      if (k === 'essay') { p *= 1 + Math.min(0.5, (S.fame || 0) / 60); if ((S.fame || 0) >= 15) why.push('알려진 이름이 에세이에 유리'); }
-      if (k === 'nonfic') { const ex = Ar.expertise(S); p *= 0.7 + ex / 12; if (ex >= 6) why.push(`전문 분야 경력 ${Math.round(fieldYears(S))}년`); }
-      if (k === 'kids') { p *= 0.75 + H.talent(S, 'art') / 300; }
-      if (k === 'short') { const db = S.cr.lit && S.cr.lit.debut; p *= db ? 1.6 : 0.5; why.push(db ? '등단 작가' : '등단 전'); }
-      return { p: U.clamp(p, 0.02, 0.97), why: why.join(', ') };
-    };
+    // 글 종류별 계약 까닭(에세이·교양서·동화·작품집)은 career.js Cr.acceptP 의 로짓 합에 들어 있다(피드백 229번, ctx.wk).
     // 원고 결정 창: 종류를 보여 준다
     const dp = C.DEC.x_core_publish;
     if (dp) {
@@ -27088,12 +27438,14 @@ const Ar = {};
     title: (S, ctx) => `${ctx.drama ? '드라마 대본' : '영화 시나리오'} 《${ctx.t}》`,
     text: (S, ctx) => C.t(S, `${U.j(ctx.drama ? '드라마 대본' : '영화 시나리오', '을')} 끝까지 썼습니다(완성도 ${ctx.q}). 공모전에 당선되거나 제작사가 판권을 사면 돈을 받고, 그중 일부만 실제로 만들어집니다. 대부분의 원고는 서랍에서 나오지 못합니다.`),
     choices: (S, ctx) => {
-      const fm = filmMkt(S), inf = hasCr() ? Cr.influence(S) : 0;
+      const fm = filmMkt(S), inf = hasCr() && Cr.folInf ? Cr.folInf(S) : 0;
       const pC = U.clamp(lucky(S, sig((ctx.q - 70) / 6) * 0.45 * fm), 0.002, 0.6);
       // 피드백 110번(베스트셀러 작가의 시나리오를 제작사가 안 받아 줌): 이름이 알려진 작가·원작이 있는 작가는 제작사가 먼저 찾는다
       const bestA = hasCr() && Cr.isBestAuthor && Cr.isBestAuthor(S), books = (S.books || []).length;
       const nameB = bestA ? 0.45 : books >= 3 ? 0.2 : books >= 1 ? 0.08 : 0;
-      const pO = U.clamp(lucky(S, sig((ctx.q - 64) / 7) * 0.3 * fm) + inf / 300 + nameB + Math.min(0.15, (S.fame || 0) / 300), 0.002, bestA ? 0.92 : 0.7);
+      // 피드백 228번: 다른 분야 명성·지위는 알려진 정도(Ar.known)로, 따르는 사람은 구독자·팬·연재 독자(Cr.folInf)로
+      const kn = Ar.known(S, 'lit', 'script');
+      const pO = U.clamp(lucky(S, sig((ctx.q - 64) / 7) * 0.3 * fm) + inf / 300 + nameB + Math.min(0.3, orK(kn.cross, kn.st.att * 0.5) / 120) + Math.min(0.12, kn.same / 300), 0.002, bestA ? 0.92 : 0.7);
       const made = (S2, c2) => {
         if (!U.chance(bestA ? 0.65 : 0.4)) return '';
         H.fameUp(S2, 5); E.stat(S2, 'happy', 8);
@@ -27156,7 +27508,8 @@ const Ar = {};
     title: () => '칼럼을 어디에 낼까요?',
     text: (S, ctx) => C.t(S, `칼럼 한 편을 썼습니다(완성도 ${ctx.q}). ${H.jobIs(S, 'journalist') ? '기자라 지면을 얻기 쉽습니다.' : '신문·잡지는 전문성이나 이름이 있는 사람의 글을 싣습니다.'}`),
     choices: (S, ctx) => {
-      const p = U.clamp(0.08 + sig((ctx.q - 55) / 8) * 0.35 + (S.fame || 0) / 120 + (H.jobIs(S, 'journalist') ? 0.4 : 0) + Ar.expertise(S) / 60 + luck(S), 0.03, 0.95);
+      // 이름: 명성 대신 알려진 정도(글 이름값·다른 분야 명성의 일부·지위, 피드백 228번)
+      const p = U.clamp(0.08 + sig((ctx.q - 55) / 8) * 0.35 + Ar.known(S, 'lit', 'column').v / 120 + (H.jobIs(S, 'journalist') ? 0.4 : 0) + Ar.expertise(S) / 60 + luck(S), 0.03, 0.95);
       const out = [{ label: '신문·잡지에 기고한다', sub: `실릴 가능성 약 ${P(p)}%`, typ: true, run: (S2) => {
         if (!U.chance(p)) { E.stat(S2, 'happy', -2); return '보낸 칼럼은 실리지 않았습니다.'; }
         const c = S2.cr.cols; c.n++;
@@ -28362,7 +28715,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.6.6';
+E.VERSION = '0.6.7';
 E.BUILD_DATE = '26.10.16';
 
 /* ================================================================ 기본 도구 */
@@ -29661,7 +30014,9 @@ E.currentChoices = (S) => {
 };
 
 /** 하지 않기로 하는 선택지(할 일이 연 결정에서 고르면 쓴 기회·쿨다운·돈을 돌려준다 — 피드백 133번) */
-E.CANCEL_RE = /^(다음에|나중에|그만둔다|그냥 넘어간다|하지 않는다|안 한다|지금은 |이번에는 .*(않는다|둔다)|지금처럼 둔다|그대로 둔다|취소)/;
+E.CANCEL_RE = /^(다음에|나중에|그만둔다|그냥 넘어간다|하지 않는다|안 한다|지금은 |이번에는 .*(않는다|둔다)|지금처럼 둔다|그대로 둔다|취소|거절한다|사양한다|생각을 접는다|마음만 받는다)/;
+/** 하지 않기인가: 선택지에 cancel 표시가 있으면 그것을, 없으면 이름으로(피드백 218번) */
+E.isCancel = (ch) => (ch.cancel !== undefined ? !!ch.cancel : E.CANCEL_RE.test(String(ch.label || '')));
 E.choose = (S, idx) => {
   const q = S.queue[0];
   if (!q) return null;
@@ -29671,9 +30026,15 @@ E.choose = (S, idx) => {
   S.queue.shift();
   S.stats.choices = (S.stats.choices || 0) + 1;
   const A0 = q.ctx && q.ctx._act;
+  const q0 = S.queue.length;
   const res = ch.run(S, q.ctx);
+  // 할 일이 연 결정에서 고른 것이 다음 결정만 연 '길 고르기'였으면(기록 없음) 이어 열린 결정에도 돌려받기 표시를 넘긴다(피드백 218번)
+  if (A0 && (res === null || res === undefined) && S.queue.length > q0) {
+    for (let i = q0; i < S.queue.length; i++) { const nq = S.queue[i]; nq.ctx = nq.ctx || {}; if (!nq.ctx._act) nq.ctx._act = A0; }
+  }
   // 결정 안에서 따로 돌려주지 않았으면(기회가 아직 줄어 있으면) 여기서 돌려준다
-  if (A0 && E.CANCEL_RE.test(String(ch.label || '')) && (S.ap || 0) < A0.ap0) {
+  // 다음 결정을 이어서 연 선택지(앞 목록으로 등)는 돌려주지 않는다 — 이어진 결정에서 고르는 것이 끝이므로
+  if (A0 && E.isCancel(ch) && S.queue.length <= q0 && (S.ap || 0) < A0.ap0) {
     S.ap = A0.ap0;
     if (A0.cd0 === undefined) delete S.actCd[A0.id]; else S.actCd[A0.id] = A0.cd0;
     if (A0.paid > 0) { if (A0.own) S.money += A0.paid; else E.addMoney(S, A0.paid); }
@@ -39705,6 +40066,7 @@ if (typeof module !== 'undefined') module.exports = Mr;
  *  S.cult    = { name, k(포교 갈래), since, depth 0~100, money(바친 돈, 보통 월급 몇 달 치), cut, quit, out(벗어난 달 | null), how, healed }
  *  S.sect    = { name, kind('honest' 정직한 공동체 | 'cult' 사이비), since, n(따르는 사람), don(거둔 돈, 달 수), sc(세간의 눈길 0~100),
  *               end(끝난 달 | null), why, auto(범죄 직업으로 들어선 경우) }
+ *              이끄는 사람의 자리(단계·명성·권력·결정)와 이끄는 동안의 개종 막기는 sectlead.js(피드백 222번)가 더한다.
  */
 'use strict';
 
@@ -50807,29 +51169,33 @@ const Md = {};
   const playSd = (q) => 1.9 - 0.6 * U.clamp((q - 78) / 17, 0, 1);
   const poolF = (S) => { const pool = hasCr() ? Cr.pool(Cr.nativeLang(S), S).n : 5e7; return { pool, f: U.clamp(Math.pow(pool / 5e7, 0.3), 0.3, 3) }; };
   /** 재생 수 한 번 굴리기(promo: 홍보 배수) */
-  Md.songPlays = (S, w, promo = 1) => {
+  Md.songPlays = (S, w, promo = 1, kn) => {
     const { pool, f } = poolF(S);
     let n = Math.exp(U.normal(playMu(w.q), playSd(w.q))) * f; // 새로 찾아 듣는 사람
     const L = Md.listeners(S);
     n += L.lis * (2 + 3 * U.rand()) * (0.6 + w.q / 250); // 지난 곡을 듣던 사람은 새 곡도 몇 번씩
     n += L.fan * (6 + 12 * U.rand()); // 팬덤은 발표하면 여러 번 듣는다
     n += (S.stream ? S.stream.fans : 0) * (0.05 + U.rand() * 0.25) + (hasCr() ? Cr.fameReach(S) * 0.002 : 0);
+    // 피드백 228번: 다른 분야 명성·지위로 이름을 아는 사람이 찾아 듣는다(배우·운동선수·정치인의 곡, 처음 몇 곡은 관심이 더 큼)
+    if (hasAr() && Ar.knownPlays) n += Ar.knownPlays(S, w, kn) * Math.exp(U.normal(0, 0.4));
     n *= (hasAr() ? Ar.dealMult(S) : 1) * promo;
     return Math.round(Math.min(n, pool * 0.3));
   };
   /** 화면용 예상 재생 범위(가운데 절반) */
   Md.playRange = (S, w, promo = 1) => {
     const { f } = poolF(S), L = Md.listeners(S), sd = playSd(w.q);
-    const base = (L.lis * 3.5 * (0.6 + w.q / 250) + L.fan * 12 + (S.stream ? S.stream.fans * 0.2 : 0)) * (hasAr() ? Ar.dealMult(S) : 1) * promo;
+    const kp = hasAr() && Ar.knownPlays ? Ar.knownPlays(S, w) : 0;
+    const base = (L.lis * 3.5 * (0.6 + w.q / 250) + L.fan * 12 + (S.stream ? S.stream.fans * 0.2 : 0) + kp) * (hasAr() ? Ar.dealMult(S) : 1) * promo;
     const m = Math.exp(playMu(w.q)) * f * (hasAr() ? Ar.dealMult(S) : 1) * promo;
     const r = (x) => { const p = Math.pow(10, Math.floor(Math.log10(Math.max(10, x))) - 1); return Math.round(x / p) * p; };
     return [r(base + m * Math.exp(-0.674 * sd)), r(base + m * Math.exp(0.674 * sd))];
   };
   /** 음원 발표(음악만 — 다른 종류의 영상·작품은 arts.js 그대로) */
   Md.release = (S, w, promo = 1) => {
+    const kn = hasAr() && Ar.known ? Ar.known(S, 'music', 'music', w) : null; // 알려진 정도(피드백 228번)
     if (!w.out) H.ach(S, 'art_debut');
     w.out = 'release';
-    const n = Md.songPlays(S, w, promo);
+    const n = Md.songPlays(S, w, promo, kn);
     w.plays = n;
     const rpm = hasCr() ? Cr.pool(Cr.nativeLang(S), S).rpm : 1;
     w.r = (n * 0.004 * U.clamp(rpm / 4.5, 0.08, 1.1)) / Wd.priceLevel(E.iso(S));
@@ -50848,7 +51214,8 @@ const Md = {};
     } else if (n >= 1e5) { musRepUp(S, 6); E.stat(S, 'happy', 10); t = `입소문을 타 ${ko(n)}번 재생되었습니다.`; }
     else if (n >= 3000) { musRepUp(S, 1); E.stat(S, 'happy', 4); t = `${ko(n)}번 재생되었습니다. 들은 사람 몇몇이 보내 준 응원이 큰 힘이 되었습니다.`; }
     else { E.stat(S, 'happy', -2); t = `들은 사람은 ${ko(n)}명 남짓이었습니다.`; }
-    return `${Ar.wt(w)}${U.j(w.t, '을').slice(w.t.length)} 음원으로 발표했습니다. ${t}${w.r >= H.pay(S, 0.05) ? ` 음원 수입은 한 해 약 ${fmt(S, w.r)}입니다.` : ''}`;
+    const tail = kn ? Ar.pressTxt(S, kn, '곡') + Ar.reception(S, w.q, kn) : ''; // 유명인의 곡: 보도와 평(피드백 228번)
+    return `${Ar.wt(w)}${U.j(w.t, '을').slice(w.t.length)} 음원으로 발표했습니다. ${t}${w.r >= H.pay(S, 0.05) ? ` 음원 수입은 한 해 약 ${fmt(S, w.r)}입니다.` : ''}${tail}`;
   };
   /** 프로의 발매: 소속사 홍보 + 음악 방송 순위 */
   Md.proRelease = (S, w) => {
@@ -50893,7 +51260,10 @@ const Md = {};
         const mr = Md.musRep(S), L = Md.listeners(S);
         const base = L.lis + L.fan >= 100 ? ` 내 음악을 찾아 듣는 사람 약 ${ko(L.lis + L.fan)}명.` : '';
         const tip = Md.proMusic(S) ? '데뷔한 가수는 소속사·음반사를 통해 발매하고 음악 방송·공연으로 알립니다.' : '음원은 재생 수만큼 수입이 들어옵니다. 대부분의 곡은 몇백 번 재생에 그칩니다.';
-        return C.t(S, `작곡·음원 ${Ar.wt(w)}${U.j(w.t, '을').slice(w.t.length)} 완성했습니다. 완성도 ${w.q}${mr >= 1 ? `, 음악 이름값 ${Math.round(mr)}` : ''}.${used}${base} ${tip}`);
+        // 알려진 정도(피드백 228번): 다른 분야 명성이나 지위가 있으면 함께 보여 준다
+        const kn = Ar.known ? Ar.known(S, 'music', 'music', w) : null;
+        const kt = kn && kn.borrowed >= 3 ? `, ${Ar.knownTxt(S, kn)}${kn.hype > 1.05 && kn.borrowed >= 15 ? ' — 처음 몇 곡은 \'유명인이 낸 곡\'이라 관심이 큽니다. 완성도가 낮으면 혹평을 받을 수 있습니다' : ''}` : mr >= 1 ? `, 음악 이름값 ${Math.round(mr)}` : '';
+        return C.t(S, `작곡·음원 ${Ar.wt(w)}${U.j(w.t, '을').slice(w.t.length)} 완성했습니다. 완성도 ${w.q}${kt}.${used}${base} ${tip}`);
       };
       D.choices = (S, ctx) => {
         const w = curW(S, ctx);
@@ -55695,11 +56065,595 @@ const Ab = {};
   };
 })();
 
+/* 지구 어딘가에서 — 모임을 이끄는 사람(인도자·목자·지도자·교주)의 자리와 개종 막기 (피드백 222번, v0.6.7)
+ *
+ * 문제(religion.js): '내 가르침으로 모임을 연다'(S.sect)를 한 뒤에도 '종교·신념 정하기'(rl_pick)가 모임을 보지 않고
+ *   다른 종교·신념·드문 신앙으로 옮기게 했고, 따르는 사람이 늘어도 이끄는 사람으로서의 자리(이름·영향력·대우)가 없었다.
+ * 1. 개종 막기: 모임을 이끄는 중에 '다른 종교·교파를 알아본다'·'종교를 내려놓는다'·'드문 신앙'을 고르면 먼저 결정 sl_conv
+ *      해산한다(따르는 사람의 실망·평판↓ — 사이비면 옛 신도들의 고소 r_sl_after 가 남음) / 다른 사람에게 맡긴다(why 'heir') /
+ *      모임과 함께 새 신앙으로 옮긴다(정직한 모임만, 드묾 — 따라올 가능성은 인품, 따르는 사람 일부가 떠남) / 그만둔다(지금 믿음 유지).
+ *    해산·맡기면 S.sect.end·why 를 남기고 처음 고른 흐름(rl_rel·rl_phil·rl_minor)을 잇는다.
+ *    모임을 이끄는 동안 사건으로 바뀌는 개종(어릴 적 신앙으로·이웃의 신앙·영적인 탐색·멀어진 신앙·믿음의 갈림길)은 일어나지 않고,
+ *    '서로 다른 신앙'(배우자)에서는 개종 대신 '각자의 신앙을 지킨다'. 그 밖의 길로 공개 개종하면(Vl.changeRel) 모임은 남은 사람들에게 넘어간다(why 'convert').
+ * 2. 이끄는 사람의 자리: 따르는 사람 수로 단계(정직한 모임 40·150명, 사이비 15·60명)
+ *      정직한 모임 — 작은 모임 인도자 → 공동체 목자 → 신앙 공동체 지도자 · 사이비 — 작은 모임의 교주 → 교주 → 큰 모임의 교주
+ *    상태 줄(C.statusText)·할 일 힌트·사람 탭(일과 활동 Cr.view, 가치관과 믿음 Rl.noteKo): "'빛 모임' 목자(따르는 사람 약 80명)".
+ *    명성·권력 목표(Cr.fameTarget·Cr.powerTarget)에 '신앙 공동체'·'교주' 출처, 단계가 처음 오를 때 명성·평판,
+ *    해마다 이끈 경험(S.ab.lx → 인품, stats2.js)과 평판(정직한 모임 +, 세간의 눈길이 큰 사이비 −).
+ *    전업(r_sect_full 의 성직자 일, j.sect)은 직함이 단계를, 수입이 따르는 사람 수를 따른다(헌금으로 사는 살림). 사양해도 5년마다 세 번까지 다시 청한다.
+ *    결정: 모임의 규칙(r_sl_rule 느슨·엄격·통제 / 사이비는 할당·숙소) · 떠받드는 사람들(r_sl_adore — 따르는 사람이 많을수록 잦음:
+ *          말린다(인품)·곁에 둔다(관계·권력)·나를 받들게 한다(교주화)) · 세간의 눈길(r_sl_watch 정직한 모임 취재) ·
+ *          수사(r_sl_probe 사이비) · 남은 사람들(r_sl_after 사이비를 정리한 뒤 옛 신도들의 고소).
+ *    헌금함 앞에서(r_sect_tempt)는 따르는 사람이 많을수록 잦고, 4년 간격으로 세 번까지 찾아온다.
+ *    교주화(헌금 챙기기·통제·떠받듦)를 고르면 사이비가 된다(범죄 직업 '종교 사기꾼'·삶의 저울 Kr.deed).
+ * 3. 옛 저장: ensure 에서 단계(top)·전업 표시(j.sect·j.base)·헌금 유혹과 전업 청의 횟수(tN·fN)를 채운다.
+ * 상태(S.sect 에 더함): top(지금까지 오른 단계) · rule('loose'|'strict'|'control'|'quota') · carry({ m, ok } 모임째 옮기기 대기) ·
+ *   mv({ r, sb, m } 모임째 옮긴 신앙) · tN·fN(헌금 유혹·전업 청 횟수) · turn(사이비로 바뀐 까닭) · dev·hum(곁에 둔·말린 횟수) · aft(해산 뒤 고소의 끝)
+ * 수명·보통 선택 인생은 그대로(모임을 여는 것은 보통 선택이 아님). 검사: ONEIN8B_EXTRA=sectlead.js(manifest 에서는 history.js 앞).
+ */
+'use strict';
+
+const Sl = {};
+(() => {
+  if (typeof Rl === 'undefined' || !Rl || typeof Rl.activeSect !== 'function' || typeof Rl.endSect !== 'function') return;
+  E.Sl = Sl;
+  const clamp = U.clamp, R = Math.round;
+  const act = (S) => !!S && !!S.sect && Rl.activeSect(S);
+  const lead = (S) => (act(S) ? S.sect : null);
+  const isCult = (T) => !!T && T.kind === 'cult';
+  const hasVl = () => typeof Vl !== 'undefined' && typeof Vl.add === 'function';
+  const hasCm = () => typeof Cm !== 'undefined' && typeof Cm.takeCJ === 'function' && !!(Cm.JOBS && Cm.JOBS.fakeguru);
+  const hasKr = () => typeof Kr !== 'undefined' && typeof Kr.deed === 'function';
+  const hasEc = () => typeof Ec !== 'undefined' && typeof Ec.earn === 'function';
+  const hasCr = () => typeof Cr !== 'undefined' && !!Cr;
+  const vadd = (S, d) => { if (hasVl()) Vl.add(S, d); };
+  const earn = (S, src, m) => { if (hasEc()) Ec.earn(S, src, H.pay(S, m)); else E.addMoney(S, H.pay(S, m)); };
+  /** 감쌀 대상이 없어서 건너뛴 것(검사 도구가 보고) */
+  Sl.MISSING = [];
+  const miss = (w) => { if (!Sl.MISSING.includes(w)) Sl.MISSING.push(w); };
+  /** 검사 도구용 집계(저장하지 않음) */
+  Sl.TALLY = {};
+  const tally = (k, n = 1) => { Sl.TALLY[k] = (Sl.TALLY[k] || 0) + n; };
+  /** 따옴표로 감싼 이름 + 조사: qn('빛 모임', '을') → "'빛 모임'을" · 받침과 상관없는 조사('에'·'의')는 그대로 붙인다 */
+  const qn = (w, t) => {
+    const s = String(w);
+    if (!t) return `'${s}'`;
+    const r = U.j(s, t);
+    return `'${s}'` + (r.length > s.length ? r.slice(s.length) : t);
+  };
+  /** 괄호로 끝나는 낱말에도 조사를 바르게 */
+  const jx = (w, t) => { const b = String(w).replace(/\s*\([^)]*\)$/, '').replace(/['"]$/, '').replace(/^['"]/, ''); return w + U.j(b, t).slice(b.length); };
+  const nKo = (n) => Math.max(0, R(n || 0)).toLocaleString('ko-KR');
+  const amtKo = (S, m) => (hasEc() && Ec.fmt ? Ec.fmt(S, H.pay(S, m)) : H.amt(S, m));
+
+  /* ================================================================ 단계와 이름 */
+  const CUT = { honest: [40, 150], cult: [15, 60] };
+  const kk = (T) => (isCult(T) ? 'cult' : 'honest');
+  /** 0 작은 모임 · 1 · 2 큰 모임 */
+  Sl.stage = (T) => { const c = CUT[kk(T)]; return T.n >= c[1] ? 2 : T.n >= c[0] ? 1 : 0; };
+  const SHORT = { honest: ['인도자', '목자', '지도자'], cult: ['교주', '교주', '교주'] };
+  const LONG = { honest: ['작은 모임 인도자', '공동체 목자', '신앙 공동체 지도자'], cult: ['작은 모임의 교주', '교주', '큰 모임의 교주'] };
+  Sl.title = (T) => SHORT[kk(T)][Sl.stage(T)];
+  Sl.role = (T) => LONG[kk(T)][Sl.stage(T)];
+  const folKo = (T) => (isCult(T) ? '신도' : '따르는 사람');
+  const RULE_KO = { loose: '규칙이 느슨함', strict: '규칙이 엄격함', control: '바깥과 끊게 함', quota: '헌금·전도 할당' };
+  const END_KO = { heir: '다른 사람에게 맡기고 물러남', disband: '해산함', convert: '다른 신앙으로 옮기며 떠남', arrest: '붙잡혀 흩어짐', ban: '단속으로 문을 닫음', media: '정리하고 물러남', fade: '사람이 줄어 문을 닫음', quit: '손을 뗌' };
+  /** 상태 줄: "'빛 모임' 목자(따르는 사람 약 80명)" */
+  Sl.line = (S) => { const T = lead(S); return T ? `'${T.name}' ${Sl.title(T)}(${folKo(T)} 약 ${nKo(T.n)}명)` : ''; };
+  /** 사람 탭: "'빛 모임'을 이끄는 사람 · 공동체 목자 · 따르는 사람 약 80명 · 6년째" */
+  Sl.desc = (S) => {
+    const T = lead(S);
+    if (!T) return '';
+    const y = Math.max(0, Math.floor((S.ageM - T.since) / 12)), j = S.work && S.work.job;
+    return [`${qn(T.name, '을')} 이끄는 사람`, Sl.role(T), `${folKo(T)} 약 ${nKo(T.n)}명`, y ? `${y}년째` : '올해 엶',
+      j && j.sect ? '헌금으로 사는 전업' : '', RULE_KO[T.rule] || '', T.mv && hasMvKo(S) ? `${jx(Rl.shortKo(S), '으로')} 함께 옮김` : ''].filter(Boolean).join(' · ');
+  };
+  const hasMvKo = (S) => typeof Rl.shortKo === 'function' && S.rel !== 'none';
+
+  /* ================================================================ 명성·권력(career.js 의 목표에 출처를 더한다) */
+  const fameV = (T) => (isCult(T) ? clamp(6 * Math.log10(T.n + 1) - 6 + (T.sc || 0) / 5, 0, 55) : clamp(7 * Math.log10(T.n + 1) - 8, 0, 40));
+  const powV = (T) => (isCult(T) ? clamp(8.5 * Math.log10(T.n + 1) - 5, 0, 50) : clamp(6 * Math.log10(T.n + 1) - 4, 0, 35));
+  const srcKo = (T) => (isCult(T) ? '교주' : '신앙 공동체');
+  Sl.fameV = fameV; Sl.powV = powV;
+  if (hasCr() && typeof Cr.fameTarget === 'function') {
+    const ft0 = Cr.fameTarget;
+    Cr.fameTarget = (S) => {
+      const r = ft0(S), T = lead(S);
+      if (!T || !r || !Array.isArray(r.src) || E.age(S) < 18) return r;
+      const v = fameV(T);
+      if (v > 0.5) { r.src.push([srcKo(T), v]); r.src.sort((a, b) => b[1] - a[1]); r.v = r.src[0][1]; }
+      return r;
+    };
+  } else miss('Cr.fameTarget');
+  if (hasCr() && typeof Cr.powerTarget === 'function') {
+    const pt0 = Cr.powerTarget;
+    Cr.powerTarget = (S) => {
+      const r = pt0(S), T = lead(S);
+      if (!T || !r || !Array.isArray(r.src) || E.age(S) < 18) return r;
+      const v = powV(T);
+      if (v > 0.5) {
+        r.src.push([srcKo(T), v]);
+        r.src.sort((a, b) => b[1] - a[1]);
+        r.v = Math.min(100, r.src[0][1] + 0.35 * r.src.slice(1).reduce((s, [, x]) => s + x, 0));
+      }
+      return r;
+    };
+  } else miss('Cr.powerTarget');
+
+  /* ================================================================ 화면 */
+  // 상태 줄: 직업 칸 옆(전업·종교 사기꾼이면 그 직함 자리)에 "'빛 모임' 목자(따르는 사람 약 80명)"
+  if (typeof C.statusText === 'function') {
+    const st0 = C.statusText;
+    C.statusText = (S) => {
+      const r = st0(S);
+      if (!S || !S.indep || !act(S)) return r;
+      const part = Sl.line(S), j = S.work && S.work.job;
+      if (j && (j.sect || j.id === 'fakeguru')) { const jt = H.jobTitle(S); if (jt && r && r.indexOf(jt) >= 0) return r.replace(jt, () => part); }
+      return r ? `${r} · ${part}` : part;
+    };
+  } else miss('C.statusText');
+  // 사람 탭 '일과 활동' 카드(ui.js 가 v.media 의 [이름, 값] 줄을 그대로 보인다)
+  if (hasCr() && typeof Cr.view === 'function') {
+    const cv0 = Cr.view;
+    Cr.view = (S) => {
+      const v = cv0(S);
+      if (!v || !act(S)) return v;
+      v.media = (Array.isArray(v.media) ? v.media : []).concat([['이끄는 모임', Sl.desc(S)]]);
+      return v;
+    };
+  } else miss('Cr.view');
+  // 사람 탭 '가치관과 믿음' 카드의 덧말(religion.js Rl.noteKo)
+  if (typeof Rl.noteKo === 'function') {
+    const nk0 = Rl.noteKo;
+    Rl.noteKo = (S) => {
+      let t = nk0(S);
+      const T = S && S.sect;
+      if (!T || !t) return t;
+      if (act(S)) t = t.replace(/스스로 연 모임 '[^']*' · 따르는 사람 약 [\d,]+명/, () => `${qn(T.name, '을')} 이끄는 ${Sl.role(T)}(${folKo(T)} 약 ${nKo(T.n)}명)`);
+      else t = t.replace(/예전에 연 모임 '[^']*'\(문을 닫음\)/, () => `예전에 연 모임 ${qn(T.name)}(${END_KO[T.why] || '문을 닫음'})`);
+      return t;
+    };
+  } else miss('Rl.noteKo');
+  // 할 일 '종교·신념 정하기'의 힌트
+  {
+    const BA = C.ACTION && C.ACTION.belief;
+    if (BA && typeof BA.hint === 'function') { const h0 = BA.hint; BA.hint = (S) => (act(S) ? `${qn(S.sect.name, '을')} 이끄는 중(${Sl.title(S.sect)})` : h0(S)); }
+    else miss('C.ACTION.belief');
+  }
+
+  /* ================================================================ 1. 개종 막기 */
+  const loseSectJob = (S) => { const j = S.work && S.work.job; if (j && j.sect) E.loseJob(S, 'quit'); };
+  const carryOn = (S) => { const T = lead(S); return !!(T && T.carry && T.carry.m === S.ageM); };
+  /** 고른 갈래가 공개된 믿음을 바꾸는가: 바꾸면 이어 열 결정 id */
+  const goOf = (S, c) => {
+    const l = String((c && c.label) || '');
+    if (/^다른 종교·교파를 알아본다|^종교를 가져 본다/.test(l)) return 'rl_rel';
+    if (/^드문 신앙/.test(l)) return 'rl_minor';
+    if (/나만의 신념/.test(l) && S.rel !== 'none') return 'rl_phil';
+    return null;
+  };
+  const PK = C.DEC.rl_pick;
+  if (PK && typeof PK.choices === 'function') {
+    const tx0 = PK.text, ch0 = PK.choices;
+    PK.text = (S, ctx) => {
+      const t = tx0(S, ctx), T = lead(S);
+      return T ? `${t} ${C.t(S, `지금 {N은} ${qn(T.name, '을')} 이끄는 ${Sl.role(T)}입니다(${folKo(T)} 약 ${nKo(T.n)}명).`)}` : t;
+    };
+    PK.choices = (S, ctx) => {
+      const L = ch0(S, ctx);
+      if (!act(S)) return L;
+      return L.map((c) => {
+        const go = goOf(S, c);
+        if (!go) return c;
+        return { ...c, sub: [c.sub, '먼저 이끄는 모임을 어떻게 할지 정합니다'].filter(Boolean).join(' · '),
+          run: (S2, c2) => { if (!act(S2)) return c.run(S2, c2); E.ask(S2, 'sl_conv', { go }); return null; } };
+      });
+    };
+  } else miss('C.DEC.rl_pick');
+  // 모임째 옮기는 중에는 '남몰래 마음으로만'을 고를 수 없다(모임 전체가 옮기는 일은 드러날 수밖에 없음)
+  if (C.DEC.rl_open && typeof C.DEC.rl_open.choices === 'function') {
+    const oc0 = C.DEC.rl_open.choices;
+    C.DEC.rl_open.choices = (S, ctx) => { const L = oc0(S, ctx); return carryOn(S) ? L.filter((c) => !/남몰래/.test(String(c.label || ''))) : L; };
+  } else miss('C.DEC.rl_open');
+
+  const goKo = (S, go) => (go === 'rl_rel' ? (S.rel === 'none' ? '종교를 가지려면' : '다른 종교·교파로 옮기려면') : go === 'rl_minor' ? '다른 신앙으로 옮기려면' : go === 'rl_phil' ? '종교를 내려놓으려면' : '믿음을 바꾸려면');
+  /** 모임째 옮길 때 사람들이 따라올 가능성: 인품·카리스마(H.pres), 작은 모임일수록 쉬움 */
+  const carryP = (S) => clamp(0.3 + (H.pres(S) - 50) / 120 + (S.sect && S.sect.n < 40 ? 0.1 : 0), 0.12, 0.7);
+  const disband = (S, ctx) => {
+    const T = S.sect, n = T.n, cult = isCult(T);
+    Rl.endSect(S, 'disband', true);
+    loseSectJob(S);
+    tally('disband'); tally('disband_' + T.kind);
+    let t;
+    if (cult) {
+      vadd(S, { rep: -3 }); E.stat(S, 'happy', -3);
+      t = `{N은} ${qn(T.name, '을')} 해산했습니다. 신도 ${nKo(n)}명은 뿔뿔이 흩어졌지만, 재산을 바친 사람들과 그 가족들의 원망은 그대로 남았습니다.`;
+    } else {
+      vadd(S, { rep: -R(2 + Math.log10(n + 1) * 1.5) }); E.stat(S, 'happy', -5); E.stat(S, 'social', -3);
+      t = `{N은} ${qn(T.name, '을')} 해산했습니다. ${n >= 10 ? `함께하던 ${nKo(n)}명은 크게 실망했고, 몇몇은 {N을} 원망하는 말을 남기고 떠났습니다.` : '함께하던 사람들은 서운한 얼굴로 흩어졌습니다.'}`;
+    }
+    if (ctx && ctx.go) E.ask(S, ctx.go, {});
+    return C.t(S, t);
+  };
+  const handOver = (S, ctx) => {
+    const T = S.sect, cult = isCult(T);
+    loseSectJob(S);
+    const t0 = Rl.endSect(S, 'heir');
+    tally('handOver'); tally('handOver_' + T.kind);
+    E.stat(S, 'happy', cult ? -1 : 2);
+    if (!cult) vadd(S, { rep: 1 });
+    const t = cult ? `${t0} 모임은 이어지지만, {N}의 이름으로 거둔 돈과 상처는 지워지지 않았습니다.` : `${t0} 사람들은 아쉬워하면서도 {N}의 앞길을 빌어 주었습니다.`;
+    if (ctx && ctx.go) E.ask(S, ctx.go, {});
+    return C.t(S, t);
+  };
+  C.DEC.sl_conv = {
+    title: () => '모임을 어떻게 할까요?',
+    text: (S, ctx) => {
+      const T = S.sect;
+      if (!T) return '';
+      return C.t(S, `{N은} ${qn(T.name, '을')} 이끄는 ${Sl.role(T)}입니다(${folKo(T)} 약 ${nKo(T.n)}명). ${goKo(S, ctx && ctx.go)} 모임을 먼저 어떻게 할지 정해야 합니다. 따르는 사람들에게는 {N}의 믿음이 곧 모임의 믿음입니다.`);
+    },
+    choices: (S, ctx) => {
+      const T = S.sect, out = [];
+      if (!T || !act(S)) return [{ label: '계속 알아본다', run: (S2, c2) => { if (c2 && c2.go) E.ask(S2, c2.go, {}); return null; } }];
+      const cult = isCult(T);
+      out.push({ label: '모임을 해산한다', sub: cult ? '신도들은 흩어지지만, 재산을 바친 사람들의 원망과 고소가 남을 수 있습니다' : '따르는 사람들이 실망하고, 평판이 내려갑니다', run: (S2, c2) => disband(S2, c2) });
+      out.push({ label: '다른 사람에게 맡긴다', sub: cult ? '가까이 따르던 사람에게 모임을 넘기고 물러납니다. 지난 일은 그대로 남습니다' : '오래 함께한 사람에게 이끄는 자리를 넘기고 물러납니다', run: (S2, c2) => handOver(S2, c2) });
+      if (!cult && !T.auto && ctx && ctx.go !== 'rl_phil') {
+        out.push({ label: '모임과 함께 새 신앙으로 옮긴다', sub: `드문 일입니다 · 따르는 사람 일부는 떠납니다 · 함께 따라올 가능성 약 ${R(carryP(S) * 100)}%`,
+          run: (S2, c2) => { S2.sect.carry = { m: S2.ageM, ok: U.chance(carryP(S2)) }; tally('carryTry'); E.ask(S2, c2.go, {}); return null; } });
+      }
+      out.push({ label: '그만둔다', sub: '지금의 믿음과 모임을 그대로 지킵니다', typ: true, run: (S2) => C.t(S2, `{N은} 믿음을 바꾸지 않고 ${qn(S2.sect.name, '을')} 계속 이끌기로 했습니다.`) });
+      return out;
+    },
+  };
+  /** 모임째 옮긴 뒤: 따르는 사람 일부가 떠난다 */
+  const carryOut = (S, T, cy) => {
+    const n0 = T.n;
+    T.n = Math.max(0, R(n0 * U.randInt(cy.ok ? 55 : 15, cy.ok ? 80 : 40) / 100));
+    const lost = n0 - T.n, nm = Rl.shortKo(S);
+    tally(cy.ok ? 'carryOk' : 'carryFail');
+    if (T.n < 3) {
+      Rl.endSect(S, 'fade', true); loseSectJob(S); vadd(S, { rep: -2 });
+      return C.t(S, `그러나 ${qn(T.name)} 사람들은 {N을} 따라오지 않았습니다. 모임은 그대로 흩어졌습니다.`);
+    }
+    if (cy.ok) { vadd(S, { rep: 1 }); return C.t(S, `${qn(T.name)} 사람들도 대부분 {N을} 따라 ${jx(nm, '으로')} 옮겼습니다.${lost > 0 ? ` ${nKo(lost)}명은 처음 가르침을 지키겠다며 떠났습니다.` : ''}`); }
+    vadd(S, { rep: -2 }); E.stat(S, 'happy', -3);
+    return C.t(S, `${qn(T.name)} 사람들 가운데 {N을} 따라 ${jx(nm, '으로')} 옮긴 사람은 ${nKo(T.n)}명뿐이었습니다. 나머지는 "처음 가르침과 다르다"며 떠났습니다.`);
+  };
+  if (typeof Rl.apply === 'function') {
+    const ap0 = Rl.apply;
+    Rl.apply = (S, ctx, why) => {
+      const T = lead(S), cy = T && T.carry && T.carry.m === S.ageM ? T.carry : null;
+      if (T && T.carry) delete T.carry;
+      if (!cy || !ctx || ctx.r === 'none' || ctx.sec) return ap0(S, ctx, why);
+      T._mv = true;
+      let r;
+      try { r = ap0(S, ctx, why); } finally { delete T._mv; }
+      T.mv = { r: ctx.r, sb: ctx.sb || null, m: S.ageM };
+      return [r, carryOut(S, T, cy)].filter(Boolean).join(' ');
+    };
+  } else miss('Rl.apply');
+  // 그 밖의 길(사건·다른 모듈)로 공개 개종하면: 모임은 남은 사람들에게 넘어간다
+  if (hasVl() && typeof Vl.changeRel === 'function') {
+    const cr0 = Vl.changeRel;
+    Vl.changeRel = (S, to, how, opt = {}) => {
+      const T = lead(S), from = S && S.rel;
+      if (!T || T._mv || (opt && opt.secret) || how === 'found' || !to || to === from) return cr0(S, to, how, opt);
+      const r = cr0(S, to, how, opt);
+      if (S.rel === from) return r;
+      const cult = isCult(T);
+      Rl.endSect(S, 'convert', true);
+      loseSectJob(S);
+      vadd(S, { rep: cult ? -2 : -3 }); E.stat(S, 'happy', -2);
+      tally('convertLeave');
+      const t = cult ? `${qn(T.name, '의')} 신도들은 뿔뿔이 흩어졌고, 재산을 바친 사람들의 원망은 그대로 남았습니다.`
+        : `{N이} 다른 신앙으로 옮기자 ${qn(T.name)} 사람들은 크게 실망했습니다. 모임은 오래 함께한 사람들이 이어 가기로 했습니다.`;
+      return [r, C.t(S, t)].filter(Boolean).join(' ');
+    };
+  } else miss('Vl.changeRel');
+  // 모임을 이끄는 동안에는 사건으로 믿음이 바뀌지 않는다
+  {
+    const NO_CONV = new Set(['v_return', 'v_newfaith', 'v_seek', 'v_drift', 'v_crossroad']);
+    let n = 0;
+    for (const ev of C.EVENTS) {
+      if (!NO_CONV.has(ev.id) || typeof ev.when !== 'function') continue;
+      const w0 = ev.when;
+      ev.when = (S) => !act(S) && w0(S);
+      n++;
+    }
+    if (!n) miss('v_* 개종 사건');
+    const pf = C.DEC.x_v_partnerfaith;
+    if (pf && typeof pf.choices === 'function') {
+      const pc0 = pf.choices;
+      pf.choices = (S, ctx) => {
+        const L = pc0(S, ctx);
+        if (!act(S)) return L;
+        const out = L.filter((c) => !/개종한다|종교를 내려놓는다/.test(String(c.label || '')));
+        if (out.length === L.length) return L;
+        if (!out.some((c) => /각자의 신앙/.test(String(c.label || '')))) {
+          out.push({ label: '각자의 신앙을 지키며 산다', sub: '모임을 이끄는 동안에는 지금의 믿음을 지킵니다', typ: true,
+            run: (S2) => {
+              const p = S2.fam && S2.fam.partner;
+              if (p && typeof Pp !== 'undefined' && Pp.bump) Pp.bump(S2, p, 'partner', 2);
+              return C.t(S2, `서로의 명절을 함께 챙기며 각자의 신앙을 지키기로 했습니다. {N은} ${qn(S2.sect.name, '을')} 이끄는 몸이라 믿음을 바꿀 수 없다고 털어놓았습니다.`);
+            } });
+        }
+        return out;
+      };
+    } else miss('x_v_partnerfaith');
+  }
+
+  /* ================================================================ 2. 교주화(사이비로 바뀜) */
+  /** 정직한 모임이 사이비로 바뀐다: 범죄 직업 '종교 사기꾼', 사이비 단계로 다시 셈 */
+  const turnCult = (S, why) => {
+    const T = S.sect;
+    T.kind = 'cult'; T.sc = Math.max(T.sc || 0, 15); T.turn = why;
+    T.top = Sl.stage(T);
+    if (hasCm() && S.crm) Cm.takeCJ(S, 'fakeguru');
+    else if (S.rap) { S.rap.crime = Math.max(S.rap.crime || 0, 1); S.rap.ever.crime = true; }
+    tally('turn_' + why);
+  };
+  Sl.turnCult = turnCult;
+  // 헌금함 앞에서(religion.js r_sect_tempt): 따르는 사람이 많을수록 잦고, 4년마다 세 번까지
+  {
+    const TE = C.EVENTS.find((e) => e.id === 'r_sect_tempt');
+    if (TE) {
+      const r0 = TE.rate, w0 = TE.when, run0 = TE.run;
+      TE.once = false; TE.cd = 4;
+      TE.when = (S) => w0(S) && ((S.sect && S.sect.tN) || 0) < 3;
+      TE.rate = (S) => { const b = typeof r0 === 'function' ? r0(S) : r0 || 0; return b > 0 && S.sect ? clamp(b * (1 + Math.log10(Math.max(1, S.sect.n / 40))), 0, 0.9) : 0; };
+      TE.run = (S) => { if (S.sect) S.sect.tN = (S.sect.tN || 0) + 1; return run0(S); };
+      const TD = C.DEC.x_r_sect_tempt;
+      if (TD && typeof TD.text === 'function') {
+        const tt0 = TD.text;
+        TD.text = (S, ctx) => (S.sect && (S.sect.tN || 0) >= 2
+          ? C.t(S, `${qn(S.sect.name, '의')} 헌금이 따르는 사람 수만큼 불어났습니다. 모임 살림을 맡은 사람이 "이제는 이끄는 분의 몫을 넉넉히 챙기셔도 아무도 뭐라 하지 않는다"고 권합니다. 큰 집과 차를 마련하자는 말도 나옵니다.`)
+          : tt0(S, ctx));
+      }
+    } else miss('r_sect_tempt');
+    // 모임에 온전히(r_sect_full, 전업): 한 번 사양해도 5년마다 세 번까지 다시 청한다(단계 2 = 따르는 사람 150명부터)
+    const FE = C.EVENTS.find((e) => e.id === 'r_sect_full');
+    if (FE) {
+      const fw0 = FE.when, frun0 = FE.run;
+      FE.once = false; FE.cd = 5;
+      FE.when = (S) => fw0(S) && ((S.sect && S.sect.fN) || 0) < 3;
+      FE.run = (S) => { if (S.sect) S.sect.fN = (S.sect.fN || 0) + 1; return frun0(S); };
+    } else miss('r_sect_full');
+  }
+
+  /* ================================================================ 결정 사건 */
+  const friend = (S) => {
+    if (S.prison) return null;
+    if (typeof Pp !== 'undefined' && Pp.mkFriend && S.pp) return Pp.mkFriend(S, 'faith', 62);
+    return H.addFriend ? H.addFriend(S) : null;
+  };
+  const arrest = (S) => {
+    tally('arrest');
+    if (hasCm() && typeof Cm.arrest === 'function') { Cm.arrest(S, '헌금 사기', Cm.JOBS.fakeguru, 'fraud'); return '수사 기관이 체포 영장을 받아 {N을} 찾아왔습니다.'; }
+    const m = U.randInt(12, 60);
+    H.jail(S, m, '헌금 사기');
+    return `{N은} 헌금 사기 혐의로 ${m}개월 형을 받았습니다.`;
+  };
+  const honestLead = (S) => { const T = lead(S); return !!T && !isCult(T) && !T.auto; };
+  const cultLead = (S) => { const T = lead(S); return !!T && isCult(T) && !T.auto; };
+  /** 사이비 모임을 정리한 뒤(붙잡히거나 단속된 경우는 빼고) 옛 신도들의 고소가 남는다 */
+  const afterOk = (S) => {
+    const T = S.sect;
+    return !!T && isCult(T) && !T.auto && !act(S) && T.end !== null && T.end !== undefined && S.ageM - T.end <= 72 && !T.aft
+      && T.why !== 'arrest' && T.why !== 'ban' && !S.prison && (T.don || 0) >= 1;
+  };
+  Sl.afterOk = afterOk;
+
+  C.addEvents([
+    {
+      id: 'r_sl_rule', age: [25, 100], cd: 5,
+      when: (S) => { const T = lead(S); return !!T && !T.auto && T.rule === undefined; },
+      rate: (S) => { const T = lead(S); return T && !T.auto && T.rule === undefined && T.n >= 20 ? 0.5 : 0; },
+      title: '모임의 규칙',
+      text: (S) => (isCult(S.sect)
+        ? `${qn(S.sect.name, '의')} 신도가 늘자, 사람들을 더 단단히 묶어 둘 규칙을 정할 때가 되었습니다. 가까이 따르는 사람들이 {N}의 뜻을 묻습니다.`
+        : `${qn(S.sect.name, '에')} 사람이 늘면서 모임의 규칙을 정할 때가 되었습니다. 날마다 모여 기도하고 헌금과 봉사를 정해 두자는 사람도 있고, 지금처럼 오고 싶을 때 오는 모임이 좋다는 사람도 있습니다.`),
+      choices: [
+        { l: '느슨하게 — 오고 싶을 때 오고, 떠나고 싶을 때 떠나게 한다', need: (S) => !isCult(S.sect), typ: true, val: { honest: 1 },
+          run: (S) => { S.sect.rule = 'loose'; tally('rule_loose'); return '모임은 누구에게나 문을 열어 두기로 했습니다. 드나드는 사람은 많아졌지만, 깊이 머무는 사람은 많지 않습니다.'; } },
+        { l: '엄격하게 — 날마다 모이고 헌금과 봉사를 정해 둔다', need: (S) => !isCult(S.sect), val: { trad: 2 },
+          run: (S) => { S.sect.rule = 'strict'; tally('rule_strict'); return '규율이 엄해지자 떠나는 사람도 생겼습니다. 남은 사람들은 더 똘똘 뭉쳤고, 헌금도 늘었습니다.'; } },
+        { l: '바깥과 거리를 두게 하고, 모든 일을 내 뜻대로 정한다', need: (S) => !isCult(S.sect) && S.sect.n >= 40, val: { honest: -6 },
+          deed: ['hurt', 1.5, '따르는 사람들을 바깥과 떼어 놓고 모든 일을 내 뜻대로 정했습니다'],
+          run: (S) => { S.sect.rule = 'control'; turnCult(S, 'control'); return '{N}의 말은 곧 규칙이 되었습니다. 모임을 떠나려는 사람은 "배신자"라는 말을 들었고, 바치는 돈은 날로 늘었습니다.'; } },
+        { l: '헌금과 전도에 할당을 정한다', need: (S) => isCult(S.sect), deed: ['cheat', 1, '신도들에게 헌금과 전도 할당을 지웠습니다'],
+          run: (S) => { const T = S.sect; T.rule = 'quota'; T.sc = clamp(T.sc + 4, 0, 100); tally('rule_quota'); return '신도마다 한 달에 바칠 돈과 데려올 사람 수가 정해졌습니다. 헌금함은 더 빨리 찼습니다.'; } },
+        { l: '바깥과 연락을 끊고 함께 살게 한다', need: (S) => isCult(S.sect), deed: ['hurt', 2, '신도들이 가족과 연락을 끊고 모임 숙소에서 살게 했습니다'],
+          run: (S) => { const T = S.sect; T.rule = 'control'; T.sc = clamp(T.sc + 8, 0, 100); tally('rule_control'); return '신도들은 가족과 연락을 끊고 모임 숙소에 모여 살기 시작했습니다. 바깥에서 들려오는 걱정 섞인 목소리도 커졌습니다.'; } },
+        { l: '지금처럼 느슨하게 둔다', need: (S) => isCult(S.sect), typ: true,
+          run: (S) => { S.sect.rule = 'loose'; tally('rule_loose'); return '규칙은 따로 정하지 않았습니다. 드나드는 신도가 많아 세상의 눈에는 덜 띄었습니다.'; } },
+      ],
+    },
+    {
+      // 따르는 사람의 떠받듦과 헌신: 따르는 사람이 많을수록 잦다(교주화 유혹)
+      id: 'r_sl_adore', age: [25, 100], cd: 3,
+      when: (S) => { const T = lead(S); return !!T && !T.auto; },
+      rate: (S) => { const T = lead(S); if (!T || T.auto || T.n < (isCult(T) ? 20 : 40)) return 0; return clamp(0.1 * Math.log2(T.n / 20), 0.08, 0.6); },
+      title: (S) => (isCult(S.sect) ? '살아 있는 신처럼' : '떠받드는 사람들'),
+      text: (S) => (isCult(S.sect)
+        ? `${qn(S.sect.name, '의')} 신도들이 {N을} 살아 있는 신처럼 받듭니다. 한 신도는 집을 팔아 바치겠다며 {N}의 축복을 구합니다.`
+        : `${qn(S.sect.name)} 사람들이 {N을} '선생님'이라 부르며 떠받듭니다. 한 사람은 {N}의 말이라면 무엇이든 따르겠다며, 집을 팔아 모임에 바치겠다고 합니다.${S.sect.n >= 150 ? ' 모임 안에서는 {N}의 말을 곧 가르침으로 여기는 사람이 늘었습니다.' : ''}`),
+      choices: [
+        { l: '"나도 한 사람의 신자일 뿐"이라며 말린다', need: (S) => !isCult(S.sect), typ: true, val: { honest: 2, rep: 2 },
+          run: (S) => { if (S.ab) S.ab.lx = (S.ab.lx || 0) + 0.5; S.sect.hum = (S.sect.hum || 0) + 1; tally('adore_humble'); return '집은 팔지 말라며 그 사람을 돌려보냈습니다. 그 뒤로 사람들은 {N을} 더 믿고 따랐습니다.'; } },
+        { l: '헌신하는 사람을 곁에 두고 아낀다', need: (S) => !isCult(S.sect),
+          run: (S) => {
+            const T = S.sect;
+            T.dev = (T.dev || 0) + 1;
+            S.power = Math.min(100, (S.power || 0) + 1);
+            E.stat(S, 'social', 2);
+            tally('adore_keep');
+            const f = friend(S);
+            return f ? `${U.j(f.name, '이')} {N}의 곁에서 모임 일을 도맡기 시작했습니다. 누구보다 {N을} 믿고 따르는 사람입니다.` : '헌신하는 사람들이 {N}의 곁에서 모임 일을 도맡기 시작했습니다.';
+          } },
+        { l: '나를 특별한 존재로 받들게 한다', need: (S) => !isCult(S.sect) && S.sect.n >= 60, val: { honest: -6 },
+          deed: ['betray', 2, '믿고 따르는 사람들 위에 서서 나를 특별한 존재로 받들게 했습니다'],
+          run: (S) => { turnCult(S, 'power'); return '{N}의 말은 곧 가르침이 되었습니다. 모임의 크고 작은 일이 {N} 한 사람의 뜻으로 정해지기 시작했고, 바치는 돈도 늘었습니다.'; } },
+        { l: '바치는 것을 받는다', need: (S) => isCult(S.sect), deed: ['cheat', 1.5, '신도가 집을 팔아 바친 돈을 받았습니다'],
+          run: (S) => { const T = S.sect, m = clamp(T.n / 30, 2, 36); earn(S, 'shady', m); T.don = (T.don || 0) + m; T.sc = clamp(T.sc + 5, 0, 100); tally('adore_take'); return `${U.j(amtKo(S, m), '을')} 받았습니다. 얼마 뒤 그 신도의 가족이 모임 터 앞을 서성이기 시작했습니다.`; } },
+        { l: '집까지 팔 필요는 없다고 돌려보낸다', need: (S) => isCult(S.sect), typ: true, val: { honest: 2 },
+          run: (S) => { S.sect.sc = clamp(S.sect.sc - 3, 0, 100); return '집은 팔지 말라며 돌려보냈습니다. 그 신도는 눈물을 흘리며 {N}의 손을 붙잡았습니다.'; } },
+      ],
+    },
+    {
+      // 세간의 눈길(정직한 모임): 지역 언론의 취재
+      id: 'r_sl_watch', age: [25, 100], cd: 5,
+      when: (S) => honestLead(S),
+      rate: (S) => (honestLead(S) && S.sect.n >= 150 ? clamp(0.08 + 0.1 * Math.log10(S.sect.n / 150), 0.08, 0.3) : 0),
+      title: '세간의 눈길',
+      text: (S) => `${qn(S.sect.name, '의')} 이름이 알려지자 지역 언론이 취재를 청해 왔습니다. 이웃 가운데는 '새로 생긴 종교'를 미심쩍게 보는 사람도 있습니다.`,
+      choices: [
+        { l: '장부와 모임을 있는 그대로 보여 준다', typ: true, p: (S) => clamp(0.45 + (H.vl(S, 'honest') - 50) / 150 + (H.pres(S) - 50) / 200 + ((S.sect && S.sect.hum) || 0) * 0.05, 0.25, 0.85),
+          ok: { t: '기사는 정직하게 꾸려 가는 작은 신앙 공동체라는 내용이었습니다. 모임을 찾아오는 사람이 늘었습니다.', val: { rep: 3 },
+            run: (S) => { const T = S.sect; T.n = R(T.n * 1.1); T.sc = clamp(T.sc - 4, 0, 100); H.fameUp(S, 1); tally('watchOk'); } },
+          no: { t: '기사는 의심 섞인 말투로 나갔습니다. 몇몇 사람이 모임을 떠났습니다.', val: { rep: -2 },
+            run: (S) => { const T = S.sect; T.n = R(T.n * 0.92); T.sc = clamp(T.sc + 4, 0, 100); tally('watchNo'); } } },
+        { l: '취재를 정중히 사양한다', t: '취재는 정중히 사양했습니다. 모임은 조용히 이어졌지만, 뒷말은 조금 늘었습니다.', run: (S) => { S.sect.sc = clamp(S.sect.sc + 3, 0, 100); } },
+      ],
+    },
+    {
+      // 수사(사이비): 세간의 눈길이 클 때
+      id: 'r_sl_probe', age: [25, 100], cd: 3,
+      when: (S) => cultLead(S),
+      rate: (S) => (cultLead(S) && S.sect.sc >= 65 && S.sect.n >= 25 ? 0.35 : 0),
+      title: '수사가 시작되었습니다',
+      text: (S) => `수사 기관이 ${qn(S.sect.name, '의')} 헌금과 재산을 들여다보기 시작했습니다. 모임을 떠난 신도들이 피해를 호소하는 진정서를 냈다고 합니다.`,
+      choices: [
+        { l: '변호사를 사서 맞선다', cost: 3, p: (S) => clamp(0.6 - S.sect.sc / 200 + (H.pres(S) - 50) / 200, 0.15, 0.6),
+          ok: { t: '증거가 모자라 수사는 흐지부지 끝났습니다. 신도들은 "박해를 이겨 냈다"며 더 똘똘 뭉쳤습니다.',
+            run: (S) => { S.sect.sc = clamp(S.sect.sc - 20, 0, 100); if (S.rap) S.rap.heat = clamp(S.rap.heat - 15, 0, 100); tally('probeWin'); } },
+          no: { run: (S) => arrest(S) } },
+        { l: '신도들을 앞세워 수사를 막는다', p: 0.35,
+          ok: { t: '신도들이 모임 터 앞을 막아섰습니다. 수사는 한동안 멈췄지만, 세상의 눈길은 더 매서워졌습니다.', deed: ['hurt', 1.5, '신도들을 앞세워 수사를 막았습니다'],
+            run: (S) => { S.sect.sc = clamp(S.sect.sc + 5, 0, 100); S.power = Math.min(100, (S.power || 0) + 2); } },
+          no: { deed: ['hurt', 1.5, '신도들을 앞세워 수사를 막으려 했습니다'], run: (S) => arrest(S) } },
+        { l: '모임을 정리하고 몸을 숨긴다', run: (S) => { tally('probeHide'); return Rl.endSect(S, 'media'); } },
+        { l: '잘못을 인정하고 피해를 갚는다', val: { honest: 6 }, deed: ['give', 1.5, '사이비 모임의 피해자들에게 거둔 돈을 돌려주었습니다'],
+          run: (S) => {
+            const T = S.sect, m = S.indep ? clamp(Math.max(0, H.money(S)) * 0.6, 0, (T.don || 0) * 0.5) : 0;
+            if (m > 0) E.addMoney(S, -H.pay(S, m));
+            Rl.endSect(S, 'quit', true);
+            T.aft = 'confess';
+            tally('probeConfess');
+            const mo = U.randInt(6, 30);
+            let tail = '';
+            if (hasCm() && typeof Cm.jailNow === 'function') tail = Cm.jailNow(S, mo, '헌금 사기', 'fraud') || ''; else H.jail(S, mo, '헌금 사기');
+            return `{N은} 잘못을 인정하고 ${m >= 0.5 ? `${U.j(amtKo(S, m), '을')} 피해자들에게 돌려주었습니다` : '피해자들에게 머리를 숙였습니다'}. 법원은 스스로 죄를 인정한 점을 헤아려 ${mo}개월 형을 내렸습니다.${tail}`;
+          } },
+      ],
+    },
+    {
+      // 남은 사람들: 사이비 모임을 정리한 뒤 옛 신도들의 고소
+      id: 'r_sl_after', age: [25, 100], cd: 2,
+      when: (S) => afterOk(S),
+      rate: (S) => (afterOk(S) ? 0.35 : 0),
+      title: '남은 사람들',
+      text: (S) => { const y = Math.max(0, Math.floor((S.ageM - S.sect.end) / 12)); return `${qn(S.sect.name, '이')} 흩어진 지 ${y ? `${y}년` : '몇 달'}, 재산을 바친 옛 신도들이 피해자 모임을 꾸려 {N을} 사기 혐의로 고소했습니다.`; },
+      choices: [
+        { l: '바친 돈 일부를 돌려주고 합의한다', need: (S) => S.indep && H.money(S) >= 1, val: { honest: 3 }, deed: ['give', 1, '옛 신도들에게 바친 돈 일부를 돌려주었습니다'],
+          run: (S) => {
+            const T = S.sect, m = clamp((T.don || 0) * 0.25, 1, Math.max(1, H.money(S) * 0.7));
+            E.addMoney(S, -H.pay(S, m));
+            T.aft = 'settle';
+            tally('afterSettle');
+            return `${U.j(amtKo(S, m), '을')} 돌려주고 합의했습니다. 피해자들은 고소를 거두었지만, 잃은 세월까지 돌아오지는 않았습니다.`;
+          } },
+        { l: '모르는 일이라며 버틴다', typ: true,
+          run: (S) => {
+            S.sect.aft = 'deny';
+            tally('afterDeny');
+            if (hasCm() && typeof Cm.offense === 'function' && Cm.offense(S, 'fraud', 3)) return arrest(S);
+            vadd(S, { rep: -4 });
+            return '증거가 모자라 사건은 흐지부지되었습니다. 피해자들의 원망은 그대로 남았습니다.';
+          } },
+      ],
+    },
+  ]);
+
+  /* ================================================================ 해마다 */
+  /** 단계가 처음 오를 때: 명성·평판·이끈 경험, 기록 한 줄 */
+  const stageUp = (S, T, st) => {
+    const cult = isCult(T);
+    H.fameUp(S, st);
+    if (!cult) vadd(S, { rep: st + 1 });
+    if (S.ab) S.ab.lx = (S.ab.lx || 0) + 1;
+    tally(`stage${st}_${T.kind}`);
+    const t = cult
+      ? (st === 1 ? `${qn(T.name, '의')} 신도가 ${nKo(T.n)}명을 넘었습니다. 신도들은 {N을} '교주님'이라 부르며 그 말을 그대로 따릅니다.`
+        : `${qn(T.name, '의')} 신도가 ${nKo(T.n)}명을 넘었습니다. 교주인 {N}의 말 한마디에 수많은 사람과 돈이 움직입니다.`)
+      : (st === 1 ? `${qn(T.name, '에')} 함께하는 사람이 ${nKo(T.n)}명이 되었습니다. 사람들은 이제 {N을} 모임의 목자로 여기고 크고 작은 일을 상의해 옵니다.`
+        : `${qn(T.name, '은')} 따르는 사람이 ${nKo(T.n)}명이 넘는 신앙 공동체가 되었습니다. {N은} 이제 지역에서도 이름이 알려진 지도자입니다.`);
+    E.log(S, C.t(S, t), cult ? 'ev' : 'good');
+  };
+  E.hook('year', (S) => {
+    if (!S.alive || !S.sect || S.mode === 'tribe') return;
+    const T = S.sect;
+    if (!act(S)) { loseSectJob(S); return; }
+    if (T.carry && T.carry.m !== S.ageM) delete T.carry;
+    const st = Sl.stage(T);
+    if (T.top === undefined) T.top = st;
+    else if (st > T.top) { T.top = st; if (!T.auto) stageUp(S, T, st); }
+    if (S.prison || T.auto) return;
+    const cult = isCult(T);
+    // 사람을 이끈 경험(인품·카리스마, stats2.js)
+    if (S.ab) S.ab.lx = (S.ab.lx || 0) + 0.15 + 0.15 * st;
+    // 평판: 정직한 모임은 단계만큼 조금씩, 세간의 눈길이 큰 사이비는 내려간다
+    if (!cult) { if (st) vadd(S, { rep: (T.rule === 'strict' ? 0.15 : 0.3) * st }); }
+    else if ((T.sc || 0) >= 40) vadd(S, { rep: -(T.sc - 30) / 25 });
+    // 모임의 규칙
+    if (T.rule === 'loose') T.n = R(T.n * 1.03);
+    else if (T.rule === 'strict') {
+      T.n = R(T.n * 0.97);
+      if (!cult) { const m = clamp(T.n / 120, 0, 10) * 0.18; if (m >= 0.05) { earn(S, 'offer', m); T.don = (T.don || 0) + m; } }
+    } else if (T.rule === 'quota') { T.n = R(T.n * 1.04); T.sc = clamp(T.sc + 1.5, 0, 100); }
+    else if (T.rule === 'control' && cult) {
+      T.sc = clamp(T.sc + 3, 0, 100);
+      if (S.work.job && S.work.job.id === 'fakeguru') S.work.job.pay *= 1.3;
+      if (hasKr()) Kr.deed(S, 'hurt', 0.6, { key: 'sectctl', t: `${qn(T.name, '의')} 신도들을 가족과 바깥에서 떼어 놓았습니다`, src: 'religion' });
+    }
+    // 전업(헌금으로 사는 살림): 직함은 단계를, 수입은 따르는 사람 수를 따른다
+    const j = S.work.job;
+    if (j && j.sect) { j.title = `'${T.name}' ${Sl.title(T)}`; if (j.base > 0) j.pay = j.base * clamp(0.5 + T.n / 1000, 0.5, 2); }
+  });
+  // 전업 성직자(r_sect_full)가 된 순간: 모임의 일로 표시
+  E.hook('takeJob', (S, offer) => {
+    const T = lead(S), j = S.work && S.work.job;
+    if (!T || !j || !offer || offer.id !== 'clergy' || isCult(T)) return;
+    if (j.title === `'${T.name}' 지도자`) { j.sect = true; j.base = j.pay / clamp(0.5 + T.n / 1000, 0.5, 2); j.title = `'${T.name}' ${Sl.title(T)}`; }
+  });
+  // 모임을 연 순간의 단계(처음부터 '오른 것'으로 세지 않게)
+  if (typeof Rl.found === 'function') {
+    const f0 = Rl.found;
+    Rl.found = (S, kind, admin) => { const r = f0(S, kind, admin); if (act(S)) S.sect.top = Sl.stage(S.sect); return r; };
+  } else miss('Rl.found');
+  // 옛 저장: S.sect 만 있는 인생
+  E.hook('ensure', (S) => {
+    const T = S && S.sect;
+    if (!T) return;
+    delete T._mv;
+    if (T.top === undefined && act(S)) T.top = Sl.stage(T);
+    if (T.tN === undefined && S.cool && S.cool.r_sect_tempt !== undefined) T.tN = 1;
+    if (T.fN === undefined && S.cool && S.cool.r_sect_full !== undefined) T.fN = 1;
+    // 모임의 전업 성직자 일(끝난 모임이면 다음 해에 내려놓는다)
+    const j = S.work && S.work.job;
+    if (j && j.id === 'clergy' && !j.sect && T.kind === 'honest' && typeof j.title === 'string' && j.title.indexOf(`'${T.name}'`) === 0) {
+      j.sect = true; j.base = j.pay / clamp(0.5 + T.n / 1000, 0.5, 2);
+    }
+  });
+})();
+
 /* 80억분의 1 — 업데이트 기록(게임 정보 → 업데이트 기록). 새 판을 낼 때 맨 위에 한 줄 더한다.
  * v: 판, d: 날짜(YY.MM.DD), t: 한 줄 제목, items: 바뀐 것(짧게)
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.6.7', d: '26.10.18', t: '알려진 정도·종교 모임 지도자·떠난 사람·기회 돌려받기', items: ["작품과 책의 '알려진 정도': 그 분야 이름값에 다른 분야 명성의 일부(배우·운동선수·방송인 등)와 지위(정치인·고위 공무원·기업 대표)를 더해 그림 판매·전시 관객·무대 관객·음원·영상 재생·책 판매·보도에 반영. 유명인의 첫 작품은 관심이 크고, 완성도가 낮으면 혹평으로 이름값이 깎임. 지위로 팔리는 그림은 청탁 의혹 위험. 공모전 심사는 명성을 보지 않음", "원고 계약 가능성은 까닭을 더해서: 원고 완성도·작가 이력(베스트셀러·전작 판매·문학상)·알려진 정도·팬과 구독자·지위(회고록·에세이는 크게, 소설·시는 작게)·장르와 경력 — 창에 까닭을 모두 표시", "종교 모임을 이끄는 동안 개종하려 하면 먼저 모임을 해산·맡기기·모임과 함께 옮기기 가운데 고름. 따르는 사람 수에 따라 인도자 → 목자 → 지도자(사이비는 교주) 단계, 명성·권력·평판과 상태 줄에 반영, 모임 규칙·떠받드는 사람들·언론 취재·수사 결정", "사람 탭에서 세상을 떠난 가족·친척에게 '2053년, 62세에 떠나심 · 42년 전(내가 27세 때)'", "4살 기질 고르기에 '앞 목록으로 돌아간다'", "할 일이 연 결정에서 '거절한다·사양한다·생각을 접는다·마음만 받는다'를 골라도 기회를 돌려받고, 이어서 열린 결정에서 '하지 않기'를 골라도 돌려받음", "자서전이 책이 되는 기준을 명성 대신 '글 분야에서 알려진 정도'로"] },
   { v: '0.6.6', d: '26.10.18', t: '새 능력치·매력 나누기·입양·반려동물·이민 2세·교육열', items: ["매력을 외모와 인품·카리스마·말솜씨로 나눔: 외모는 나이·건강·꾸밈으로 오르내리고 인품은 경험·관계·명성·말하기로 쌓여 나이로는 거의 줄지 않음. 화면의 매력은 둘의 평균이고 누르면 따로 보임. 오디션·첫 만남은 외모, 선거·면접·협상·방송 진행은 인품·말솜씨", "새 능력치: 키(나라·성별 평균 근삿값 — '175cm, 대한민국 남성 평균쯤'), 마음 건강(스트레스·우울·불안 — 진료·상담·휴직 결정, 행복과 이어짐), 언변(연습으로 오름 — 면접·연봉 협상·선거·말로 하는 일), 카리스마·창의성·신용 등급(계산값), 주변의 별명(의리 있는 사람·마당발·동네 말썽꾼 등 — 화면과 부고)", "입양한 자녀의 삶: 입양 사실 알려 주기·뿌리 찾기·친부모 재회·해외 입양의 국적과 정체성·놀림, 드물게 파양", "입양·위탁·보육원·친척 손에서 자라는 출생(나라별 비율), 해외 입양인의 태어난 나라 방문·국적 문제, 부모를 모두 잃으면 조부모·친척·보육원·위탁·입양으로 이어지고 형편·학업이 바뀜, 18세 보호 종료", "이민 2세 출생(미국 약 23%·캐나다 약 30%·스위스 약 40% 등): 부모의 출신 나라·계승어·국적 규칙(출생지주의·18세 신고·걸프는 국적 없음), 통역하는 아이·이름·부모 나라 방문·문화 충돌·'돌아가라'는 말", "반려동물의 오래가는 영향: 산책 이웃·아이의 정서·혼자 사는 사람의 외로움 덜기·병원비 결정·늙은 반려동물의 마지막·새 식구", "한국 아이는 대부분 입학 전에 한글을 뗌(일본 히라가나 등도), 교육열(한국 사교육 약 79% 등): 학원비 결정의 빈도와 보통 선택, 학생의 학원 생활·성적표 기대, 아시아계 이민 가정의 교육열과 주말 계승어 학교"] },
   { v: '0.6.5', d: '26.10.17', t: '앓다가 떠나는 과정·건강 카드·운동 습관·무술·명절 놀이', items: ["갑작스러운 죽음(사고·급사 등)이 아니면 떠나기 6~24개월 전부터 말기로 들어가 장기부전(입원 반복)·노쇠(점점 누워 지냄)·뇌졸중 뒤 쇠약 같은 과정을 겪음 — 집·방문 간호·요양 시설·호스피스·병원 가운데 어디서 지낼지, 유언·화해·여행 같은 마지막 정리. 기대수명은 그대로", "당뇨·고혈압 합병증 단계와 노쇠(기력 저하 → 거동 불편 → 누워 지냄), 오래 앓는 병의 증상·악화·검진 사건, 단계가 나빠지면 기록에 '(심부전: 초기 → 중등도)'", "사람 탭 맨 위 '건강' 카드(앓는 병·단계·최근 변화·운동 습관), 부고에 '○년 동안 ○○을 앓다가'", "누워 지내는 사람의 나날: 재활 치료·요양보호사·가족의 돌봄 교대·욕창·삼킴 곤란·문병·창밖 계절, 요양 시설 입소 결정. 몸을 쓰거나 밖에 나가는 사건은 더 걸러냄", "운동 습관: 운동하기·운동 취미·몸 쓰는 일·부대 생활로 쌓이고, 심장병·뇌졸중·당뇨·치매·노년 낙상 위험에 반영(사람들 평균은 그대로), '계단을 올라도 숨이 차지 않습니다'·'숨이 쉽게 찹니다'", "무술·격투기: 선수 종목 태권도·유도·가라테·펜싱(실업팀)·킥복싱/무에타이, 취미 '무술·격투기'(나라·나이에 맞게 24가지), 어린이 도장·띠 심사·일본 부활동·공원 태극권, 호신으로 폭행·괴롭힘을 막아 냄, 경찰·경호·군 지원 가산, 부상·뇌진탕·길거리 시비", "전통 운동은 시작한 사람에게만(동호회 권유·취미), 민속놀이는 명절 달에만 '명절 놀이'(설·추석 윷놀이·제기차기·연날리기, 몽골 나담 씨름, 인도 연날리기)"] },
   { v: '0.6.4', d: '26.10.17', t: '살림 표·에어컨·방송 수입·아이돌·음악·정치인', items: ["살림 표: '재산에서 생긴 돈(이자·배당·값 오름)'·'모아 둔 돈에서 꺼내 쓴 생활비' 줄과 설명 문장 — 재산이 늘고 있는데 적자처럼 보이던 문제, 유산·복권 같은 목돈은 씀씀이가 몇 해에 걸쳐 천천히 따라감", "에어컨: 나라별 보급률로 처음 보유, '에어컨 사기' 할 일, 여름 전기료, 정전이 잦은 나라는 못 쓰는 날. 폭염 때 형편에 맞는 선택(에어컨·피서지·쉼터·선풍기), 한파 난방도 형편대로", "사기·강도·빈집털이 피해액: 택배·장터·중개 사기는 물건값·수수료 수준, 계·투자·로맨스 사기만 재산에 비례(상한 있음)", "선출직 보수를 나라별 실제 근삿값으로(한국 국회의원 약 1억 5,700만 원 등)", "정치인은 임기 중 나이로 은퇴 질문을 받지 않고 임기 끝에 '불출마'로, 임기 중 그만두면 '사퇴'. 자영업은 가게 정리·물려주기, 농부는 농사 줄이기, 작가·예술가는 질문 없이 활동이 차츰 줄어듦", "방송 수입: 광고·협찬·시청자 후원·멤버십으로 나눠 보여 주고 나라별 광고 단가·플랫폼(숲·치지직·빌리빌리·VK 등), 오래된 영상 조회수, 지방의원은 신고하고 협찬 일부", "아이돌: 정산 전 수당 → 첫 정산 → 팬덤(국내·해외)에 따른 수입, 소속사 몫·7년 계약, 개인 채널을 열면 팬덤이 구독자로", "미성년이 번 돈: 내 몫·살림·부모님이 모아 두는 몫·신탁(미국 쿠건법 등)으로 나뉘고 어른이 되면 받음, 화면 맨 위에 '내 돈·올해 번 돈'", "음악: 작곡 실력을 따로 두고 실력이 높을수록 완성도가 고르게, 발표할수록 쌓이는 청취자층, 음악 이름값이 연예 경력과 함께 쌓임, 데뷔한 가수는 가요제 대신 음원·음악 방송·연말 시상식, 노래를 잘하면 커버 영상·피처링·OST·오디션 방송", "이름이 알려진 사람(선출직·방송인)이 폭행·협박을 당하면 신고·공개 여부를 고르고 보도·검거·안전 대책·동정 여론으로, 보통 사람의 폭행은 다친 정도에 따라 치료비", "'털어놓을까요?' 창: 양성애는 '남녀 모두에게 마음이 끌린다는 것(양성애)'으로 분명히 쓰고 '다른 성별을 사귀면 드러나지 않지만 같은 성별을 사귀면 동성 커플과 같은 법과 시선을 겪는다'는 줄을 더함, 조사 자료가 없는 나라는 '지역 평균으로 어림한 값'으로 표시", "이미 책을 낸 작가·베스트셀러 작가는 단편을 신춘문예에 내지 않고 문예지·출판사가 먼저 원고를 청함(이름값만큼 원고료)"] },
@@ -56291,8 +57245,8 @@ UI.famHTML2 = (S, v) => {
   const L = UI.personLi, c = Wd.c(E.iso(S)), j = (...xs) => xs.filter(Boolean).join(' · ');
   let html = '';
   // 부모님·형제
-  const par = v.parents.map((x, i) => L(`${x.who} ${x.name}`, j(x.alive ? `${x.age}세` : '', x.note, x.alive && typeof Bg !== 'undefined' ? Bg.parentSub(S, i ? 'mother' : 'father') : ''), x.alive ? x.close : null, x.label, !x.alive)).join('');
-  const sib = v.sibs.map((x) => L(`${x.rel} ${x.name}`, x.alive ? `${x.age}세` : '', x.alive ? x.close : null, x.label, !x.alive)).join('') || '<li><small>형제가 없습니다</small></li>';
+  const par = v.parents.map((x, i) => L(`${x.who} ${x.name}`, j(x.alive ? `${x.age}세` : x.gone || '', x.note, x.alive && typeof Bg !== 'undefined' ? Bg.parentSub(S, i ? 'mother' : 'father') : ''), x.alive ? x.close : null, x.label, !x.alive)).join('');
+  const sib = v.sibs.map((x) => L(`${x.rel} ${x.name}`, x.alive ? `${x.age}세` : x.gone || '', x.alive ? x.close : null, x.label, !x.alive)).join('') || '<li><small>형제가 없습니다</small></li>';
   html += `<div class="card"><h3>부모님</h3><ul class="people">${par}</ul></div><div class="card"><h3>형제자매</h3><ul class="people">${sib}</ul></div>`;
   // 배우자
   let pt = '<li><small>아직 혼자입니다</small></li>';
@@ -56300,24 +57254,24 @@ UI.famHTML2 = (S, v) => {
     const x = v.partner;
     const pen = S.fam.partner && S.fam.partner.pension ? `연금 연 ${Wd.money(E.iso(S), S.fam.partner.pension)}` : '';
     pt = L(`${x.rel} ${x.name}`, j(`${x.age}세`, x.trait, x.job, x.pay, pen, x.years ? `결혼 ${x.years}년째` : '', x.note), x.close, x.label);
-  } else if (S.fam.partner && !S.fam.partner.alive) pt = L(`배우자 ${S.fam.partner.name}`, '세상을 떠남', null, '', true);
+  } else if (S.fam.partner && !S.fam.partner.alive) pt = L(`배우자 ${S.fam.partner.name}`, v.partnerGone || '세상을 떠남', null, '', true);
   else if (S.fam.partner && S.fam.partner.left) pt = L(`전 배우자 ${S.fam.partner.name}`, '헤어짐', null, '', true);
   html += `<div class="card"><h3>배우자</h3><ul class="people">${pt}</ul><p class="src">${esc(Wd.name(E.iso(S)))} 평균 초혼 나이 남 ${Wd.smam(E.iso(S), 'm').toFixed(1)}세 · 여 ${Wd.smam(E.iso(S), 'f').toFixed(1)}세</p></div>`;
   // 자녀
-  const kids = v.kids.map((x) => L(`${x.rel} ${x.name}`, j(x.alive ? `${x.age}세` : `${x.age}세에 떠남`, x.note), x.alive ? x.close : null, x.label, !x.alive)).join('') || '<li><small>아이가 없습니다</small></li>';
+  const kids = v.kids.map((x) => L(`${x.rel} ${x.name}`, j(x.alive ? `${x.age}세` : x.gone || `${x.age}세에 떠남`, x.note), x.alive ? x.close : null, x.label, !x.alive)).join('') || '<li><small>아이가 없습니다</small></li>';
   const t = v.tree || {};
   html += `<div class="card"><h3>자녀${t.grandkids ? ` · 손주 ${t.grandkids}명` : ''}${t.ggk ? ` · 증손주 ${t.ggk}명` : ''}</h3><ul class="people">${kids}</ul><p class="src">합계출산율 ${c.tfr}명 · 현대적 피임 사용률 ${Math.round(c.contra)}%</p></div>`;
   // 가계도: 조부모·친척·형제네·자녀네·증손주·의붓가족
   const rows = [];
-  for (const g of t.grandparents || []) rows.push(L(`${g.rel} ${g.name}`, j(g.alive ? `${g.age}세` : '', g.note), g.alive ? g.close : null, g.label, !g.alive));
-  for (const u of (t.uncles || []).slice(0, 8)) rows.push(L(`${u.rel} ${u.name}`, j(u.alive ? `${u.age}세` : '', u.kids ? `자녀 ${u.kids}명` : '', u.note), u.alive ? u.close : null, '', !u.alive));
+  for (const g of t.grandparents || []) rows.push(L(`${g.rel} ${g.name}`, j(g.alive ? `${g.age}세` : g.gone || '', g.note), g.alive ? g.close : null, g.label, !g.alive));
+  for (const u of (t.uncles || []).slice(0, 8)) rows.push(L(`${u.rel} ${u.name}`, j(u.alive ? `${u.age}세` : u.gone || '', u.kids ? `자녀 ${u.kids}명` : '', u.note), u.alive ? u.close : null, '', !u.alive));
   const nUnc = (t.unclesN ? (t.unclesN.p || 0) + (t.unclesN.m || 0) : 0);
   for (const f of t.sibsFamilies || []) rows.push(L(`${f.sib}네`, j(f.spouse, f.kids && f.kids.length ? f.kids.map((x) => `${x.rel} ${x.name}(${x.age}세)`).join(', ') : f.nk ? `조카 ${f.nk}명` : ''), null, ''));
   for (const f of t.kidsFamilies || []) {
     rows.push(L(`${f.kid}네`, f.spouse, f.spouseClose, f.spouseClose !== null && f.spouseClose !== undefined ? (Pp.label ? Pp.label(f.spouseClose) : '') : ''));
-    for (const g of (f.gk || []).slice(0, 6)) rows.push(L(`· ${g.rel} ${g.name}`, j(g.alive ? `${g.age}세` : '', g.note, g.kids ? `아이 ${g.kids}명` : ''), g.alive ? g.close : null, g.label, !g.alive));
+    for (const g of (f.gk || []).slice(0, 6)) rows.push(L(`· ${g.rel} ${g.name}`, j(g.alive ? `${g.age}세` : g.gone || '', g.note, g.kids ? `아이 ${g.kids}명` : ''), g.alive ? g.close : null, g.label, !g.alive));
   }
-  for (const x of (t.step || []).filter((st) => !v.kids.some((k) => k.name === st.name && k.rel === st.rel))) rows.push(L(`${x.rel} ${x.name}`, x.alive ? `${x.age}세` : '', x.alive ? x.close : null, x.label, !x.alive));
+  for (const x of (t.step || []).filter((st) => !v.kids.some((k) => k.name === st.name && k.rel === st.rel))) rows.push(L(`${x.rel} ${x.name}`, x.alive ? `${x.age}세` : x.gone || '', x.alive ? x.close : null, x.label, !x.alive));
   const notes = [t.home, nUnc ? `큰아버지·고모·외삼촌·이모 ${nUnc}명` : '', t.cousins ? `사촌 ${t.cousins}명` : '', (t.ggkNames || []).length ? (t.ggkNames || []).slice(0, 6).join(', ') : ''].filter(Boolean).join(' · ');
   if (rows.length || notes) html += `<div class="card"><h3>가계도</h3><ul class="people">${rows.join('')}</ul>${notes ? `<p class="src">${esc(notes)}</p>` : ''}</div>`;
   return html;
