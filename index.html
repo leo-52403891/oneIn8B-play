@@ -1933,7 +1933,7 @@ C.DEC.dropout = {
     let reasons = ['집안 형편이 어려워 학비를 낼 수 없게 되었습니다', '학교까지 거리가 멀고 길이 위험해졌습니다'];
     if (!S.place.urban) reasons.push(`농사철 일손이 모자라 ${U.j(who, '이')} 집에 있으라고 하십니다`);
     reasons.push(who === '집안 어른들' ? '돌봐 주던 친척이 더는 학비를 대기 어렵다고 합니다' : `${U.j(who, '이')} 편찮으셔서 집안일을 맡아야 합니다`);
-    if (S.st.smarts < 40) reasons.push('성적이 좋지 않아 선생님도 고개를 저으십니다');
+    if (E.smEq(S) < 40) reasons.push('성적이 좋지 않아 선생님도 고개를 저으십니다');
     if (S.sex === 'f') reasons.push('딸은 공부보다 집안일을 배워야 한다는 말을 듣습니다');
     if (ctx.stage >= 2) reasons = ['등록금과 생활비가 바닥났습니다', '가족을 부양하려면 당장 돈을 벌어야 합니다', '공부에 흥미를 잃었습니다', '좋은 일자리 제안이 들어왔습니다', '시험에 연달아 떨어져 자신감을 잃었습니다'];
     const sch = Wd.schooling(E.iso(S), S.sex);
@@ -1950,7 +1950,7 @@ C.DEC.dropout = {
     },
   ],
 };
-C.persuadeP = (S) => U.clamp(0.25 + 0.4 * S.fam.famP + 0.25 * (S.st.smarts - 50) / 50, 0.08, 0.85);
+C.persuadeP = (S) => U.clamp(0.25 + 0.4 * S.fam.famP + 0.25 * (E.smEq(S) - 50) / 50, 0.08, 0.85);
 C.leaveSchool = (S) => {
   S.edu.stage = null;
   S.edu.year = 0;
@@ -2002,7 +2002,7 @@ C.DEC.major = {
     const keys = Object.keys(C.MAJOR);
     return keys.map((id) => {
       const m = C.MAJOR[id];
-      const p = U.clamp(U.sigmoid(0.08 * (S.st.smarts - 50) - m.hard + 1.2), 0.02, 0.98);
+      const p = U.clamp(U.sigmoid(0.08 * (E.smEq(S) - 50) - m.hard + 1.2), 0.02, 0.98);
       // 보통의 선택: 전공 구성 비율대로(꿈과 맞는 전공은 더 자주). 같은 사람은 같은 답이 나오게 id 로 정한다
       let typ = false;
       {
@@ -2524,7 +2524,7 @@ C.DEC.startup = {
   title: () => '내 사업',
   text: (S) => C.t(S, `직원을 두고 가게나 회사를 차립니다. 쓸 수 있는 돈(현금·예금·금융 자산)의 70%(약 ${Wd.money(E.iso(S), Ec.stakeOf(S))})를 밑천으로 겁니다. 밑천이 클수록 사업도 크고, 자리를 잡기 전(1~2년 안)에 접으면 밑천 대부분을 잃습니다. 자리를 잡으면 사장이 되어 수입이 크게 늘지만, 새로 차린 가게·회사의 상당수는 몇 년 안에 문을 닫고 밑천을 잃습니다. 혼자 하는 작은 일은 '내 일 시작하기'로 시작할 수 있습니다.`),
   choices: (S) => {
-    const p = U.clamp(0.3 + S.st.skill / 250 + (S.st.smarts - 50) / 300, 0.15, 0.7);
+    const p = U.clamp(0.3 + S.st.skill / 250 + (E.smEq(S) - 50) / 300, 0.15, 0.7);
     return [
       {
         label: '모은 돈을 걸어 본다', sub: `성공 가능성 약 ${pct0(p)}%`,
@@ -2552,7 +2552,7 @@ C.DEC.promotion = {
   title: () => '승진 기회',
   text: (S) => C.t(S, '윗자리가 비었습니다. 도전해 볼까요? 책임과 스트레스도 함께 커집니다.'),
   choices: (S) => {
-    const p = U.clamp(0.25 + S.st.skill / 150 + (S.st.smarts - 50) / 300 + (typeof Ab !== 'undefined' && Ab.promoX ? Ab.promoX(S) : 0), 0.1, 0.85); // 사람을 이끄는 힘(stats2.js, 피드백 150번)
+    const p = U.clamp(0.25 + S.st.skill / 150 + (E.smEq(S) - 50) / 300 + (typeof Ab !== 'undefined' && Ab.promoX ? Ab.promoX(S) : 0), 0.1, 0.85); // 사람을 이끄는 힘(stats2.js, 피드백 150번)
     return [
       { label: '도전한다', sub: `성공 가능성 약 ${pct0(p)}%`, run: (S) => { if (!S.work.job) return null; if (U.chance(p)) { H.promote(S); E.stat(S, 'happy', 6); if (S.work.job.lv >= 4) H.ach(S, 'exec'); return C.t(S, `{N은} ${U.j(H.lvName(S), '으로')} 승진했습니다! 월급이 25% 올랐습니다.`); } E.stat(S, 'happy', -4); return C.t(S, '이번에는 다른 사람이 뽑혔습니다.'); } },
       { label: '지금 자리에 만족한다', run: () => null },
@@ -2654,8 +2654,8 @@ C.EVENTS = [
     : '친구들과 {sport를} 하다 보니 해가 지는 줄도 몰랐습니다.'), { health: 2, happy: 2 }) }),
   ev({ id: 'water', minAge: 5, maxAge: 16, rate: (S) => (!S.place.urban && cc(S).water < 60 ? 0.6 : 0), cd: 2, run: minorRun(['아침마다 물을 길으러 먼 길을 다녀옵니다. ({country}에서 안전한 식수를 쓰는 사람은 {water}%)'], (S) => ({ health: -1, happy: -2, smarts: S.sex === 'f' ? -1 : 0 })) }),
   ev({ id: 'farmhelp', minAge: 7, maxAge: 17, rate: (S) => (!S.place.urban ? 0.5 : 0), cd: 2, run: minorRun(['농사철이라 온 가족이 밭에 나갔습니다.', '가축을 몰고 풀밭에 다녀왔습니다.'], { health: 1, happy: -1 }) }),
-  ev({ id: 'exam', minAge: 7, maxAge: 18, rate: (S) => (inSchool(S) ? 0.8 : 0), cd: 1, run: (S) => { const sc = Math.round(U.clamp(S.st.smarts + U.normal(0, 12), 5, 100)); minorRun([`시험에서 ${sc}점을 받았습니다.`], { happy: sc > 75 ? 3 : sc < 45 ? -3 : 0 })(S); } }),
-  ev({ id: 'prize', minAge: 7, maxAge: 18, rate: (S) => (inSchool(S) && S.st.smarts > 65 ? 0.25 : 0), cd: 2, run: minorRun((S) => `학교에서 상장을 받았습니다. ${U.j(C.elders(S), '이')} 벽에 붙여 두셨습니다.`, { happy: 4 }) }),
+  ev({ id: 'exam', minAge: 7, maxAge: 18, rate: (S) => (inSchool(S) ? 0.8 : 0), cd: 1, run: (S) => { const sc = Math.round(U.clamp(E.smEq(S) + U.normal(0, 12), 5, 100)); minorRun([`시험에서 ${sc}점을 받았습니다.`], { happy: sc > 75 ? 3 : sc < 45 ? -3 : 0 })(S); } }),
+  ev({ id: 'prize', minAge: 7, maxAge: 18, rate: (S) => (inSchool(S) && E.smEq(S) > 65 ? 0.25 : 0), cd: 2, run: minorRun((S) => `학교에서 상장을 받았습니다. ${U.j(C.elders(S), '이')} 벽에 붙여 두셨습니다.`, { happy: 4 }) }),
   ev({ id: 'bullied', minAge: 6, maxAge: 16, rate: 0.12, cd: 4, run: minorRun(['친구들에게 놀림을 받아 속상한 하루였습니다.'], { happy: -5 }) }),
   ev({ id: 'cram', minAge: 13, maxAge: 18, rate: (S) => (inSchool(S) && dev(S) >= 2 && ['KOR', 'CHN', 'JPN', 'TWN', 'HKG', 'SGP', 'VNM'].includes(E.iso(S)) ? 0.6 : 0), cd: 1, run: minorRun(['입시 준비로 밤늦게까지 학원에 다닙니다.', '모의고사 성적표를 받아 들고 한숨을 쉬었습니다.'], { happy: -3, smarts: 2 }) }),
   // 명절은 그 명절이 드는 달에만(place.js H.festMons). 해마다 쇠는 명절이지만 기록에는 몇 해에 한 번꼴로만 남긴다(한 인생 20번 넘게 되풀이되지 않게)
@@ -3202,11 +3202,12 @@ C.addEvents = (list) => {
           .filter((ch) => !ch.need || ch.need(S, ctx))
           .map((ch) => {
             let p = ch.p !== undefined ? U.clamp(val(ch.p, S, ctx), 0, 1) : null;
-            // 운: 결과가 갈리는 도전의 성공 가능성을 ±6%까지 바꾼다(확실한 일은 그대로)
-            if (p !== null && p > 0.02 && p < 0.98) p = U.clamp(p + E.luckP(S), 0.02, 0.98);
+            // 운: 결과가 갈리는 도전의 성공 가능성을 지금 운의 흐름만큼 로짓으로 옮긴다(반반이면 ±9%p까지, 확실한 일은 그대로 — engine.js E.luckL, 피드백 224번)
+            let lk = 0;
+            if (p !== null && p > 0.02 && p < 0.98) { const p0 = p; p = U.clamp(1 / (1 + Math.exp(-(Math.log(p / (1 - p)) + (E.luckL ? E.luckL(S) : 0)))), 0.02, 0.98); lk = Math.round((p - p0) * 100); }
             let sub = ch.sub ? C.t(S, val(ch.sub, S, ctx), ctx) : '';
             if (ch.cost) sub = (sub ? sub + ' · ' : '') + '비용 약 ' + H.amt(S, val(ch.cost, S, ctx));
-            if (p !== null && !/가능성/.test(sub)) sub = (sub ? sub + ' · ' : '') + `가능성 약 ${Math.round(p * 100)}%`;
+            if (p !== null && !/가능성/.test(sub)) sub = (sub ? sub + ' · ' : '') + `가능성 약 ${Math.round(p * 100)}%${Math.abs(lk) >= 2 ? `(운 ${lk > 0 ? '+' : '−'}${Math.abs(lk)}%p)` : ''}`;
             const affordable = !ch.cost || !S.indep || S.money + H.pay(S, 6) >= H.pay(S, val(ch.cost, S, ctx));
             if (!affordable) sub += ` · ${Wd.money(E.iso(S), H.pay(S, val(ch.cost, S, ctx)) - S.money - H.pay(S, 6))} 모자람`;
             const tw = ch._trip ? exitNo(S) : ''; // 나라 밖으로 나갈 수 없으면 이유를 보이고 막는다
@@ -3256,7 +3257,9 @@ E.ensure = (S) => {
   }
   // 매력(타고난 매력 + 꾸밈·자신감)과 운(무작위로 오르내림) — 피드백 35번
   if (S.st.charm === undefined) S.st.charm = U.clamp(Math.round(S.talent.charm * 0.7 + 15 + U.normal(0, 6)), 1, 100);
-  if (S.st.luck === undefined) S.st.luck = U.clamp(Math.round(U.normal(50, 12)), 5, 95);
+  // 운(피드백 224번): 타고난 운의 중심(S.st.luckC, 이름으로 정함 — engine.js E.luckCenter)과 그 둘레의 흐름. 옛 저장은 지금 값 근처로 중심을 채운다
+  if (S.st.luck === undefined) { S.st.luckC = E.luckCenter(S); S.st.luck = U.clamp(Math.round(S.st.luckC + U.normal(0, 7)), 5, 95); }
+  if (S.st.luckC === undefined) S.st.luckC = U.clamp(Math.round(0.6 * S.st.luck + 20), 25, 75);
   S.talentSeen = S.talentSeen || {};
   S.boost = S.boost || { health: 0, happy: 0 };
   if (S.boost.charm === undefined) S.boost.charm = 0;
@@ -3330,7 +3333,8 @@ C.hooksMonth = (S) => {
   // 행동으로 얻은 일시 효과는 서서히 사라진다
   S.boost.health *= 0.96;
   S.boost.happy *= 0.94;
-  if (S.boost.charm) S.boost.charm *= 0.95;
+  // 꾸밈: 달마다 3.5%, 꾸준히 가꾸는 사람은 2%까지 덜 빠진다(stats2.js Ab.charmFade, 피드백 224번 — 예전에는 누구나 5%라 1년이면 절반)
+  if (S.boost.charm) S.boost.charm *= 1 - (typeof Ab !== 'undefined' && Ab.charmFade ? Ab.charmFade(S) : 0.05);
   S.hap.sum += S.st.happy;
   S.hap.n++;
   // 연애
@@ -5047,7 +5051,8 @@ C.ACTIONS = [
       const t = U.pick(['머리를 다듬고 옷차림을 새로 갖췄습니다. 거울 속 모습이 조금 달라 보입니다.', '말하기 모임에 나가 사람들 앞에서 이야기하는 연습을 했습니다.', '자세와 표정을 바르게 하려고 신경 쓰기 시작했습니다.']);
       // 매력이 외모·인품으로 나뉜 뒤(stats2.js, 피드백 203번): 말하기 연습은 인품·말솜씨와 언변 쪽, 나머지는 외모(꾸밈) 쪽
       if (/말하기/.test(t) && S.st.pres !== undefined && typeof Pr !== 'undefined' && Pr.KINDS.speech) { E.stat(S, 'pres', 2); Pr.gain(S, 'speech', 3); }
-      else { S.boost.charm = Math.min(10, (S.boost.charm || 0) + 4); E.stat(S, 'charm', 2); }
+      // 꾸밈 한 번의 몫은 +3(예전 +4)이되, 꾸준히 가꾸면(S.ab.gh — 가꾸기 습관) 달마다 덜 빠진다(3.5% → 2%, stats2.js Ab.charmFade — 피드백 224번)
+      else { S.boost.charm = Math.min(10, (S.boost.charm || 0) + 3); E.stat(S, 'charm', 2); if (S.ab) S.ab.gh = Math.min(1, (S.ab.gh || 0) + 0.15); }
       E.stat(S, 'happy', 1);
       return t;
     } },
@@ -5072,7 +5077,7 @@ C.ACTIONS = [
     run: (S) => { E.stat(S, 'smarts', 2); if (S.edu.stage !== null) S.edu.dropRisk *= 0.85; return H.student(S) ? '도서관에서 늦게까지 공부했습니다.' : '책을 펴고 새로운 것을 공부했습니다.'; } },
   { id: 'license', ko: '자격증 따기', cat: 'learn', age: [16, 70], cd: 12, cost: 1, need: (S) => reason(!H.student(S), '학교를 마친 뒤에 할 수 있습니다'),
     run: (S) => {
-      const p = U.clamp(0.35 + (S.st.smarts - 50) / 150, 0.1, 0.9);
+      const p = U.clamp(0.35 + (E.smEq(S) - 50) / 150, 0.1, 0.9);
       if (U.chance(p)) { S.flags.certs = (S.flags.certs || 0) + 1; E.stat(S, 'skill', 6); if (S.work.job) S.work.job.pay *= 1.04; return `${U.pick(['전기기능사', '조리사', '회계', '운전', '컴퓨터 활용', '용접', '간호조무', '정보처리', '미용', '지게차'])} 자격증을 땄습니다.`; }
       E.stat(S, 'happy', -3); return '자격시험에 떨어졌습니다. 다음에 다시 보기로 했습니다.';
     } },
@@ -5087,7 +5092,7 @@ C.ACTIONS = [
   { id: 'ged', ko: '검정고시 보기', cat: 'learn', age: [14, 80], cd: 12, cost: 0.3,
     need: (S) => reason(S.edu.level < 3 && S.edu.stage === null, '이미 고등학교 학력이 있거나 학교에 다니는 중입니다'),
     run: (S) => {
-      const p = U.clamp(0.3 + (S.st.smarts - 50) / 120, 0.08, 0.85);
+      const p = U.clamp(0.3 + (E.smEq(S) - 50) / 120, 0.08, 0.85);
       if (U.chance(p)) { S.edu.level = Math.max(S.edu.level, S.edu.level === 0 ? 1 : S.edu.level + 1); S.flags.literate = true; H.ach(S, 'late_learner'); E.stat(S, 'happy', 8); return `검정고시에 합격했습니다! 이제 ${C.EDU_NAME[S.edu.level]} 학력입니다.`; }
       return '검정고시에 떨어졌습니다. 그래도 공부한 것은 남습니다.';
     } },
@@ -5171,7 +5176,8 @@ C.ACTIONS = [
   { id: 'lottery', ko: '복권 사기', cat: 'work', age: [18, 120], cd: 1, cost: 0.02, where: (S) => !H.noGamble(S),
     need: (S) => (H.gambleBanned(S) ? '이 나라에서는 복권이 법으로 금지되어 있습니다' : H.noGamble(S) ? '신앙에 어긋나 복권을 사지 않습니다' : true),
     run: (S) => {
-      const r = Math.random();
+      // 운의 흐름이 좋으면 조금 더 잘 맞는다(흐름 0.5면 당첨 확률 1.2배, −0.5면 0.83배 — engine.js E.luckFlow, 피드백 224번)
+      const r = Math.random() / (1 + 0.4 * (E.luckFlow ? E.luckFlow(S) : 0));
       if (r < 1 / 8145060) { E.addMoney(S, H.pay(S, 900)); H.ach(S, 'lottery'); H.fameUp(S, 5); E.stat(S, 'happy', 30); return '복권 1등에 당첨되었습니다! 814만 분의 1의 확률입니다.'; }
       if (r < 1 / 36000) { E.addMoney(S, H.pay(S, 15)); E.stat(S, 'happy', 15); return '복권 2등에 당첨되었습니다!'; }
       if (r < 1 / 1100) { E.addMoney(S, H.pay(S, 1)); E.stat(S, 'happy', 6); return '복권 3등! 한 달 치 월급만큼을 받았습니다.'; }
@@ -5424,7 +5430,7 @@ C.actRefund = (S, a) => { const k = C.actWal(S, a); S[k] = (S[k] || 0) + C.actAP
  * 내리는 몫(다치기·실패)은 그대로. 운동 습관(fitness.js)·친구 가까움·연인 사랑·실력(연습)은 따로 쌓이는 값이라 여기서 줄이지 않는다.
  * [옅어지는 빠르기(달마다), 상한] — 상한은 일상 기회를 거의 다 쓰는 인생(점검 scratchpad/v068a/actsim.js heavy: 한국·나이지리아·전체)에서
  *   행복·관계가 예전(큰일과 한 지갑이던 때)보다 몇 점 안쪽으로만 오르고, 일상만 골라 하는 인생은 예전과 비슷하게 맞춘 값. */
-C.DFX = { happy: [0.04, 12], health: [0.03, 8], social: [0.025, 8], charm: [0.02, 3], looks: [0.02, 6], pres: [0.012, 3], smarts: [0.02, 6], skill: [0.015, 5], b_health: [0.04, 3], b_happy: [0.06, 4], b_charm: [0.05, 3] };
+C.DFX = { happy: [0.04, 12], health: [0.03, 8], social: [0.025, 8], charm: [0.02, 3], looks: [0.02, 6], pres: [0.012, 3], smarts: [0.02, 6], skill: [0.015, 5], b_health: [0.04, 3], b_happy: [0.06, 4], b_charm: [0.03, 3] }; // 꾸밈은 달마다 2~3.5%씩 빠진다(stats2.js Ab.charmFade — 피드백 224번)
 /** 지금 몇 배로 오르나(최근 몫이 상한에 가까울수록 0에 가까움) */
 A.dfxM = (S, k) => { const d = C.DFX[k]; return d ? U.clamp(1 - ((S.dfx && S.dfx[k]) || 0) / d[1], 0.05, 1) : 1; };
 A.dailyRun = (S, a) => C.dailyWrap(S, () => a.run(S));
@@ -5435,9 +5441,12 @@ C.dailyWrap = (S, fn) => {
   E.stat = (S2, k, d) => {
     if (S2 === S && d > 0 && C.DFX[k]) {
       let m = A.dfxM(S, k);
-      if ((k === 'smarts' || k === 'skill') && S.st[k] !== undefined) m *= U.clamp((100 - S.st[k]) / 55, 0.1, 1);
+      if (k === 'smarts' && S.st[k] !== undefined && E.smRoom) m *= Math.max(0.1, E.smRoom(S)); // 지식의 오를 여지(engine.js — 피드백 224번)
+      else if ((k === 'smarts' || k === 'skill') && S.st[k] !== undefined) m *= U.clamp((100 - S.st[k]) / 55, 0.1, 1);
       d *= m;
       R[k] = (R[k] || 0) + d;
+      // 지식의 '오를 여지'는 위에서 이미 곱했으므로 engine.js E.stat 이 다시 곱하지 않게(피드백 224번)
+      if (k === 'smarts') { E._roomed = (E._roomed || 0) + 1; try { return st0(S2, k, d); } finally { E._roomed--; } }
     }
     return st0(S2, k, d);
   };
@@ -5473,7 +5482,7 @@ A.memoir = (S) => {
   if ((S.fam.grandkids || 0) > 0) out.push(`손주들은 ${S.sex === 'f' ? '할머니' : '할아버지'}의 어린 시절 이야기를 신기해했습니다.`);
   // 책으로 나오나
   const fame = A.memoirKnown(S); // 글 분야에서 알려진 정도(명성·작가 이력·지위 — arts.js Ar.known, 피드백 228번)
-  const q = U.clamp(Math.round(40 + S.st.smarts / 4 + (S.wskill || 0) / 4 + U.normal(0, 8)), 20, 95);
+  const q = U.clamp(Math.round(40 + E.smEq(S) / 4 + (S.wskill || 0) / 4 + U.normal(0, 8)), 20, 95);
   if (fame >= 30 && typeof Cr !== 'undefined' && Cr.publish && S.books) {
     const b = Cr.publish(S, q, 'memoir');
     b.t = U.pick(['나의 길', '살아온 날들', '돌아보며', '내가 걸어온 길', '어느 생애']) + ` — ${S.name.given} 자서전`;
@@ -5806,7 +5815,7 @@ C.metaAch = (lives) => {
       id: 'core_publish', age: [0, 120], rate: 0,
       title: '원고를 어떻게 할까요?', text: '원고 한 편을 완성했습니다.',
       choices: [
-        { l: '출판사에 보낸다', p: (S) => U.clamp(sig((S.talent.art - 68) / 7) * 0.8 + (S.st.smarts - 50) / 400, 0.03, 0.8),
+        { l: '출판사에 보낸다', p: (S) => U.clamp(sig((S.talent.art - 68) / 7) * 0.8 + (E.smEq(S) - 50) / 400, 0.03, 0.8),
           ok: { t: '출판사에서 책을 내자는 연락이 왔습니다! 작가가 되었습니다.', fx: { happy: 12, fame: 4 }, ach: 'author', run: (S) => { H.reveal(S, 'art'); if (U.chance(0.06 + (S.talent.art - 70) / 300)) { H.ask(S, 'core_bestseller'); } } },
           no: { t: '출판사 열 곳에서 거절 편지가 왔습니다.', fx: { happy: -5 } } },
         { l: '인터넷에 연재한다', need: (S) => H.internet(S) > 0.4, p: (S) => U.clamp(sig((S.talent.art - 72) / 7) * 0.6, 0.03, 0.6),
@@ -6595,7 +6604,7 @@ C.metaAch = (lives) => {
         { l: '가게 주인에게 도움을 청한다', p: 0.9,
           ok: { t: (S) => `가게 주인이 큰 소리로 ${folks(S, '을')} 찾아 주셨습니다. 사탕도 하나 얻었습니다.`, fx: { social: 2, happy: 1 } },
           no: { t: (S) => `말이 잘 나오지 않아 한참을 울다가 겨우 ${folks(S, '을')} 만났습니다.`, fx: { happy: -3 } } },
-        { l: '혼자 집을 찾아간다', p: (S) => 0.4 + (S.st.smarts - 50) / 200,
+        { l: '혼자 집을 찾아간다', p: (S) => 0.4 + (E.smEq(S) - 50) / 200,
           ok: { t: (S) => `혼자 집까지 찾아가 ${folks(S, '을')} 깜짝 놀라게 했습니다.`, fx: { smarts: 2, happy: 2 } },
           no: { t: (S) => `더 멀리 헤매다 밤늦게야 찾았습니다. 그날 밤 ${momOr(S, '은')} {N}의 손을 놓지 않았습니다.`, fx: { happy: -6, health: -1 } } },
       ],
@@ -6796,11 +6805,11 @@ C.metaAch = (lives) => {
       ],
     },
     {
-      id: 'c_olympiad', age: [9, 12], rate: 0.15, once: true, when: (S) => H.student(S) && (tal(S, 'study') >= 55 || S.st.smarts >= 60),
+      id: 'c_olympiad', age: [9, 12], rate: 0.15, once: true, when: (S) => H.student(S) && (tal(S, 'study') >= 55 || E.smEq(S) >= 60),
       title: '수학 경시대회',
       text: '학교 대표로 수학 경시대회에 나가 보라는 권유를 받았습니다.',
       choices: [
-        { l: '나간다', p: (S) => U.clamp(sig((tal(S, 'study') - 65) / 8) * 0.85 + (S.st.smarts - 60) / 300, 0.05, 0.9),
+        { l: '나간다', p: (S) => U.clamp(sig((tal(S, 'study') - 65) / 8) * 0.85 + (E.smEq(S) - 60) / 300, 0.05, 0.9),
           ok: { t: '지역 대회에서 상을 받았습니다! 교장 선생님이 조회 시간에 {N}의 이름을 부르셨습니다.', fx: { smarts: 3, happy: 6, fame: 1 }, run: (S) => { H.reveal(S, 'study'); } },
           no: { t: '문제가 너무 어려웠습니다. 그래도 처음 보는 풀이법을 많이 배웠습니다.', fx: { smarts: 2, happy: -2 } } },
         { l: '친구들과 함께 준비만 해 본다', typ: true, t: '친구들과 문제집을 돌려 풀며 머리를 맞댔습니다.', fx: { smarts: 2, social: 2 } },
@@ -6899,7 +6908,7 @@ C.metaAch = (lives) => {
         { l: '방과 후에 일해서 직접 번다', p: 0.65,
           ok: { t: '시장에서 짐을 나르고 물을 팔아 학비를 모았습니다.', fx: { skill: 2, health: -1, happy: 1 } },
           no: { t: '돈이 모자라 시험을 놓쳤습니다.', fx: { smarts: -2, happy: -3, skill: 1 } } },
-        { l: '선생님께 사정을 말씀드린다', p: (S) => U.clamp(0.3 + (tal(S, 'charm') - 50) / 150 + (S.st.smarts - 50) / 200, 0.1, 0.75),
+        { l: '선생님께 사정을 말씀드린다', p: (S) => U.clamp(0.3 + (tal(S, 'charm') - 50) / 150 + (E.smEq(S) - 50) / 200, 0.1, 0.75),
           ok: { t: '선생님이 사정을 들으시고 학비를 미뤄 주셨습니다.', fx: { happy: 3, smarts: 1 } },
           no: { t: '규칙은 규칙이라는 답이 돌아왔습니다. 일주일 동안 학교에 가지 못했습니다.', fx: { smarts: -2, happy: -3 } } },
       ],
@@ -6946,7 +6955,7 @@ C.metaAch = (lives) => {
       title: '갖고 싶은 게임기',
       text: (S) => `${sch(S, '반', '동네')} 친구들이 모두 새 게임기 이야기만 합니다. {N}도 너무 갖고 싶습니다. ({country} 인터넷 이용률 {internet}%)`,
       choices: [
-        { l: '성적을 올리면 사 달라고 약속받는다', need: (S) => H.student(S), p: (S) => U.clamp(0.4 + (S.st.smarts - 50) / 150, 0.1, 0.85),
+        { l: '성적을 올리면 사 달라고 약속받는다', need: (S) => H.student(S), p: (S) => U.clamp(0.4 + (E.smEq(S) - 50) / 150, 0.1, 0.85),
           ok: { t: '약속을 지켜 게임기를 손에 넣었습니다!', fx: { happy: 5, smarts: 1, hobby: 'games', flag: { console: true } } },
           no: { t: '성적이 조금 모자랐습니다. 대신 공부 습관이 붙었습니다.', fx: { happy: -3, smarts: 2 } } },
         { l: '용돈을 모은다', p: 0.5,
@@ -7216,7 +7225,7 @@ C.metaAch = (lives) => {
         { l: (S) => (H.student(S) ? '학교를 쉬고 일한다' : '하루 종일 일한다'), t: (S) => `하루 종일 일하고 받은 돈을 ${momOr(S)} 손에 쥐여 드렸습니다. 손바닥이 갈라졌습니다.`, fx: { money: 0.3, smarts: -3, health: -3, happy: -3, skill: 2 },
           run: (S) => { if (H.student(S)) S.edu.dropRisk = Math.min(0.9, (S.edu.dropRisk || 0) + 0.08); } },
         { l: (S) => (H.student(S) ? '학교가 끝난 뒤에만 일한다' : '집안일을 하며 틈틈이만 일한다'), typ: true, t: (S) => (H.student(S) ? '방과 후와 주말에 일했습니다. 숙제는 밤늦게 등잔불 아래에서 했습니다.' : '집안일을 마치고 오후에만 일을 나갔습니다.'), fx: { money: 0.15, smarts: -1, health: -1, skill: 1 } },
-        { l: '공부를 계속하겠다고 말씀드린다', need: (S) => H.student(S), p: (S) => U.clamp(0.4 + H.wealth(S) * 0.5 + (S.st.smarts - 50) / 200, 0.15, 0.85),
+        { l: '공부를 계속하겠다고 말씀드린다', need: (S) => H.student(S), p: (S) => U.clamp(0.4 + H.wealth(S) * 0.5 + (E.smEq(S) - 50) / 200, 0.15, 0.85),
           ok: { t: (S) => `${folks(S, '은')} 한숨을 쉬셨지만 학교에 계속 다니라고 하셨습니다.`, fx: { happy: 2, smarts: 1 } },
           no: { t: '결국 주말마다 일을 나가게 되었습니다.', fx: { money: 0.1, happy: -3, health: -1 } } },
       ],
@@ -7248,7 +7257,7 @@ C.metaAch = (lives) => {
         return `난민촌에 천막 학교가 문을 열었습니다. 수업은 ${U.j(lang, '로')} 합니다.`;
       },
       choices: [
-        { l: '새 말과 새 수업을 열심히 따라간다', typ: true, p: (S) => U.clamp(0.4 + (tal(S, 'study') - 50) / 150 + (S.st.smarts - 50) / 200, 0.15, 0.85),
+        { l: '새 말과 새 수업을 열심히 따라간다', typ: true, p: (S) => U.clamp(0.4 + (tal(S, 'study') - 50) / 150 + (E.smEq(S) - 50) / 200, 0.15, 0.85),
           ok: { t: '석 달 만에 새 친구들과 말이 통하기 시작했습니다.', fx: { smarts: 4, social: 3 } },
           no: { t: '수업을 따라가기 벅찼지만 빠지지 않고 다녔습니다.', fx: { happy: -3, smarts: 1 } } },
         { l: '고향에서 온 선생님 반에만 다닌다', t: '고향 말로 배우니 마음이 편했습니다.', fx: { smarts: 2, happy: 2 } },
@@ -7391,7 +7400,7 @@ C.metaAch = (lives) => {
     if (u && d >= 1) list.push(['식당 서빙', 0.3]);
     if (u && d >= 2) list.push(['카페 아르바이트', 0.35], ['편의점 야간 아르바이트', 0.4]);
     if (u && d >= 2 && a >= 16) list.push(['음식 배달', 0.45]);
-    if (S.st.smarts > 60) list.push(['과외 선생님', 0.4]);
+    if (E.smEq(S) > 60) list.push(['과외 선생님', 0.4]);
     return list.length ? U.pick(list) : ['가게 심부름', 0.25];
   };
   const pj = (S, ctx) => {
@@ -7464,7 +7473,7 @@ C.metaAch = (lives) => {
       text: ['지각을 세 번 해서 방과 후 벌 청소를 했습니다.', '수업 중에 떠들다 복도에 나가 서 있었습니다.', '숙제를 안 해 와서 반성문을 썼습니다.'], fx: { happy: -2 },
     },
     {
-      id: 't_olympiad', age: [13, 18], rate: 0.12, cd: 3, when: (S) => H.student(S) && (S.st.smarts > 62 || H.talent(S, 'study') > 65),
+      id: 't_olympiad', age: [13, 18], rate: 0.12, cd: 3, when: (S) => H.student(S) && (E.smEq(S) > 62 || H.talent(S, 'study') > 65),
       text: '과학 경시대회에 나가 장려상을 받았습니다.', fx: { smarts: 2, happy: 3 },
       run: (S) => (showOff(S, 'study', 72) ? '수학 경시대회에서 전국 대회 본선에 올랐습니다. 선생님이 타고난 재능이 있다고 하셨습니다.' : undefined),
     },
@@ -7541,7 +7550,7 @@ C.metaAch = (lives) => {
       run: (S) => (showOff(S, 'biz') ? '주말마다 시장에서 집안 좌판을 지켰습니다. {N}의 흥정 솜씨에 어른들이 혀를 내둘렀습니다.' : undefined),
     },
     {
-      id: 't_tutorkids', age: [15, 22], rate: 0.12, cd: 3, when: (S) => S.st.smarts > 60,
+      id: 't_tutorkids', age: [15, 22], rate: 0.12, cd: 3, when: (S) => E.smEq(S) > 60,
       text: '동네 아이들에게 수학을 가르쳐 주고 용돈을 받았습니다.', fx: { money: 0.15, smarts: 1, social: 1 },
     },
     {
@@ -7762,7 +7771,7 @@ C.metaAch = (lives) => {
             return '한 방에 상대가 주저앉았습니다. 그 뒤로 아무도 {N을} 건드리지 않았습니다.';
           } },
           no: { t: '오히려 실컷 얻어맞았습니다. 코피가 한참 멈추지 않았습니다.', fx: { health: -6, happy: -6 } } },
-        { l: '말로 맞받아친다', p: (S) => U.clamp(0.3 + (H.presT(S) - 50) / 100 + (S.st.smarts - 50) / 200, 0.1, 0.75),
+        { l: '말로 맞받아친다', p: (S) => U.clamp(0.3 + (H.presT(S) - 50) / 100 + (E.smEq(S) - 50) / 200, 0.1, 0.75),
           ok: { t: '재치 있는 한마디에 구경꾼들이 웃음을 터뜨렸습니다. 상대가 머쓱해져 물러났습니다.', fx: { social: 4, happy: 3 } },
           no: { t: '말이 꼬였습니다. 한동안 놀림감이 되었습니다.', fx: { happy: -4 } } },
         { l: '자리를 피한다', val: { risk: -1 }, t: '자리를 피했습니다. 분했지만 다치지는 않았습니다.', fx: { happy: -2 }, typ: true },
@@ -7878,13 +7887,13 @@ C.metaAch = (lives) => {
       title: (S) => `${examName(S)} D-30`,
       text: (S) => `드디어 ${U.j(examName(S), '이')} 한 달 앞으로 다가왔습니다. 이 시험 한 번으로 진로가 크게 갈립니다.${EXAM_FACT[H.iso(S)] || ''}`,
       choices: [
-        { l: '평소처럼 차분히 복습한다', typ: true, p: (S) => U.clamp(0.2 + S.st.smarts / 130, 0.15, 0.92),
+        { l: '평소처럼 차분히 복습한다', typ: true, p: (S) => U.clamp(0.2 + E.smEq(S) / 130, 0.15, 0.92),
           ok: { t: '실력을 다 보여 주었습니다. 성적표를 받고 온 가족이 기뻐했습니다.', fx: { smarts: 4, happy: 8 }, run: (S) => { S.flags.examGood = true; } },
           no: { t: '긴장한 탓에 아는 문제도 틀렸습니다. 결과가 기대에 못 미쳤습니다.', fx: { happy: -8 }, run: (S) => { S.flags.examBad = true; } } },
-        { l: '밤을 새워 벼락치기를 한다', p: (S) => U.clamp(0.1 + S.st.smarts / 160, 0.1, 0.7),
+        { l: '밤을 새워 벼락치기를 한다', p: (S) => U.clamp(0.1 + E.smEq(S) / 160, 0.1, 0.7),
           ok: { t: '벼락치기한 부분이 그대로 나왔습니다! 운이 좋았습니다.', fx: { smarts: 3, happy: 8 }, run: (S) => { S.flags.examGood = true; } },
           no: { t: '시험 도중 졸음이 쏟아졌습니다. 시간 안에 다 풀지 못했습니다.', fx: { happy: -10, health: -2 }, run: (S) => { S.flags.examBad = true; } } },
-        { l: '과외 선생님을 붙인다', need: (S) => H.wealth(S) > 0.45, cost: 0.5, p: (S) => U.clamp(0.35 + S.st.smarts / 140, 0.3, 0.95),
+        { l: '과외 선생님을 붙인다', need: (S) => H.wealth(S) > 0.45, cost: 0.5, p: (S) => U.clamp(0.35 + E.smEq(S) / 140, 0.3, 0.95),
           ok: { t: '약한 과목을 집중해서 보충했습니다. 생각보다 높은 점수가 나왔습니다.', fx: { smarts: 5, happy: 8 }, run: (S) => { S.flags.examGood = true; } },
           no: { t: '돈을 들였지만 점수는 제자리였습니다.', fx: { smarts: 2, happy: -6 }, run: (S) => { S.flags.examBad = true; } } },
         { l: '시험 대신 일자리를 알아본다', t: '시험장에 가지 않기로 했습니다. 대신 일자리를 알아보기 시작했습니다.', fx: { happy: -2, skill: 1 }, run: (S) => { S.flags.examSkip = true; } },
@@ -7892,13 +7901,13 @@ C.metaAch = (lives) => {
     },
     {
       id: 't_scholarship', age: [15, 22], rate: 0.3, once: true,
-      when: (S) => school(S) && S.st.smarts > 58 && H.wealth(S) < 0.4,
+      when: (S) => school(S) && E.smEq(S) > 58 && H.wealth(S) < 0.4,
       title: '장학금 공고', text: '형편이 어렵고 성적이 좋은 학생에게 주는 장학금 공고가 붙었습니다. 서류와 면접이 까다롭습니다.',
       choices: [
-        { l: '밤새 지원서를 쓴다', p: (S) => U.clamp(0.15 + (S.st.smarts - 55) / 60 + (S.flags.examGood ? 0.15 : 0), 0.1, 0.85),
+        { l: '밤새 지원서를 쓴다', p: (S) => U.clamp(0.15 + (E.smEq(S) - 55) / 60 + (S.flags.examGood ? 0.15 : 0), 0.1, 0.85),
           ok: { t: '장학생으로 뽑혔습니다! 학비 걱정을 덜었습니다.', fx: { happy: 12, money: 3 }, k: 'good', run: (S) => { S.flags.scholar = true; S.edu.dropRisk *= 0.4; } },
           no: { t: '최종 면접에서 떨어졌습니다. 다음 기회를 노리기로 했습니다.', fx: { happy: -5 } } },
-        { l: '선생님께 추천서를 부탁한다', need: (S) => !!H.friend(S, 'mentor'), p: (S) => U.clamp(0.3 + (S.st.smarts - 55) / 60, 0.2, 0.9),
+        { l: '선생님께 추천서를 부탁한다', need: (S) => !!H.friend(S, 'mentor'), p: (S) => U.clamp(0.3 + (E.smEq(S) - 55) / 60, 0.2, 0.9),
           ok: { t: '선생님의 추천서가 큰 힘이 되었습니다. 장학생으로 뽑혔습니다!', fx: { happy: 12, money: 3 }, k: 'good', run: (S) => { S.flags.scholar = true; S.edu.dropRisk *= 0.4; } },
           no: { t: '아쉽게 떨어졌습니다. 선생님이 더 아쉬워하셨습니다.', fx: { happy: -4 } } },
         { l: '집안일 때문에 포기한다', typ: true, t: '지원서를 서랍에 넣었습니다. 지금은 집에 보탬이 되는 게 먼저였습니다.', fx: { happy: -3 } },
@@ -7930,7 +7939,7 @@ C.metaAch = (lives) => {
       id: 't_rival', age: [13, 22], rate: 0.12, cd: 6, who: 'newfriend', when: (S) => school(S),
       title: '라이벌 등장', text: '새로 온 {friend가} 첫 시험부터 {N을} 앞질렀습니다. 다들 둘을 비교하기 시작했습니다.',
       choices: [
-        { l: '이를 악물고 경쟁한다', p: (S) => U.clamp(0.3 + (S.st.smarts - 50) / 80, 0.15, 0.8),
+        { l: '이를 악물고 경쟁한다', p: (S) => U.clamp(0.3 + (E.smEq(S) - 50) / 80, 0.15, 0.8),
           ok: { t: '다음 시험에서 1등을 되찾았습니다. 둘은 공식 라이벌이 되었습니다.', fx: { smarts: 4, happy: 4 }, run: (S, ctx) => { mkFriend(S, ctx.friend, 'rival'); } },
           no: { t: '이번에도 졌습니다. 그래도 덕분에 공부량이 두 배가 되었습니다.', fx: { smarts: 3, happy: -3 }, run: (S, ctx) => { mkFriend(S, ctx.friend, 'rival'); } } },
         { l: '친구가 되자고 한다', p: 0.6,
@@ -7988,7 +7997,7 @@ C.metaAch = (lives) => {
         { l: '몰래 한다', p: 0.55,
           ok: { val: { honest: -1, trad: -2, risk: 1 }, t: '들키지 않았습니다. 짜릿했지만 마음 한구석이 찜찜했습니다.', fx: { happy: 4 } },
           no: { t: (S) => `들켰습니다. 한 달 동안 용돈이 끊기고 ${H.phone(S) ? '휴대폰을 빼앗겼습니다' : '외출이 금지되었습니다'}.`, fx: { happy: -6, social: -2 } } },
-        { l: '차분히 설득한다', p: (S) => U.clamp(0.3 + (S.st.social - 50) / 100 + (S.st.smarts - 50) / 200, 0.1, 0.8),
+        { l: '차분히 설득한다', p: (S) => U.clamp(0.3 + (S.st.social - 50) / 100 + (E.smEq(S) - 50) / 200, 0.1, 0.8),
           ok: { t: (S) => `${folks(S, '이')} 한참 생각하시더니 허락해 주셨습니다.`, fx: { happy: 6, social: 2 } },
           no: { t: '"안 된다면 안 되는 거다." 대화는 거기서 끝났습니다.', fx: { happy: -3 } } },
         { l: (S) => `${folks(S)} 뜻에 따른다`, typ: true, val: { trad: 1 }, t: (S) => `이번에는 ${folks(S)} 뜻을 따랐습니다.`, fx: { happy: -2 } },
@@ -8199,11 +8208,11 @@ C.metaAch = (lives) => {
       ],
     },
     {
-      id: 't_exchange', age: [18, 25], rate: 0.4, once: true, when: (S) => H.college(S) && (H.wealth(S) > 0.35 || S.st.smarts > 65),
+      id: 't_exchange', age: [18, 25], rate: 0.4, once: true, when: (S) => H.college(S) && (H.wealth(S) > 0.35 || E.smEq(S) > 65),
       title: '교환학생',
       text: (S, ctx) => `학교에서 ${Wd.name(xdest(S, ctx))} 대학으로 갈 교환학생을 모집합니다. 한 학기 동안 외국에서 공부할 수 있습니다.`,
       choices: [
-        { l: '내 돈을 들여 지원한다', sub: (S) => `합격하면 비용 약 ${H.amt(S, 3)}`, p: (S) => U.clamp(0.4 + (S.st.smarts - 50) / 80, 0.2, 0.9),
+        { l: '내 돈을 들여 지원한다', sub: (S) => `합격하면 비용 약 ${H.amt(S, 3)}`, p: (S) => U.clamp(0.4 + (E.smEq(S) - 50) / 80, 0.2, 0.9),
           ok: { fx: { smarts: 4, happy: 8, social: 3, money: -3 },
             run: (S, ctx) => {
               const d = xdest(S, ctx);
@@ -8214,7 +8223,7 @@ C.metaAch = (lives) => {
               return `${Wd.name(d)}에서 한 학기를 보냈습니다. 낯선 말과 음식에 금세 익숙해졌습니다.`;
             } },
           no: { t: '어학 점수가 모자라 떨어졌습니다.', fx: { happy: -4 } } },
-        { l: '장학금 자리에만 지원한다', p: (S) => U.clamp(0.1 + (S.st.smarts - 55) / 60, 0.05, 0.7),
+        { l: '장학금 자리에만 지원한다', p: (S) => U.clamp(0.1 + (E.smEq(S) - 55) / 60, 0.05, 0.7),
           ok: { fx: { smarts: 4, happy: 10, social: 3 },
             run: (S, ctx) => {
               const d = xdest(S, ctx);
@@ -8268,7 +8277,7 @@ C.metaAch = (lives) => {
       id: 't_failclass', age: [17, 26], rate: 0.25, cd: 2, when: (S) => H.college(S),
       title: '낙제 위기', text: '전공 필수 과목에서 낙제 점수를 받았습니다. 이대로라면 졸업이 늦어집니다.',
       choices: [
-        { l: '재수강하고 이를 악문다', typ: true, cost: 0.1, p: (S) => U.clamp(0.4 + S.st.smarts / 150, 0.4, 0.95),
+        { l: '재수강하고 이를 악문다', typ: true, cost: 0.1, p: (S) => U.clamp(0.4 + E.smEq(S) / 150, 0.4, 0.95),
           ok: { t: '두 번째에는 최고 학점을 받았습니다.', fx: { smarts: 3, happy: 4 } },
           no: { t: '또 낙제했습니다. 전공이 맞지 않는 것 같습니다.', fx: { happy: -6 }, run: (S) => { dropUp(S, 0.08); } } },
         { l: '교수님을 찾아가 사정한다', p: 0.35,
@@ -8285,7 +8294,7 @@ C.metaAch = (lives) => {
           run: (S) => { S.flags.studentLoan = (S.flags.studentLoan || 0) + 4; } },
         { l: '아르바이트를 두 개 한다', t: '낮에는 수업, 밤에는 아르바이트 두 개를 뛰었습니다.', fx: { health: -5, smarts: -2, money: 0.5, skill: 2 } },
         { l: (S) => `${folks(S)}께 부탁드린다`, need: (S) => H.parentsAlive(S) > 0, typ: true, t: (S) => `${folks(S, '이')} 모아 두신 돈을 깨서 등록금을 내 주셨습니다. 고개를 들 수 없었습니다.`, fx: { money: -3, happy: -2 } },
-        { l: '성적 장학금 면접을 본다', p: (S) => U.clamp(0.1 + (S.st.smarts - 55) / 70, 0.05, 0.7),
+        { l: '성적 장학금 면접을 본다', p: (S) => U.clamp(0.1 + (E.smEq(S) - 55) / 70, 0.05, 0.7),
           ok: { t: '성적 장학금을 받아 등록금을 해결했습니다!', fx: { happy: 8 }, k: 'good', run: (S) => { S.flags.scholar = true; } },
           no: { t: '장학금 면접에서 떨어졌습니다. 결국 빚을 내 등록금을 마련했습니다.', fx: { happy: -4 },
             run: (S) => { if (dev(S) >= 2) S.flags.studentLoan = (S.flags.studentLoan || 0) + 3; else H.fx(S, { money: -2 }); } } },
@@ -8336,7 +8345,7 @@ C.metaAch = (lives) => {
       when: (S) => S.work.seeking && !H.working(S) && S.work.unemployedM >= 2 && !H.inSchool(S),
       title: '면접 날', text: '드디어 면접 연락이 왔습니다. 무엇을 입고 무슨 말을 할지 밤새 고민했습니다.',
       choices: [
-        { l: '철저히 준비해 간다', typ: true, p: (S) => U.clamp(0.3 + S.st.smarts / 250 + S.st.social / 250, 0.2, 0.85),
+        { l: '철저히 준비해 간다', typ: true, p: (S) => U.clamp(0.3 + E.smEq(S) / 250 + S.st.social / 250, 0.2, 0.85),
           ok: { t: '면접관이 고개를 끄덕였습니다.', fx: { happy: 4 }, run: (S) => { const o = C.makeOffers(S, 2); if (o.length) H.ask(S, 'jobOffers', { offers: o }); } },
           no: { t: '준비한 말이 머릿속에서 하얗게 사라졌습니다. 떨어졌습니다.', fx: { happy: -5 } } },
         { l: '아는 사람에게 소개를 부탁한다', p: (S) => U.clamp(0.2 + (S.st.social - 40) / 100, 0.1, 0.7),
@@ -8887,7 +8896,7 @@ C.metaAch = (lives) => {
       id: 'a_ai', age: [25, 62], rate: (S) => (H.jobIs(S, ...AUTO) && H.dev(S) >= 2 && H.internet(S) > 0.6 ? 0.08 : 0), cd: 10,
       title: '인공지능이 온다', text: '회사가 인공지능 시스템을 들여와 {N}의 부서 업무 대부분을 맡기겠다고 발표했습니다. 사람은 절반만 남긴다고 합니다.',
       choices: [
-        { l: '새 기술을 배워 자리를 지킨다', cost: 0.5, p: (S) => U.clamp(0.3 + (S.st.smarts - 50) / 100 + S.st.skill / 250, 0.15, 0.85),
+        { l: '새 기술을 배워 자리를 지킨다', cost: 0.5, p: (S) => U.clamp(0.3 + (E.smEq(S) - 50) / 100 + S.st.skill / 250, 0.15, 0.85),
           ok: { t: '인공지능을 다루는 일을 맡게 되었습니다. 오히려 월급이 올랐습니다.', fx: { skill: 6, smarts: 3, happy: 4 }, run: (S) => { H.promote(S, 1.12); } },
           no: { t: '따라잡기엔 늦었습니다. 정리 해고 명단에 이름이 올랐습니다.', fx: { happy: -4 }, run: (S) => { E.loseJob(S, 'layoff'); } } },
         { l: '희망퇴직금을 받고 나간다', t: '두둑한 퇴직금을 받고 회사를 나왔습니다.', fx: { money: 6 }, run: (S) => { E.loseJob(S, 'quit'); } },
@@ -8939,7 +8948,7 @@ C.metaAch = (lives) => {
       id: 'a_rival', age: [25, 58], who: 'newfriend', rate: (S) => (H.ladder(S) && H.jobIs(S, ...OFFICE) ? 0.1 : 0), cd: 6,
       title: '라이벌 동료', text: '새로 온 동료 {friend가} 사사건건 {N}의 성과를 깎아내립니다. 다음 팀장 자리를 노리는 눈치입니다.',
       choices: [
-        { l: '실력으로 이긴다', p: (S) => U.clamp(0.3 + S.st.skill / 150 + (S.st.smarts - 50) / 200, 0.15, 0.8),
+        { l: '실력으로 이긴다', p: (S) => U.clamp(0.3 + S.st.skill / 150 + (E.smEq(S) - 50) / 200, 0.15, 0.8),
           ok: { t: '큰 프로젝트를 성공시켜 승진은 {N}의 몫이 되었습니다.', fx: { happy: 8 }, run: (S, ctx) => { H.promote(S); addNamed(S, 'rival', ctx.friend); } },
           no: { t: '{friend가} 먼저 승진했습니다. 이제 {friend}의 결재를 받아야 합니다.', fx: { happy: -7 }, run: (S, ctx) => { addNamed(S, 'rival', ctx.friend); } } },
         { l: '먼저 손을 내민다', p: (S) => U.clamp(0.35 + (S.st.social - 50) / 120 + (H.talent(S, 'charm') - 50) / 200, 0.15, 0.75),
@@ -10470,7 +10479,7 @@ C.metaAch = (lives) => {
       title: '손주의 휴대전화 교실',
       text: '손주가 영상 통화와 사진 보내는 법을 알려 주겠다고 합니다. ({country} 인터넷 이용률 {internet}%)',
       choices: [
-        { l: '열심히 배운다', p: (S) => U.clamp(0.4 + (S.st.smarts - 40) / 150, 0.2, 0.85),
+        { l: '열심히 배운다', p: (S) => U.clamp(0.4 + (E.smEq(S) - 40) / 150, 0.2, 0.85),
           ok: { t: '이제 가족 대화방에 사진도 올리고 그림 문자도 보냅니다. 손주들이 깜짝 놀랐습니다.', fx: { smarts: 3, social: 5, happy: 4 }, run: (S) => { S.flags.phone = true; S.flags.o_smart = true; } },
           no: { t: '버튼만 누르면 엉뚱한 화면이 떴습니다. 다섯 번째 설명하던 손주가 웃음을 터뜨렸습니다.', fx: { smarts: 1, happy: 1 } } },
         { l: '전화 받는 법만 배운다', typ: true, t: '초록 버튼을 밀면 받는다는 것만은 확실히 외웠습니다.', fx: { smarts: 1 } },
@@ -10781,7 +10790,7 @@ C.metaAch = (lives) => {
       title: '원로의 판단',
       text: (S) => (H.rural(S) ? '두 집안이 밭 경계를 두고 다투다 {N}에게 판단을 맡겼습니다.' : '이웃 두 집이 소음 문제로 다투다 {N}에게 중재를 부탁했습니다.'),
       choices: [
-        { l: '양쪽 말을 다 듣고 판단한다', p: (S) => U.clamp(0.4 + (S.st.smarts - 50) / 150 + (S.st.social - 50) / 200, 0.2, 0.85),
+        { l: '양쪽 말을 다 듣고 판단한다', p: (S) => U.clamp(0.4 + (E.smEq(S) - 50) / 150 + (S.st.social - 50) / 200, 0.2, 0.85),
           ok: { t: '양쪽 모두 판단에 승복했습니다. 함께 차를 마시며 화해했습니다.', fx: { fame: 2, social: 4, happy: 4 } },
           no: { t: '한쪽 집안이 판단에 불만을 품고 {N}에게 인사를 끊었습니다.', fx: { social: -4, happy: -3 } } },
         { l: '반씩 양보하라고 한다', typ: true, p: 0.6,
@@ -11719,7 +11728,7 @@ C.metaAch = (lives) => {
         { l: '방 한 칸을 민박으로 내놓는다', p: 0.6,
           ok: { t: '세계 곳곳에서 온 손님들이 묵어 갔습니다. 방명록이 빼곡히 찼습니다.', fx: { money: 1.5, social: 3, happy: 3 } },
           no: { t: '손님은 드물었고, 묵고 간 손님은 불평만 남겼습니다.', fx: { money: -0.2, happy: -3 } } },
-        { l: '외국어를 익혀 안내인으로 나선다', need: (S) => H.age(S) <= 60, p: (S) => U.clamp(0.3 + (S.st.smarts - 50) / 150 + (H.presT(S) - 50) / 200, 0.15, 0.8),
+        { l: '외국어를 익혀 안내인으로 나선다', need: (S) => H.age(S) <= 60, p: (S) => U.clamp(0.3 + (E.smEq(S) - 50) / 150 + (H.presT(S) - 50) / 200, 0.15, 0.8),
           ok: { t: '서툰 외국어로도 손님들을 웃기며 안내했습니다. 팁이 쏠쏠했습니다.', fx: { money: 1, skill: 4, social: 4 } },
           no: { t: '말이 막히자 손님들이 다른 안내인을 찾아갔습니다.', fx: { happy: -3, smarts: 1 } } },
         { l: '기념품 좌판을 연다', cost: 0.3, p: 0.5,
@@ -12086,7 +12095,7 @@ C.metaAch = (lives) => {
       text: (S) => `방송국 퀴즈 프로그램에 나가 마지막 문제까지 왔습니다. 지금 멈추면 ${H.amt(S, 3)}, 맞히면 두 배입니다.`,
       choices: [
         { l: '멈추고 상금을 받는다', typ: true, t: '상금을 받고 활짝 웃었습니다.', fx: { money: 3, fame: 2, happy: 6 } },
-        { l: '마지막 문제에 도전한다', p: (S) => U.clamp(sig((S.st.smarts - 62) / 9), 0.1, 0.85),
+        { l: '마지막 문제에 도전한다', p: (S) => U.clamp(sig((E.smEq(S) - 62) / 9), 0.1, 0.85),
           ok: { t: '정답! 스튜디오에 꽃가루가 쏟아졌습니다.', fx: { money: 6, fame: 5, happy: 12 } },
           no: { t: '아깝게 틀렸습니다. 위로 상품으로 전기 주전자를 받았습니다.', fx: { money: 0.3, fame: 3, happy: -4 } } },
       ],
@@ -12353,7 +12362,7 @@ const Lg = {};
     set(S, code, Math.min(cap, v + g * Math.max(0.15, 1 - v / 4.2)));
   };
   Lg.grow = grow;
-  const apt = (S) => 0.55 + S.st.smarts / 110;
+  const apt = (S) => 0.55 + E.smEq(S) / 110;
 
   /* ================================================================ 태어날 때·옛 저장 */
   Lg.initBirth = (S) => {
@@ -13149,7 +13158,7 @@ const Mg = {};
     if (Wd.dev(dest) < 2) return 0;
     const fame = S.fame || 0;
     const tier = typeof Cr !== 'undefined' && Cr.officeTier ? Cr.officeTier(S).t || 0 : 0;
-    const dr = S.edu.level >= 5 && (S.st.smarts || 0) >= 70 ? 0.15 : 0;
+    const dr = S.edu.level >= 5 && (E.smEq(S) || 0) >= 70 ? 0.15 : 0;
     if (fame < 40 && tier < 3 && !dr) return 0;
     return U.clamp(0.35 + Math.max(0, fame - 40) / 120 + (tier >= 3 ? 0.15 * (tier - 2) : 0) + dr, 0.3, 0.9);
   };
@@ -14129,8 +14138,24 @@ const Cr = {};
   };
   Cr.bookTitle = (S) => Cr.bookIdea(S).t;
   /** 원고 완성도: 글솜씨 + 글 재능 + 그때의 운 */
-  Cr.msQuality = (S) => U.clamp(0.55 * S.wskill + 0.45 * H.talent(S, 'art') + U.normal(0, 8), 1, 100);
-  const msCtx = (S, ctx) => { if (ctx.q === undefined) ctx.q = Math.round(Cr.msQuality(S)); return ctx; };
+  // 피드백 232번(글솜씨 100이어도 완성도 70대): 예전 글솜씨 55% + 재능 45% + 운 ±8 → 몫은 글솜씨에 따라(practice.js Pr.mix — 글솜씨 0이면 재능 53%,
+  //   100이면 24%), 운의 폭도 글솜씨 60부터 좁아져 100이면 ±3.6. 글솜씨 100·재능 50 → 중앙값 약 88(예전 77), 글솜씨 50·재능 80 → 약 62(예전 65).
+  /** 원고 완성도와 쓰인 실력: { q, w(글솜씨), tal(재능), luck(이번 운), sd } */
+  Cr.msParts = (S) => {
+    const w = S.wskill || 0, tal = H.talent(S, 'art'), hasMix = typeof Pr !== 'undefined' && !!Pr && typeof Pr.mix === 'function';
+    const sd = hasMix ? Pr.luckSd(w, 8) : 8, luck = U.normal(0, sd);
+    const e = hasMix ? Pr.mix(tal, w, 0, 0) : 0.55 * w + 0.45 * tal;
+    return { q: U.clamp(e + luck, 1, 100), w, tal, luck, sd };
+  };
+  Cr.msQuality = (S) => Cr.msParts(S).q;
+  const msCtx = (S, ctx) => { if (ctx.q === undefined) { const mp = Cr.msParts(S); ctx.q = Math.round(mp.q); ctx.qp = { w: Math.round(mp.w), luck: Math.round(mp.luck) }; } return ctx; };
+  /** 원고 완성도에서 오는 계약 가능성의 바탕(로짓, 피드백 232번 — 예전 −2.2 + 0.55·tanh((완성도−55)/18): 60 → 11% · 75 → 15% · 95 → 16%로 거의 평평했음).
+   *  첫 원고(무명): 30 → 약 5.5% · 45 → 6.6% · 60 → 8% · 75 → 20% · 85 → 40% · 95 → 60% · 100 → 66%. 그 사이는 곧게 잇는다(대부분의 첫 원고인 30~50은 예전보다 조금 낮음). */
+  const MS_L = [[0, -3.3], [30, -2.85], [45, -2.65], [60, -2.44], [75, -1.386], [85, -0.405], [95, 0.405], [100, 0.65]];
+  Cr.msLogit = (q) => {
+    for (let i = 1; i < MS_L.length; i++) if (q <= MS_L[i][0]) { const [a, la] = MS_L[i - 1], [b, lb] = MS_L[i]; return la + ((lb - la) * (Math.max(q, a) - a)) / (b - a); }
+    return MS_L[MS_L.length - 1][1];
+  };
   const sizeMult = (S, lang) => U.clamp(Math.pow(Cr.pool(lang, S).n / 5e7, 0.45), 0.08, 4);
   Cr.bestSold = (S) => S.books.reduce((m, b) => Math.max(m, b.sold || 0), 0);
   Cr.isBestAuthor = (S) => S.books.some((b) => b.best);
@@ -14144,8 +14169,8 @@ const Cr = {};
   /** 명성(다른 분야에서 빌린 몫)이 계약에 힘을 쓰는 정도(글 종류별) */
   const FM_K = { essay: 1.25, nonfic: 1, novel: 0.9, short: 0.7, kids: 0.8 };
   /** 출판사 계약 가능성과 이유(피드백 229번 — 까닭 하나의 최댓값 → 까닭마다 로짓을 더함, 2~98%)
-   *  바탕(원고 완성도): −2.2 + 0.55·tanh((완성도−55)/18) → 첫 원고 6~15%
-   *  작가 이력: 낸 책 +2.0 + 전작 판매 최대 +1.4(1천 부 +0.2 · 1만 부 +0.7 · 10만 부 +1.4), 책을 낸 작가는 원고 완성도가 더 중요((완성도−55)/40),
+   *  바탕(원고 완성도): Cr.msLogit — 첫 원고 30 → 약 5.5% · 60 → 8% · 75 → 20% · 85 → 40% · 95 → 60%(피드백 232번, 예전 6~16%로 평평)
+   *  작가 이력: 낸 책 +2.0 + 전작 판매 최대 +1.4(1천 부 +0.2 · 1만 부 +0.7 · 10만 부 +1.4). 예전에 책을 낸 작가에게만 더하던 완성도 몫((완성도−55)/40)은 바탕이 가팔라져 뺌,
    *            베스트셀러(또는 판매 추세가 기준을 넘음) +2.0 · 문학상 +0.5 · 작품집: 등단 +0.6 / 등단 전 −0.8
    *  명성(다른 분야에서 빌린 몫, Ar.known — 같은 분야 명성은 작가 이력에 들어 있음): 글 종류 배수 × 5 × (1 − e^(−몫/35))
    *  따르는 사람(구독자·팬덤·연재 독자): 0.9 × (log10(수) − 3.3), 0~2.5 — 명성과 겹치는 만큼 둘 가운데 작은 쪽은 35%만
@@ -14156,10 +14181,9 @@ const Cr = {};
     const k = ctx.wk || '', q = ctx.q;
     const hasAr = typeof Ar !== 'undefined' && !!Ar && typeof Ar.known === 'function';
     const T = []; // [까닭, 로짓, 종류]
-    let L = -2.2 + 0.55 * Math.tanh((q - 55) / 18);
+    let L = Cr.msLogit(q);
     // 작가 이력
     if (S.books.length) {
-      L += (q - 55) / 40;
       const best = Cr.bestEst(S), hot = Cr.hotAuthor(S);
       T.push([hot ? (Cr.isBestAuthor(S) ? '베스트셀러 작가' : `판매가 크게 늘고 있는 전작(${U.fmtKo(Math.round(best))}부)`) : `전작 ${U.fmtKo(Math.round(best))}부`, 2.0 + 1.4 * U.clamp(Math.log10(1 + best / 1000) / 2, 0, 1) + (hot ? 2.0 : 0), hot ? 'best' : 'author']);
     }
@@ -14332,8 +14356,10 @@ const Cr = {};
       const parts = [];
       if (ctx.off) parts.push('출판사가 {N}의 이름으로 책을 내자고 먼저 연락해 왔습니다.');
       else if (S.books.length) parts.push(`새 원고를 완성했습니다. 지금까지 ${S.books.length}권을 냈고 누적 ${U.fmtKo(Math.round(S.cr.sold))}부가 팔렸습니다.`);
-      else parts.push('처음으로 원고 한 편을 끝까지 썼습니다. 처음 투고한 원고가 책이 되는 경우는 열에 한 번이 채 되지 않습니다.');
-      parts.push(`글솜씨 ${Math.round(S.wskill)}, 이번 원고 완성도 ${ctx.q}.`);
+      else parts.push('처음으로 원고 한 편을 끝까지 썼습니다. 처음 투고한 원고가 책이 되는 경우는 열에 한 번이 채 되지 않지만, 아주 잘 쓴 원고는 출판사가 먼저 알아봅니다.');
+      // 이번 원고에 쓰인 실력(피드백 232번): '글솜씨 ○○ · 글·그림 재능 ○○ · 운 ±○'
+      if (ctx.qp && typeof Pr !== 'undefined' && Pr && Pr.usedTxt) parts.push(`이번 원고 완성도 ${ctx.q}. ${Pr.usedTxt(S, '이번 원고에 쓰인 실력', [['글솜씨', ctx.qp.w]], 'art', ctx.qp.luck)}.`);
+      else parts.push(`글솜씨 ${Math.round(S.wskill)}, 이번 원고 완성도 ${ctx.q}.`);
       // 알려진 정도(피드백 228·229번): 명성·글 이름값·지위
       if (typeof Ar !== 'undefined' && Ar && Ar.known) { const kn = Ar.known(S, 'lit', ctx.wk); if (kn.v >= 5) parts.push(`${Ar.knownTxt(S, kn)}.`); }
       return C.t(S, parts.join(' '));
@@ -14467,6 +14493,8 @@ const Cr = {};
   /* ================================================================ 스스로 시작하는 일(피드백 10번) */
   const hasLand = (S) => (S.assets || []).some((a) => a.type === 'land');
   const talentFit = (t) => U.clamp((t - 30) / 60, 0, 1);
+  /** 그림·음악 솜씨: 타고난 재능, 연습으로 쌓은 실력이 더 높으면 실력 쪽(재능과 실력의 몫은 practice.js Pr.mix — 피드백 232번) */
+  const artAb = (S, k) => { const t = H.talent(S, k), p = typeof Pr !== 'undefined' && Pr && Pr.mix ? Pr.lvl(S, k) : 0; return p > t ? Math.max(t, Pr.mix(t, p, 0, 0)) : t; };
   /** k: 직업 종류. need → true | 이유. make → 직업 설명 */
   Cr.SELF = [
     { k: 'streamer', ko: '전업 크리에이터',
@@ -14477,17 +14505,17 @@ const Cr = {};
       hint: (S) => (S.books.length ? `낸 책 ${S.books.length}권 · 인세 한 해 약 ${fmt(S, S.cr.royaltyRate)}` : '첫 책이 나오기 전까지는 모아 둔 돈으로 버팁니다') },
     { k: 'translator', ko: '프리랜서 번역', id: 'translator', mult: 0.95, lvl0: 0.35,
       need: (S) => { const [fl, lv] = Cr.bestForeign(S); if (!fl || lv < 3) return '능통한 외국어가 하나 더 있어야 합니다'; if (S.edu.level < 3) return '고등학교 졸업 이상 학력이 필요합니다'; if (H.internet(S) < 0.3) return '인터넷을 쓰기 어렵습니다'; return true; },
-      fit: (S) => U.clamp((Cr.bestForeign(S)[1] - 2.5) / 1.5 * 0.5 + S.st.smarts / 200, 0.1, 1),
+      fit: (S) => U.clamp((Cr.bestForeign(S)[1] - 2.5) / 1.5 * 0.5 + E.smEq(S) / 200, 0.1, 1),
       hint: (S) => `${Cr.langKo(Cr.bestForeign(S)[0])} 번역 일감을 받습니다` },
     { k: 'designer', ko: '프리랜서 디자인', id: 'designer', mult: 1.0, lvl0: 0.3,
       need: (S) => (H.internet(S) < 0.3 ? '인터넷을 쓰기 어렵습니다' : S.edu.major === 'art' || H.talent(S, 'art') >= 62 || H.hobby(S, 'drawing') ? true : '미술 전공이거나 그림 재능·취미가 있어야 합니다'),
-      fit: (S) => talentFit(H.talent(S, 'art')) * 0.8 + (S.edu.major === 'art' ? 0.2 : 0) },
+      fit: (S) => talentFit(artAb(S, 'art')) * 0.8 + (S.edu.major === 'art' ? 0.2 : 0) },
     { k: 'freedev', ko: '프리랜서 개발', id: 'freedev', mult: 1.45, lvl0: 0.3,
       need: (S) => (H.internet(S) < 0.35 ? '인터넷을 쓰기 어렵습니다' : ['cs', 'eng'].includes(S.edu.major) || Cr.expY(S, 'f', 'it') >= 2 || ((S.prac && S.prac.code) || 0) >= 50 ? true : '컴퓨터·공학 전공이거나 개발 경력 2년, 또는 코딩 실력 50이 있어야 합니다'),
-      fit: (S) => U.clamp((S.st.smarts + S.st.skill) / 200 + (['cs', 'eng'].includes(S.edu.major) ? 0.2 : 0), 0.1, 1) },
+      fit: (S) => U.clamp((E.smEq(S) + S.st.skill) / 200 + (['cs', 'eng'].includes(S.edu.major) ? 0.2 : 0), 0.1, 1) },
     { k: 'tutor', ko: '과외', id: 'tutor', mult: 0.65, lvl0: 0.4,
       need: (S) => (S.edu.level < 3 ? '고등학교 졸업 이상 학력이 필요합니다' : S.st.smarts < 50 ? '가르칠 만큼 공부가 되어 있어야 합니다(지식 50)' : true),
-      fit: (S) => U.clamp(S.st.smarts / 110 + (S.edu.level >= 4 ? 0.2 : 0), 0.1, 1) },
+      fit: (S) => U.clamp(E.smEq(S) / 110 + (S.edu.level >= 4 ? 0.2 : 0), 0.1, 1) },
     { k: 'vendor', ko: '노점', id: 'vendor', mult: 0.6, lvl0: 0.6,
       need: (S) => (Ec.liquid(S) < H.pay(S, 0.5) && S.indep ? `밑천(보통 월급 보름 치, ${H.amt(S, 0.5)})이 조금 있어야 합니다 — 지금 쓸 수 있는 돈 ${Ec.fmt(S, Math.max(0, Ec.liquid(S)))}` : true),
       fit: (S) => talentFit(H.talent(S, 'biz')) },
@@ -14499,7 +14527,7 @@ const Cr = {};
       fit: (S) => U.clamp(0.45 + (hasLand(S) ? 0.25 : 0) + (S.edu.major === 'agri' ? 0.2 : 0), 0, 1) },
     { k: 'artist', ko: '화가·음악가', id: 'artist', mult: 0.8, lvl0: 0.3,
       need: (S) => (Math.max(H.talent(S, 'art'), H.talent(S, 'music')) >= 60 || H.hobby(S, 'drawing') || H.hobby(S, 'music') ? true : '그림이나 음악 재능·취미가 있어야 합니다'),
-      fit: (S) => talentFit(Math.max(H.talent(S, 'art'), H.talent(S, 'music'))) },
+      fit: (S) => talentFit(Math.max(artAb(S, 'art'), artAb(S, 'music'))) },
     { k: 'drive', ko: '운전·배달', lvl0: 0.75,
       need: (S) => (E.age(S) < 18 ? '18세부터 할 수 있습니다' : S.flags.car || S.flags.motorbike ? true : '차나 오토바이가 있어야 합니다'),
       fit: () => 0.6 },
@@ -14515,11 +14543,11 @@ const Cr = {};
       mult = C.JOB[id].mult;
     }
     if (o.k === 'drive') { id = S.flags.car ? 'driver' : 'rider'; mult = C.JOB[id].mult; title = S.flags.car ? (Wd.dev(iso) <= 1 ? null : '개인 택시·운전 기사') : Wd.dev(iso) <= 1 ? '오토바이 택시 기사' : '배달 라이더'; }
-    if (o.k === 'artist') title = H.talent(S, 'music') > H.talent(S, 'art') ? '음악가' : '화가';
+    if (o.k === 'artist') title = artAb(S, 'music') > artAb(S, 'art') ? '음악가' : '화가';
     const fit = o.fit ? o.fit(S) : 0.5;
     let tf = 1;
-    if (o.k === 'artist') tf = Math.exp((Math.max(H.talent(S, 'art'), H.talent(S, 'music')) - 65) / 12);
-    if (o.k === 'designer') tf = Math.exp((H.talent(S, 'art') - 60) / 25);
+    if (o.k === 'artist') tf = Math.exp((Math.max(artAb(S, 'art'), artAb(S, 'music')) - 65) / 12);
+    if (o.k === 'designer') tf = Math.exp((artAb(S, 'art') - 60) / 25);
     if (o.k === 'vendor' || o.k === 'shop') tf = (1 + (H.talent(S, 'biz') - 50) / 150) * (1 + Cr.influence(S) / 200);
     const base = Wd.workerMedian(iso) * mult * tf * (Wd.dev(iso) < 3 ? (S.place.urban ? 1.05 : 0.85) : 1);
     const lvl = o.lvl0;
@@ -14751,7 +14779,7 @@ const Cr = {};
       const m = !!S.edu.major && j.major.includes(S.edu.major);
       x += add(m ? '전공 일치' : '전공이 다름', m ? 0.9 : -0.5);
     }
-    x += add('지식', ((S.st.smarts - 50) / 25) * (j.edu >= 4 ? 0.6 : j.edu >= 3 ? 0.4 : 0.15));
+    x += add('지식', ((E.smEq(S) - 50) / 25) * (j.edu >= 4 ? 0.6 : j.edu >= 3 ? 0.4 : 0.15));
     x += add('경력 능력치', ((S.st.skill - 30) / 50) * 0.4);
     // 코딩 실력(피드백 107번 — 연습·레슨으로 쌓음): 개발 일에 가산
     if (['programmer', 'freedev'].includes(j.id) && S.prac && (S.prac.code || 0) > 40) x += add('코딩 실력', Math.min(1.2, (S.prac.code - 40) / 30));
@@ -15234,7 +15262,7 @@ const Cr = {};
     const inf = Cr.influence(S);
     const why = [];
     const add = (k, v) => { if (v) why.push([k, v]); return v; };
-    let x = U.logit(U.clamp(0.3 + S.st.skill / 250 + (S.st.smarts - 50) / 300, 0.15, 0.7));
+    let x = U.logit(U.clamp(0.3 + S.st.skill / 250 + (E.smEq(S) - 50) / 300, 0.15, 0.7));
     x += add('장사 재능', (H.talent(S, 'biz') - 50) / 40);
     if (typeof Ab !== 'undefined' && Ab.creaX) x += add('창의성', Ab.creaX(S)); // 피드백 150번(stats2.js)
     x += add('알려진 이름', Math.min(0.8, inf / 80));
@@ -15733,7 +15761,7 @@ const Cr = {};
   /** 그 나이·건강·나라에서 그런 일을 얻을 가능성 */
   Cr.reworkP = (S, kind) => {
     const c = Wd.c(E.iso(S)), a = E.age(S), un = (c.unemp || 6) / 100;
-    let p = kind === 'consult' ? 0.25 + Cr.bestExp(S).y / 40 + (S.st.smarts - 50) / 200 + (S.st.social - 50) / 200 : kind === 'part' ? 0.5 : 0.55;
+    let p = kind === 'consult' ? 0.25 + Cr.bestExp(S).y / 40 + (E.smEq(S) - 50) / 200 + (S.st.social - 50) / 200 : kind === 'part' ? 0.5 : 0.55;
     p -= Math.max(0, a - 62) / (kind === 'consult' ? 45 : 35);
     p -= un * 2;
     p += (S.st.health - 60) / 200;
@@ -15942,7 +15970,7 @@ const Cr = {};
         const rl = S.cr.relic, exam = R.exam[rl.step];
         const lastM = Math.max(0, ...S.work.history.filter((h) => h.id === id).map((h) => h.to || 0));
         const yrsOff = (S.ageM - lastM) / 12;
-        const p = U.clamp(0.42 + (S.st.smarts - 50) / 90 + (Cr.localLevel(S) - R.lang) * 0.2 - Math.max(0, E.age(S) - 40) * 0.01 - Math.min(0.2, yrsOff * 0.02), 0.08, 0.88);
+        const p = U.clamp(0.42 + (E.smEq(S) - 50) / 90 + (Cr.localLevel(S) - R.lang) * 0.2 - Math.max(0, E.age(S) - 40) * 0.01 - Math.min(0.2, yrsOff * 0.02), 0.08, 0.88);
         if (!U.chance(p)) { E.stat(S, 'happy', -3); return `${exam}에서 떨어졌습니다. 1년 뒤 다시 도전할 수 있습니다. (합격 가능성 약 ${Math.round(p * 100)}%)`; }
         rl.step++;
         E.stat(S, 'smarts', 1);
@@ -19701,7 +19729,7 @@ const Ct = {};
   if (C.ACTION.license) {
     C.ACTION.license.run = (S) => { E.ask(S, 'certPick', {}); return null; };
   }
-  const passP = (S, d) => U.clamp(0.75 - d[4] * 0.6 + (S.st.smarts - 50) / 120 + (S.edu.level - d[3]) * 0.05, 0.08, 0.92);
+  const passP = (S, d) => U.clamp(0.75 - d[4] * 0.6 + (E.smEq(S) - 50) / 120 + (S.edu.level - d[3]) * 0.05, 0.08, 0.92);
   C.DEC.certPick = {
     title: () => '어떤 자격증을 딸까요?',
     text: (S) => C.t(S, `자격증은 이어진 일자리의 합격 가능성과 급여를 올려 줍니다.${S.certs.length ? ` 지금 가진 자격증: ${Ct.names(S).join(', ')}.` : ''}`),
@@ -19866,14 +19894,39 @@ const Pr = {};
     S.prac[k] = U.clamp(v + d, 0, hard);
     return Math.max(0, S.prac[k] - v);
   };
-  /** 실제로 발휘되는 실력: 재능 45% + 실력 40% + 무대에서는 매력, 운동은 건강 15% */
+  /** 실제로 발휘되는 실력: 재능 + 실력(몫은 실력에 따라 — Pr.mix) + 무대에서는 매력, 운동은 건강 15% */
   Pr.eff = (S, k) => {
     const t = H.talent(S, Pr.KINDS[k].talent), p = Pr.lvl(S, k);
-    const extra = k === 'sport' ? S.st.health : k === 'music' || k === 'perform' ? H.looks(S) : k === 'mind' ? S.st.smarts : k === 'speech' ? H.pres(S) : S.st.skill + 20; // 무대는 외모 쪽 매력(피드백 203번)
-    return 0.45 * t + 0.4 * p + 0.15 * extra;
+    const extra = k === 'sport' ? S.st.health : k === 'music' || k === 'perform' ? H.looks(S) : k === 'mind' ? Math.min(100, E.smEq ? E.smEq(S) : S.st.smarts) : k === 'speech' ? H.pres(S) : S.st.skill + 20; // 무대는 외모 쪽 매력(피드백 203번)
+    return Pr.mix(t, p, extra);
   };
   const sig = (x) => 1 / (1 + Math.exp(-x));
   const luck = (S) => (E.luckP ? E.luckP(S) : 0);
+
+  /* ---------------- 피드백 232번: 실력이 높을수록 쌓은 실력의 몫이 커진다(모든 분야가 이 함수들을 쓴다)
+   * 예전: 발휘 실력 = 재능 45% + 실력 40% + 그 밖 15%(작품·종목은 재능 35%·실력 50%), 원고 = 글솜씨 55% + 재능 45% → 실력 100·재능 50이어도 70~77.
+   * 지금: 실력 0 → 재능 45%·실력 40%, 실력 100 → 재능 20%·실력 65%(그 사이는 곧게). 재능은 '빨리 느는 것'(Pr.tf)과 '벽'(Pr.cap)으로 남는다.
+   *       운의 폭(작품 완성도 ±9·원고 ±8, 무대·시합·심사의 흩어짐)도 실력 60부터 좁아져 100이면 45%(±9 → ±4) — 음악(v0.6.4)과 같은 방식.
+   * 쓰는 곳: Pr.eff·오디션(Pr.auditionK)·취미 대회(Pr.contestP)·경시대회·퀴즈, sports.js Sp.eff·입단 테스트·상위 리그·결승, arts.js Ar.aq·Ar.wq,
+   *         media.js Md.songParts, career.js Cr.msParts(원고 완성도). */
+  /** 몫: wx(건강·외모·지식 등, 기본 15%)를 뺀 나머지를 재능:실력으로 나눈다 — 재능 몫 (0.45 − 0.25·실력/100)/0.85 */
+  Pr.mixW = (p, wx = 0.15) => { const s = U.clamp((p || 0) / 100, 0, 1), a = (0.45 - 0.25 * s) / 0.85; return { t: (1 - wx) * a, p: (1 - wx) * (1 - a), x: wx }; };
+  Pr.mix = (t, p, x = 0, wx = 0.15) => { const w = Pr.mixW(p, wx); return w.t * t + w.p * (p || 0) + w.x * x; };
+  /** 운의 폭 배수: 실력 60까지 1, 100이면 0.45 */
+  Pr.luckF = (p) => 1 - 0.55 * U.clamp(((p || 0) - 60) / 40, 0, 1);
+  Pr.luckSd = (p, base = 9) => base * Pr.luckF(p);
+  /** 합격·수상 곡선: 발휘 실력이 기준을 넘는 정도. sc 는 그날의 흩어짐(실력 p 가 높을수록 좁아짐 — 잘하는 사람은 실력대로 결과가 나온다) */
+  Pr.sigP = (eff, T, sc, p) => sig((eff - T) / (sc * Pr.luckF(p)));
+  /** 화면: '이번 작품에 쓰인 실력: 글솜씨 92 · 글·그림 재능 50 · 운 +3'(luck 이 숫자면 이번에 나온 운, sd 를 주면 '운 ±n') */
+  Pr.usedTxt = (S, head, items, talK, luckV, sd) => {
+    const parts = items.filter(Boolean).map(([ko, v]) => `${ko} ${Math.round(v)}`);
+    const tks = [].concat(talK || []), seen = tks.filter((k) => S.talentSeen && S.talentSeen[k]);
+    for (const k of seen) parts.push(`${C.TALENT_KO[k]} 재능 ${Math.round(H.talent(S, k))}`);
+    if (tks.length && !seen.length) parts.push('재능 아직 모름');
+    if (typeof luckV === 'number') { const lv = Math.round(luckV); parts.push(`운 ${lv >= 0 ? '+' : '−'}${Math.abs(lv)}`); }
+    else if (typeof sd === 'number') parts.push(`운 ±${Math.max(1, Math.round(sd))}`);
+    return `${head}: ${parts.join(' · ')}`;
+  };
 
   E.hook('ensure', (S) => {
     if (!S.prac) {
@@ -19897,7 +19950,7 @@ const Pr = {};
   const pickKinds = (S) => Object.entries(Pr.KINDS).map(([k, d]) => [k, d]);
   C.DEC.practicePick = {
     title: (S, ctx) => (ctx.lesson ? '무엇을 배울까요?' : '무엇을 연습할까요?'),
-    text: (S, ctx) => C.t(S, `꾸준히 하면 실력이 쌓입니다. 타고난 재능이 높을수록 빨리 늘고 더 높이까지 오르지만(재능보다 25쯤 위가 한계), 재능만으로는 오디션·입단 테스트·대회를 통과하기 어렵습니다.${ctx.lesson ? ' 레슨은 혼자 하는 연습보다 많이 늡니다.' : ''}`),
+    text: (S, ctx) => C.t(S, `꾸준히 하면 실력이 쌓입니다. 타고난 재능이 높을수록 빨리 늘고 더 높이까지 오르지만(재능보다 25쯤 위가 한계), 재능만으로는 오디션·입단 테스트·대회를 통과하기 어렵습니다. 실력이 높아질수록 결과는 타고난 재능보다 쌓은 실력을 따르고, 그날의 운도 덜 탑니다.${ctx.lesson ? ' 레슨은 혼자 하는 연습보다 많이 늡니다.' : ''}`),
     choices: (S, ctx) => pickKinds(S).map(([k, d]) => ({
       label: d.ko, sub: `지금 실력 ${Math.round(Pr.lvl(S, k))}${Pr.lvl(S, k) >= Pr.cap(S, k) ? ' (재능의 벽 — 꾸준히 하면 벽도 높아짐)' : ''}${S.talentSeen && S.talentSeen[d.talent] ? ` · ${C.TALENT_KO[d.talent]} 재능 ${Math.round(H.talent(S, d.talent))}` : ''} · 쓰이는 곳: ${Pr.USE[k]}`,
       run: (S) => {
@@ -20003,8 +20056,8 @@ const Pr = {};
     voice: { ko: '성우', mix: { perform: 0.6, music: 0.4 }, T: 66, max: 45, mu: 0.2, title: '성우', need: (S) => (Wd.dev(E.iso(S)) >= 2 ? true : '성우 일이 드문 나라입니다') },
     comic: { ko: '코미디언·방송인', mix: { perform: 0.6, socialX: 0.4 }, T: 70, max: 38, mu: 0.4, title: '방송인' },
   };
-  // 쌓은 실력의 비중을 키움(재능 0.45·실력 0.4 → 재능 0.35·실력 0.5)
-  const effK = (S, k) => Pr.eff(S, k) - 0.1 * H.talent(S, Pr.KINDS[k].talent) + 0.1 * Pr.lvl(S, k);
+  // 쌓은 실력의 비중: 예전에는 따로 키웠으나(재능 0.35·실력 0.5) 이제 Pr.eff 가 실력에 따라 정한다(피드백 232번)
+  const effK = (S, k) => Pr.eff(S, k);
   const audEff = (S, d) => { let e = 0; for (const [k, w] of Object.entries(d.mix)) e += w * (k === 'charmX' ? 0.5 * H.looks(S) + 0.3 * H.talent(S, 'charm') + 0.2 * S.st.health : k === 'socialX' ? 0.5 * S.st.social + 0.5 * H.talent(S, 'charm') : effK(S, k)); return e; };
   const audSkill = (S, d) => { let x = 0, w0 = 0; for (const [k, w] of Object.entries(d.mix)) if (Pr.KINDS[k]) { x += w * Pr.lvl(S, k); w0 += w; } return w0 ? x / w0 : 50; };
   const audTal = (S, d) => { let t = 0; for (const [k, w] of Object.entries(d.mix)) t += w * H.talent(S, k === 'music' ? 'music' : 'charm'); return t; };
@@ -20012,16 +20065,17 @@ const Pr = {};
   Pr.auditionK = (S, id, small) => {
     const d = AUD[id], eff = audEff(S, d), T = d.T - (small ? 8 : 0);
     const inf = typeof Cr !== 'undefined' && Cr.influence ? Cr.influence(S) : 0;
-    const p1 = U.clamp(sig((eff - T) / 6) * 0.75 + U.clamp((inf - 25) / 150, 0, 0.35) + luck(S), 0.002, 0.9);
-    // 최종 계약: 타고난 끼 55% + 쌓은 실력 45%(예전: 거의 타고난 끼만 — 끼 52면 실력과 상관없이 약 5%)
-    const t2 = 0.55 * audTal(S, d) + 0.45 * audSkill(S, d);
-    const p2 = U.clamp(0.05 + 0.85 * sig((t2 - (T - 6)) / 6) + U.clamp((inf - 25) / 200, 0, 0.25), 0.03, 0.92);
-    return { id, d, eff, inf, p1, p2, p: p1 * p2, T };
+    const sk = audSkill(S, d);
+    const p1 = U.clamp(Pr.sigP(eff, T, 6, sk) * 0.75 + U.clamp((inf - 25) / 150, 0, 0.35) + luck(S), 0.002, 0.9);
+    // 최종 계약: 타고난 끼와 쌓은 실력(실력 0이면 끼 53%, 실력 100이면 24% — Pr.mix, 피드백 232번. 예전: 끼 55% 고정)
+    const t2 = Pr.mix(audTal(S, d), sk, 0, 0);
+    const p2 = U.clamp(0.05 + 0.85 * Pr.sigP(t2, T - 6, 6, sk) + U.clamp((inf - 25) / 200, 0, 0.25), 0.03, 0.92);
+    return { id, d, eff, inf, p1, p2, p: p1 * p2, T, sk };
   };
   const audMain = (d) => (d.mix.music >= (d.mix.perform || 0) ? 'music' : 'perform');
   C.DEC.pr_audition = {
     title: () => '어떤 오디션을 볼까요?',
-    text: (S) => C.t(S, `노래·악기 실력 ${Math.round(Pr.lvl(S, 'music'))} · 춤·연기 실력 ${Math.round(Pr.lvl(S, 'perform'))} · ${S.st.looks !== undefined ? '외모' : '매력'} ${Math.round(H.looks(S))}. 오디션마다 보는 실력과 나이 한도가 다릅니다.`),
+    text: (S) => C.t(S, `${Pr.usedTxt(S, '이번 오디션에 쓰일 실력', [['노래·악기', Pr.lvl(S, 'music')], ['춤·연기', Pr.lvl(S, 'perform')], [S.st.looks !== undefined ? '외모' : '매력', H.looks(S)]], ['music', 'charm'], null, Pr.luckSd(Math.max(Pr.lvl(S, 'music'), Pr.lvl(S, 'perform')), 9))}. 오디션마다 보는 실력과 나이 한도가 다릅니다. 실력이 높을수록 타고난 끼보다 쌓은 실력이 결과를 가르고, 그날의 운도 덜 탑니다.`),
     choices: (S) => {
       const a = E.age(S);
       const out = Object.keys(AUD).map((id) => {
@@ -20096,7 +20150,8 @@ const Pr = {};
     E.stat(S, 'happy', -6);
     return `입단 테스트에서 떨어졌습니다. ${pass1 ? '기량 테스트는 통과했지만 마지막 계약 명단에는 들지 못했습니다.' : Pr.lvl(S, 'sport') < 50 ? '감독이 기본기를 더 다지고 오라고 했습니다.' : '감독이 아깝다며 다음을 기약하자고 했습니다.'} (${why(S, 'sport')})`;
   };
-  // 취미 대회: 그 취미의 실력이 핵심
+  // 취미 대회: 그 취미의 실력이 핵심. lvl 0 지역·1 전국·2 국제(기준 50·59·68)
+  Pr.contestP = (S, k, lvl) => U.clamp(Pr.sigP(Pr.eff(S, k), 50 + lvl * 9, 6, Pr.lvl(S, k)) + luck(S), 0.01, 0.95);
   if (C.ACTION.contest) {
     const run0 = C.ACTION.contest.run;
     C.ACTION.contest.run = (S) => {
@@ -20107,8 +20162,7 @@ const Pr = {};
       if (!k) return run0(S);
       const prev = (S.honors || []).filter((x) => x.k === 'contest' && x.h === h).length;
       const lvl = prev >= 4 ? 2 : prev >= 2 ? 1 : 0, lk = ['지역', '전국', '국제'][lvl];
-      const eff = Pr.eff(S, k);
-      const p = U.clamp(sig((eff - 50 - lvl * 9) / 6) + luck(S), 0.01, 0.95);
+      const p = Pr.contestP(S, k, lvl);
       const name = C.hobbyName(S, h);
       Pr.gain(S, k, 1.5);
       if (U.chance(p)) {
@@ -20141,7 +20195,7 @@ const Pr = {};
       rate: (S) => (Pr.eff(S, 'mind') >= 50 ? 0.12 + (Pr.eff(S, 'mind') - 50) / 150 : 0),
       title: '경시대회', text: '담임 선생님이 수학·과학 경시대회에 학교 대표로 나가 보라고 권했습니다. 수를 읽고 따지는 데 소질이 있다는 것입니다.',
       choices: [
-        { l: '나가 본다', typ: true, p: (S) => U.clamp(sig((Pr.eff(S, 'mind') - 62) / 6) + luck(S), 0.03, 0.9),
+        { l: '나가 본다', typ: true, p: (S) => U.clamp(Pr.sigP(Pr.eff(S, 'mind'), 62, 6, Pr.lvl(S, 'mind')) + luck(S), 0.03, 0.9),
           ok: { t: (S) => `경시대회에서 상을 받았습니다! 상장이 집 벽에 걸렸습니다. (${why(S, 'mind')})`, fx: { smarts: 3, happy: 6 },
             run: (S) => { H.fameUp(S, 1); Pr.gain(S, 'mind', 2); if (typeof Cr !== 'undefined' && Cr.honor) Cr.honor(S, 'contest', '경시대회 수상'); } },
           no: { t: (S) => `본선까지 갔지만 상은 받지 못했습니다. 문제를 푸는 동안 시간 가는 줄 몰랐습니다. (${why(S, 'mind')})`, fx: { smarts: 1, happy: -1 }, run: (S) => { Pr.gain(S, 'mind', 1.5); } } },
@@ -20153,7 +20207,7 @@ const Pr = {};
       rate: (S) => (H.dev(S) >= 1 && Pr.eff(S, 'mind') >= 58 ? 0.04 + (Pr.eff(S, 'mind') - 58) / 300 : 0),
       title: '퀴즈 프로그램', text: '아는 것이 많다는 소문을 들은 방송국에서 퀴즈 프로그램에 나와 달라고 합니다. 끝까지 이기면 상금이 큽니다.',
       choices: [
-        { l: '출연한다', p: (S) => U.clamp(sig((Pr.eff(S, 'mind') - 68) / 6) * 0.85 + luck(S), 0.03, 0.85),
+        { l: '출연한다', p: (S) => U.clamp(Pr.sigP(Pr.eff(S, 'mind'), 68, 6, Pr.lvl(S, 'mind')) * 0.85 + luck(S), 0.03, 0.85),
           ok: { t: (S) => `마지막 문제까지 맞히고 우승했습니다! 상금을 받았고, 길에서 알아보는 사람이 생겼습니다. (${why(S, 'mind')})`, fx: { happy: 8 },
             run: (S) => { const m = U.randInt(3, 18); if (typeof Ec !== 'undefined' && Ec.earn) Ec.earn(S, 'gig', H.pay(S, m)); else E.addMoney(S, H.pay(S, m)); H.fameUp(S, 4); if (typeof Cr !== 'undefined' && Cr.honor) Cr.honor(S, 'contest', '퀴즈 프로그램 우승'); } },
           no: { t: (S) => `중간에 한 문제를 놓쳐 떨어졌습니다. 그래도 출연료를 받았고 꽤 화제가 되었습니다. (${why(S, 'mind')})`, fx: { happy: -1 },
@@ -21305,7 +21359,7 @@ const Bg = {};
       title: '일과 학교 사이',
       text: '일을 마치고 나면 졸음이 쏟아져 공부가 손에 잡히지 않습니다. 성적도 떨어지기 시작했습니다.',
       choices: [
-        { l: '일을 줄이고 공부에 힘쓰겠다고 말씀드린다', p: (S) => U.clamp(0.25 + rank(S) * 0.8 + (S.st.smarts - 50) / 200, 0.1, 0.85),
+        { l: '일을 줄이고 공부에 힘쓰겠다고 말씀드린다', p: (S) => U.clamp(0.25 + rank(S) * 0.8 + (E.smEq(S) - 50) / 200, 0.1, 0.85),
           ok: { t: '집안 어른들께서 고개를 끄덕이셨습니다. 당분간 일은 쉬고 공부에 힘쓰기로 했습니다.', fx: { smarts: 2, happy: 3 }, run: (S) => { S.bg.cwOff = S.ageM + 24; endCw(S, 'other'); } },
           no: { t: '집안 사정이 그럴 수 없다고 하셨습니다. 일은 그대로입니다.', fx: { happy: -3 } } },
         { l: '학교를 쉬고 일에 매달린다', t: '한동안 학교를 쉬고 일했습니다. 번 돈은 고스란히 살림에 들어갔습니다.', fx: { money: 0.3, smarts: -2, skill: 2 },
@@ -21905,7 +21959,7 @@ const Cm = {};
       what: '조직에 들어가 "형님"들 밑에서 일하는 것',
       day: ['구역의 가게들을 돌며 보호비를 걷었습니다. 다들 눈을 마주치지 않습니다.', '다른 조직과의 충돌 소식이 들려옵니다. 밤에는 혼자 다니지 않습니다.'] },
     { id: 'hacker', ck: 'cyber', ko: '사이버 범죄자', lvl: 1, mult: 2.2, urb: 1, rur: 0.5, sex: [1, 0.4], risk: {}, heat: 6, arrest: 0.1, sent: [12, 48], devW: [0.1, 0.6, 1, 1], why: '해킹·정보 탈취',
-      need: (S) => S.edu.level >= 2 && H.internet(S) >= 0.7 && S.st.smarts >= 60,
+      need: (S) => S.edu.level >= 2 && H.internet(S) >= 0.7 && E.smEq(S) >= 60,
       what: '남의 계좌와 개인 정보를 몰래 빼내 파는 일',
       day: ['밤새 화면 앞에서 남의 계정을 뚫었습니다. 빼낸 정보는 익명 장터에서 팔려 나갔습니다.', '수사 기관이 비슷한 수법의 일당을 잡았다는 뉴스를 보고 흔적을 지웠습니다.'] },
     { id: 'poacher', ck: 'env', ko: '밀렵꾼', lvl: 1, mult: 0.9, urb: 0, rur: 1, sex: [1, 0.05], risk: { homic: 1.3, other: 2 }, heat: 6, arrest: 0.14, sent: [6, 36], why: '밀렵',
@@ -21995,7 +22049,7 @@ const Cm = {};
       harm: '철거 현장에서 밀려 넘어진 노인이 크게 다쳤습니다. 그 장면이 자꾸 꿈에 나옵니다.',
       raid: '철거 현장의 폭력이 방송에 나오자 경찰이 용역 업체를 조사하기 시작했습니다.' },
     { id: 'exambroker', ck: 'fraud', ko: '대리 시험 브로커', lvl: 1, mult: 1.7, urb: 1, rur: 0.2, sex: [1, 0.6], risk: {}, heat: 5, arrest: 0.08, sent: [6, 36], devW: [0.3, 1, 1, 0.5], via: 'net', why: '시험 부정 알선',
-      need: (S) => S.edu.level >= 3 && S.st.smarts >= 55,
+      need: (S) => S.edu.level >= 3 && E.smEq(S) >= 55,
       hot: ['CHN', 'IND', 'KOR', 'NGA', 'PAK', 'EGY', 'KEN', 'BGD', 'IDN', 'VNM'], hotF: 1.6,
       what: '돈을 받고 시험을 대신 치르거나 답안을 빼돌려 주는 일',
       day: ['사진을 바꿔 붙인 신분증으로 대리 응시자를 시험장에 들여보냈습니다. 한 사람에 몇 달 치 월급을 받습니다.', '시험 전날 밤 빼돌린 문제지가 수십 명에게 팔려 나갔습니다.'],
@@ -23922,7 +23976,7 @@ const Cm = {};
     title: '국정 감사',
     text: '국정 감사에서 장관을 상대로 질의할 차례가 다가옵니다. 보좌진이 밤새 자료를 모았지만 아직 결정적인 한 방이 없습니다.',
     choices: [
-      { l: '밤새 자료를 직접 파고든다', p: (S) => U.clamp(0.35 + (S.st.smarts - 50) / 120 + S.st.skill / 400, 0.15, 0.8),
+      { l: '밤새 자료를 직접 파고든다', p: (S) => U.clamp(0.35 + (E.smEq(S) - 50) / 120 + S.st.skill / 400, 0.15, 0.8),
         ok: { t: '숨겨진 예산 전용을 찾아내 장관의 말문을 막았습니다. 그날 저녁 뉴스 첫머리가 {N}의 질의였습니다.', fx: { fame: 5, happy: 6, health: -2 }, val: { rep: 3 }, run: (S) => { rec(S, 1.5); } },
         no: { t: '준비한 자료가 틀린 것으로 드러났습니다. 장관이 웃으며 정정했습니다.', fx: { fame: 1, happy: -6, health: -2 }, val: { rep: -2 } } },
       { l: '호통으로 존재감을 보인다', p: 0.5,
@@ -24088,7 +24142,7 @@ const Cm = {};
     title: '승진 시험',
     text: '승진 시험 공고가 붙었습니다. 붙으면 한 직급 오르지만, 몇 달 동안 퇴근 뒤 저녁을 책상 앞에서 보내야 합니다.',
     choices: [
-      { l: '밤마다 공부한다', p: (S) => U.clamp(0.35 + (S.st.smarts - 50) / 120 + S.st.skill / 400, 0.15, 0.85),
+      { l: '밤마다 공부한다', p: (S) => U.clamp(0.35 + (E.smEq(S) - 50) / 120 + S.st.skill / 400, 0.15, 0.85),
         ok: { t: '시험에 붙어 한 직급 올랐습니다. 책상이 창가 자리로 옮겨졌습니다.', fx: { happy: 6, smarts: 2 }, run: (S) => { promo(S, 1.15); fam(S, -2); } },
         no: { t: '두 점 차이로 떨어졌습니다. 내년을 기약합니다.', fx: { happy: -4, smarts: 2 }, run: (S) => { fam(S, -2); } } },
       { l: '시험은 건너뛰고 지금 일에 충실한다', typ: true, t: '맡은 일을 꼼꼼히 하며 저녁 시간을 지켰습니다.', fx: { happy: 2 } },
@@ -24157,7 +24211,7 @@ const Cm = {};
     text: (S) => (el(S) === 'free' ? '선거로 정권이 바뀌었습니다. 새 정부가 {N이} 몇 해 동안 맡아 온 사업을 "전 정권 사업"이라며 멈추고, 담당자들을 불러 경위를 묻겠다고 합니다.' : '정부 요직이 한꺼번에 바뀌었습니다. 새 장관이 {N이} 맡아 온 사업을 멈추고, 담당자들의 "충성심"을 따지겠다고 합니다.'),
     choices: [
       { l: '새 방침에 맞춰 보고서를 다시 쓴다', typ: true, t: '밤새 보고서를 고쳐 썼습니다. 몇 해 쌓은 일이 서류 몇 장으로 정리되었습니다.', fx: { happy: -4, skill: 2 } },
-      { l: '사업 성과를 자료로 설득한다', p: (S) => U.clamp(0.3 + (S.st.smarts - 50) / 150 + (S.st.social - 50) / 200, 0.12, 0.7),
+      { l: '사업 성과를 자료로 설득한다', p: (S) => U.clamp(0.3 + (E.smEq(S) - 50) / 150 + (S.st.social - 50) / 200, 0.12, 0.7),
         ok: { t: '자료를 본 새 장관이 사업을 이어 가기로 했습니다. {N}의 이름이 위에 알려졌습니다.', fx: { happy: 6 }, run: (S) => { raise(S, 1.04); pow(S, 2); } },
         no: { t: '"전 정권 사람"으로 찍혀 한직으로 밀려났습니다.', fx: { happy: -6, social: -2 } } },
       { l: '다른 부서로 옮겨 달라고 한다', t: '조용히 다른 부서로 옮겼습니다. 새 일을 처음부터 배웁니다.', fx: { happy: -1, smarts: 1 } },
@@ -24347,7 +24401,7 @@ const Cm = {};
       { l: '장기 복무를 신청한다', typ: true, p: 0.65,
         ok: { t: '진급했습니다. 계급장이 하나 늘었습니다.', fx: { happy: 5 }, run: (S) => { promo(S, 1.15); fam(S, -3); } },
         no: { t: '이번 심사에서는 떨어졌습니다. 다음 해를 기약합니다.', fx: { happy: -4 } } },
-      { l: '군사 교육 과정을 밟아 실력으로 오른다', p: (S) => U.clamp(0.3 + (S.st.smarts - 50) / 120, 0.15, 0.75),
+      { l: '군사 교육 과정을 밟아 실력으로 오른다', p: (S) => U.clamp(0.3 + (E.smEq(S) - 50) / 120, 0.15, 0.75),
         ok: { t: '야간 교육 과정을 마치고 진급했습니다.', fx: { smarts: 2, happy: 5 }, run: (S) => { promo(S, 1.15); } },
         no: { t: '교육은 마쳤지만 진급은 다음으로 밀렸습니다.', fx: { smarts: 2, happy: -2 } } },
       { l: '진급에 욕심내지 않는다', t: '지금 자리에 만족하기로 했습니다.', fx: { happy: 1 } },
@@ -24475,7 +24529,7 @@ const Cm = {};
     text: (S) => (H.dev(S) <= 1 ? '버스가 강에 빠지는 사고가 나 환자들이 한꺼번에 실려 왔습니다. 병상도 약도 모자랍니다.' : '큰 화재로 응급 환자가 한꺼번에 몰려왔습니다. 이미 열여섯 시간째 일하는 중입니다.'),
     choices: [
       { l: '교대를 미루고 끝까지 남는다', typ: true, t: '새벽까지 쉬지 않고 환자를 돌봤습니다. 살린 사람들의 얼굴을 하나하나 기억합니다.', fx: { health: -4, happy: 4, skill: 3 }, val: { rep: 1 }, run: (S) => { fam(S, -2); } },
-      { l: '위급한 환자부터 가려내 혼란을 정리한다', p: (S) => U.clamp(0.35 + S.st.skill / 200 + (S.st.smarts - 50) / 200, 0.2, 0.85),
+      { l: '위급한 환자부터 가려내 혼란을 정리한다', p: (S) => U.clamp(0.35 + S.st.skill / 200 + (E.smEq(S) - 50) / 200, 0.2, 0.85),
         ok: { t: '침착한 분류 덕에 혼란이 금세 가라앉았습니다. 병원장이 따로 불러 고마워했습니다.', fx: { happy: 6, skill: 4 }, run: (S) => { raise(S, 1.03); } },
         no: { t: '판단이 엇갈려 원망 섞인 말을 들었습니다. 그래도 최선이었습니다.', fx: { happy: -4, skill: 2 } } },
       { l: '교대 시간에 맞춰 나온다', t: '몸이 한계였습니다. 교대 시간에 병원을 나왔지만 잠이 오지 않았습니다.', fx: { happy: -3, health: 1 } },
@@ -24559,7 +24613,7 @@ const Cm = {};
     title: '해외 간호사 모집',
     text: (S, ctx) => { const d = nurseDest(S, ctx); const r = Wd.workerMedian(d) / Wd.workerMedian(H.iso(S)); return `${Wd.name(d)}의 병원들이 간호사를 모집합니다. 그곳 보통 일꾼의 벌이는 이 나라의 약 ${r >= 1.5 ? Math.round(r) : r.toFixed(1)}배입니다. 어학 시험과 면허 시험을 통과해야 합니다.`; },
     choices: [
-      { l: '시험을 준비해 떠난다', cost: 1.5, p: (S) => U.clamp(0.3 + (S.st.smarts - 50) / 150 + S.st.skill / 400, 0.15, 0.75),
+      { l: '시험을 준비해 떠난다', cost: 1.5, p: (S) => U.clamp(0.3 + (E.smEq(S) - 50) / 150 + S.st.skill / 400, 0.15, 0.75),
         ok: { fx: { social: -5, happy: 2 }, run: (S, ctx) => { const d = nurseDest(S, ctx); E.moveCountry(S, d, 'visa'); const j = C.makeJob(S, C.JOB.nurse, 1.1); j.formal = true; E.takeJob(S, j); return `${Wd.name(d)}의 병원에서 간호사로 일하기 시작했습니다. 고향에 매달 돈을 부칩니다.`; } },
         no: { t: '면허 시험에서 떨어졌습니다. 준비한 돈만 날렸습니다.', fx: { happy: -5, smarts: 2 } } },
       { l: '고향 병원에 남는다', typ: true, t: '고향 병원에 남기로 했습니다. 떠나는 동료들의 송별회가 잦아졌습니다.', fx: { happy: -1 } },
@@ -24768,7 +24822,7 @@ const Cm = {};
     title: '정년 보장 심사',
     text: '정년 보장 심사를 앞두고 있습니다. 논문 수가 기준에 조금 모자랍니다.',
     choices: [
-      { l: '1년 동안 논문에 매달린다', typ: true, p: (S) => U.clamp(0.35 + (S.st.smarts - 50) / 150 + H.talent(S, 'study') / 300, 0.2, 0.85),
+      { l: '1년 동안 논문에 매달린다', typ: true, p: (S) => U.clamp(0.35 + (E.smEq(S) - 50) / 150 + H.talent(S, 'study') / 300, 0.2, 0.85),
         ok: { t: '정년 보장을 받았습니다. 이제 쫓기지 않고 긴 연구를 할 수 있습니다.', fx: { happy: 10 }, run: (S) => { promo(S, 1.2); fam(S, -3); } },
         no: { t: '심사에서 떨어졌습니다. 계약직 연구원으로 한 해를 더 버티기로 했습니다.', fx: { happy: -10 }, run: (S) => { raise(S, 0.9); fam(S, -3); } } },
       { l: '공동 연구로 논문 수를 채운다', p: 0.55,
@@ -25220,7 +25274,7 @@ const Cm = {};
     title: '로봇 라인',
     text: '공장에 로봇 팔이 들어옵니다. 회사는 남는 사람들에게 로봇 관리 교육을 하겠다지만, 자리는 절반으로 줄어듭니다.',
     choices: [
-      { l: '교육을 받는다', p: (S) => U.clamp(0.35 + (S.st.smarts - 50) / 150 + S.st.skill / 300, 0.2, 0.85),
+      { l: '교육을 받는다', p: (S) => U.clamp(0.35 + (E.smEq(S) - 50) / 150 + S.st.skill / 300, 0.2, 0.85),
         ok: { t: '로봇 정비 담당이 되었습니다. 기름 대신 화면을 들여다봅니다.', fx: { skill: 6, happy: 4 }, run: (S) => { promo(S, 1.1); } },
         no: { t: '교육 평가에서 떨어져 정리 해고 명단에 올랐습니다.', fx: { happy: -6 }, run: (S) => { lose(S, 'layoff'); } } },
       { l: '희망퇴직을 신청한다', t: '퇴직금을 받고 공장을 나왔습니다.', fx: { money: 6 }, run: (S) => { lose(S); } },
@@ -25325,7 +25379,7 @@ const Cm = {};
     title: '상위 자격증',
     text: '상위 기능 자격증 시험이 있습니다. 붙으면 일당이 오르고 큰 현장에도 갈 수 있습니다.',
     choices: [
-      { l: '저녁마다 학원에 다닌다', cost: 0.5, p: (S) => U.clamp(0.4 + (S.st.smarts - 50) / 150 + S.st.skill / 300, 0.2, 0.9),
+      { l: '저녁마다 학원에 다닌다', cost: 0.5, p: (S) => U.clamp(0.4 + (E.smEq(S) - 50) / 150 + S.st.skill / 300, 0.2, 0.9),
         ok: { t: '자격증을 땄습니다. 명함에 한 줄이 늘었습니다.', fx: { skill: 4, happy: 5 }, run: (S) => { raise(S, 1.12); } },
         no: { t: '실기에서 떨어졌습니다. 내년에 다시 봅니다.', fx: { skill: 2, happy: -3 } } },
       { l: '경험이면 충분하다', typ: true, t: '자격증보다 손이 먼저라고 생각했습니다.' },
@@ -25460,7 +25514,7 @@ const Cm = {};
       { l: '잔업으로 밀어붙인다', p: 0.6,
         ok: { t: '목표를 채웠습니다. 성과급이 나왔지만 작업자들의 불만이 커졌습니다.', fx: { social: -3 }, run: (S) => { earn(S, 2); } },
         no: { t: '불량이 쏟아져 목표도 품질도 놓쳤습니다.', fx: { happy: -6 } } },
-      { l: '공정을 뜯어고친다', p: (S) => U.clamp(0.3 + S.st.skill / 150 + (S.st.smarts - 50) / 200, 0.15, 0.8),
+      { l: '공정을 뜯어고친다', p: (S) => U.clamp(0.3 + S.st.skill / 150 + (E.smEq(S) - 50) / 200, 0.15, 0.8),
         ok: { t: '공정을 바꿔 사람을 늘리지 않고 목표를 채웠습니다.', fx: { skill: 4, happy: 5 }, run: (S) => { promo(S, 1.12); } },
         no: { t: '바꾼 공정이 자리를 잡지 못했습니다.', fx: { happy: -4 } } },
       { l: '본사와 목표를 다시 협상한다', typ: true, p: 0.5,
@@ -25603,7 +25657,7 @@ const Cm = {};
     title: '온라인 판매',
     text: '손님들이 점점 인터넷으로 물건을 삽니다. 온라인 장터에 가게를 열어 볼까요?',
     choices: [
-      { l: '연다', cost: 0.5, p: (S) => U.clamp(0.35 + (H.talent(S, 'biz') - 50) / 150 + (S.st.smarts - 50) / 200, 0.15, 0.75),
+      { l: '연다', cost: 0.5, p: (S) => U.clamp(0.35 + (H.talent(S, 'biz') - 50) / 150 + (E.smEq(S) - 50) / 200, 0.15, 0.75),
         ok: { t: '온라인 주문이 매장 매출을 넘어섰습니다. 밤마다 포장을 합니다.', fx: { happy: 5, health: -1 }, run: (S) => { raise(S, 1.2); } },
         no: { t: '사진 찍고 답글 다는 데 시간만 들고 주문은 드물었습니다.', fx: { happy: -3 } } },
       { l: '매장에만 집중한다', typ: true, t: '손님 얼굴을 보며 파는 게 좋다고 생각했습니다.' },
@@ -25996,7 +26050,7 @@ const Cm = {};
     title: '자격시험',
     text: '공인회계사 시험에 도전할까요? 붙으면 몸값이 크게 오르지만 2년은 공부에 매달려야 합니다.',
     choices: [
-      { l: '도전한다', p: (S) => U.clamp(0.2 + (S.st.smarts - 50) / 120 + H.talent(S, 'study') / 400, 0.1, 0.75),
+      { l: '도전한다', p: (S) => U.clamp(0.2 + (E.smEq(S) - 50) / 120 + H.talent(S, 'study') / 400, 0.1, 0.75),
         ok: { t: '공인회계사 시험에 붙었습니다!', fx: { smarts: 4, happy: 10 }, run: (S) => { promo(S, 1.3); fam(S, -4); } },
         no: { t: '두 번 떨어지고 공부를 접었습니다.', fx: { smarts: 3, happy: -6 }, run: (S) => { fam(S, -4); } } },
       { l: '지금 일에 집중한다', typ: true, t: '지금 자리에서 경력을 쌓기로 했습니다.' },
@@ -26260,7 +26314,7 @@ const Cm = {};
     text: '기계 번역이 좋아지면서 의뢰인들이 "기계 번역을 다듬기만 하면 되니 반값에 해 달라"고 합니다.',
     choices: [
       { l: '받아들인다', typ: true, t: '반값 일감을 두 배로 받아 버팁니다.', fx: { happy: -3 }, run: (S) => { raise(S, 0.8); } },
-      { l: '문학·법률 같은 전문 번역으로 옮긴다', p: (S) => U.clamp(0.25 + (S.st.smarts - 50) / 120, 0.1, 0.7),
+      { l: '문학·법률 같은 전문 번역으로 옮긴다', p: (S) => U.clamp(0.25 + (E.smEq(S) - 50) / 120, 0.1, 0.7),
         ok: { t: '전문 번역가로 자리를 잡았습니다. 기계가 못 하는 일이 아직 많습니다.', fx: { happy: 5, smarts: 2 }, run: (S) => { raise(S, 1.1); } },
         no: { t: '전문 분야의 벽은 높았습니다.', fx: { happy: -4 }, run: (S) => { raise(S, 0.85); } } },
       { l: '다른 일을 알아본다', t: '다른 일자리를 알아보기 시작했습니다.', run: (S) => { offers(S); } },
@@ -26707,14 +26761,26 @@ const Ar = {};
   };
   E.hook('ensure', Ar.ensure);
 
-  /** 작품 완성도: 재능·연습 실력·(무대는 매력, 손재주는 경력) + 운 */
+  /** 작품 완성도: 재능·연습 실력·(무대는 매력, 손재주는 경력) + 운.
+   *  피드백 106번(실력에 비해 수상·수익이 너무 낮음): 재능 0.45·실력 0.4 → 재능 0.35·실력 0.5.
+   *  피드백 232번: 몫은 실력에 따라(practice.js Pr.eff·Pr.mix — 실력 100이면 재능 20%·실력 65%), 운의 폭도 실력이 높을수록 좁게(±9 → ±4).
+   *  Ar.lastQp: 이번 작품에 쓰인 실력(화면 '이번 작품에 쓰인 실력: …') */
+  Ar.lastQp = null;
   Ar.aq = (S, k) => {
     const d = AK[k];
-    // 피드백 106번(실력에 비해 수상·수익이 너무 낮음): 완성도에 쌓은 실력의 비중을 키움(재능 0.45·실력 0.4 → 재능 0.35·실력 0.5)
-    const ae = (pk) => { if (!hasPr()) return 0.45 * H.talent(S, 'art') + 30; const t = H.talent(S, Pr.KINDS[pk].talent), pl = Pr.lvl(S, pk); return Pr.eff(S, pk) - 0.1 * t + 0.1 * pl; };
-    let e = ae(d.pk);
-    if (d.pk2 && hasPr()) e = 0.6 * e + 0.4 * ae(d.pk2);
-    return Math.round(U.clamp(e + U.normal(0, 9), 1, 100));
+    if (!hasPr()) return Math.round(U.clamp(0.45 * H.talent(S, 'art') + 30 + U.normal(0, 9), 1, 100));
+    let e = Pr.eff(S, d.pk), sk = Pr.lvl(S, d.pk);
+    if (d.pk2) { e = 0.6 * e + 0.4 * Pr.eff(S, d.pk2); sk = 0.6 * sk + 0.4 * Pr.lvl(S, d.pk2); }
+    const sd = Pr.luckSd ? Pr.luckSd(sk, 9) : 9, lk = U.normal(0, sd);
+    Ar.lastQp = { sk1: Math.round(Pr.lvl(S, d.pk)), sk2: d.pk2 ? Math.round(Pr.lvl(S, d.pk2)) : null, luck: Math.round(lk), sd: Math.round(sd) };
+    return Math.round(U.clamp(e + lk, 1, 100));
+  };
+  /** 화면: 이번 작품에 쓰인 실력(음악은 media.js 가 따로 — 작곡·가창) */
+  Ar.usedTxt = (S, w) => {
+    const d = AK[w.k], p = w.qp;
+    if (!d || !p || p.sk1 === undefined || !hasPr() || !Pr.usedTxt) return '';
+    const items = [[Pr.KINDS[d.pk].ko, p.sk1], d.pk2 && p.sk2 !== null ? [Pr.KINDS[d.pk2].ko, p.sk2] : null];
+    return ` ${Pr.usedTxt(S, '이번 작품에 쓰인 실력', items, [...new Set([Pr.KINDS[d.pk].talent].concat(d.pk2 ? [Pr.KINDS[d.pk2].talent] : []))], p.luck)}.`;
   };
   const canAfford = (S, m) => {
     const pay = H.pay(S, m);
@@ -26761,7 +26827,9 @@ const Ar = {};
     S.art.prog[k] = 0;
     const used = S.works.filter((w) => w.k === k).map((w) => w.t);
     const t = titleFrom(S, d.tpl.concat(lifeTpl(S)), used);
+    Ar.lastQp = null;
     const w = { k, t, y: E.year(S), m: S.ageM, iso: E.iso(S), q: Ar.aq(S, k) };
+    if (Ar.lastQp) w.qp = Ar.lastQp; // 음악은 media.js 가 작곡·가창으로 따로 남긴다
     S.works.push(w);
     if (S.works.length > 60) { const i = S.works.findIndex((x) => !x.prize && !x.hit && !(x.r > 0)); S.works.splice(i >= 0 ? i : 0, 1); }
     S.art.made = (S.art.made || 0) + 1;
@@ -27194,7 +27262,7 @@ const Ar = {};
       // 알려진 정도(피드백 228번): 다른 분야 명성이나 지위가 있으면 '알려진 정도 ○○ (명성 ○○ · 이름값 ○○ · 지위)'
       const kn = Ar.known(S, Ar.fieldOf(w.k), w.k, w);
       const kt = kn.borrowed >= 3 ? `, ${Ar.knownTxt(S, kn)}${kn.hype > 1.05 && kn.borrowed >= 15 ? ' — 처음 몇 작품은 \'유명인이 낸 작품\'이라 관심이 큽니다. 완성도가 낮으면 혹평을 받을 수 있습니다' : ''}` : S.art.rep >= 1 ? `, 이름값 ${Math.round(S.art.rep)}` : '';
-      return C.t(S, `${d.ko} ${wj(w, '을')} 완성했습니다. 완성도 ${w.q}${kt}. ${tip}`);
+      return C.t(S, `${d.ko} ${wj(w, '을')} 완성했습니다. 완성도 ${w.q}${kt}.${Ar.usedTxt(S, w)} ${tip}`);
     },
     choices: (S, ctx) => {
       const w = curW(S, ctx);
@@ -27363,16 +27431,25 @@ const Ar = {};
     return true;
   };
   /** 원고 완성도 */
+  // 피드백 232번: 글솜씨와 재능의 몫은 글솜씨에 따라(career.js Cr.msParts — Pr.mix), 운의 폭도 글솜씨가 높을수록 좁게. Ar.lastWq: 이번 원고에 쓰인 실력(화면)
+  Ar.lastWq = null;
   Ar.wq = (S, k) => {
-    const base = hasCr() ? Cr.msQuality(S) : 40;
-    let q = base;
+    const mp = hasCr() && Cr.msParts ? Cr.msParts(S) : { q: hasCr() ? Cr.msQuality(S) : 40 };
+    const base = mp.q;
+    let q = base, qp = mp.w !== undefined ? { w: Math.round(mp.w), luck: Math.round(mp.luck) } : null;
     if (k === 'nonfic') q = base + Ar.expertise(S) * 0.8;
-    else if (k === 'kids') q = 0.5 * S.wskill + 0.3 * H.talent(S, 'art') + 0.2 * H.charm(S) + U.normal(0, 8);
-    else if (k === 'paper') q = 0.45 * S.st.smarts + 0.25 * S.wskill + 0.3 * H.talent(S, 'study') + Math.min(10, (hasCr() ? Cr.expY(S, 'j', 'researcher') : 0)) + U.normal(0, 8);
-    else if (k === 'column') q = 0.5 * S.wskill + 0.3 * S.st.smarts + Ar.expertise(S) / 2 + U.normal(0, 8);
+    else if (k === 'kids') {
+      const w = S.wskill || 0, lk = U.normal(0, hasPr() && Pr.luckSd ? Pr.luckSd(w, 8) : 8);
+      q = (hasPr() && Pr.mix ? Pr.mix(H.talent(S, 'art'), w, H.charm(S), 0.2) : 0.5 * w + 0.3 * H.talent(S, 'art') + 0.2 * H.charm(S)) + lk;
+      qp = { w: Math.round(w), luck: Math.round(lk) };
+    } else if (k === 'paper') { q = 0.45 * Math.min(100, E.smEq ? E.smEq(S) : S.st.smarts) + 0.25 * S.wskill + 0.3 * H.talent(S, 'study') + Math.min(10, (hasCr() ? Cr.expY(S, 'j', 'researcher') : 0)) + U.normal(0, 8); qp = null; }
+    else if (k === 'column') { q = 0.5 * S.wskill + 0.3 * Math.min(100, E.smEq ? E.smEq(S) : S.st.smarts) + Ar.expertise(S) / 2 + U.normal(0, 8); qp = null; }
     else if (k === 'script') q = base + (hasPr() ? (Pr.lvl(S, 'perform') - 20) / 10 : 0);
+    Ar.lastWq = qp;
     return Math.round(U.clamp(q, 1, 100));
   };
+  /** 화면: 이번 원고에 쓰인 실력(결정 창 ctx.qp) */
+  Ar.wqTxt = (S, ctx) => (ctx && ctx.qp && typeof Pr !== 'undefined' && Pr.usedTxt ? ` ${Pr.usedTxt(S, '이번 원고에 쓰인 실력', [['글솜씨', ctx.qp.w]], 'art', ctx.qp.luck)}.` : '');
   const wkTitleBook = (S, k) => (k === 'novel' ? '장편 소설' : WK[k].ko);
 
   // '글쓰기'를 누르면 종류를 고른다
@@ -27412,11 +27489,12 @@ const Ar = {};
     }
     S.cr.wp[k] = 0;
     S.cr.nMs = (S.cr.nMs || 0) + 1;
-    const q = Ar.wq(S, k);
-    if (d.path === 'book') { E.ask(S, 'x_core_publish', { q, n: S.cr.nMs, wk: k }); return C.t(S, `${d.ko} 원고를 끝까지 썼습니다. (글솜씨 ${Math.round(S.wskill)})`); }
+    Ar.lastWq = null;
+    const q = Ar.wq(S, k), qp = Ar.lastWq || undefined; // 이번 원고에 쓰인 실력(피드백 232번)
+    if (d.path === 'book') { E.ask(S, 'x_core_publish', { q, n: S.cr.nMs, wk: k, qp }); return C.t(S, `${d.ko} 원고를 끝까지 썼습니다. (글솜씨 ${Math.round(S.wskill)})`); }
     if (d.path === 'web') return Ar.webPost(S, q);
-    if (d.path === 'short') { E.ask(S, 'ar_short', { q, poem: U.chance(0.5) }); return null; }
-    if (d.path === 'script') { E.ask(S, 'ar_script', { q, t: titleFrom(S, SCRIPT_T.concat(lifeTpl(S)), S.cr.scripts.map((x) => x.t)), drama: U.chance(['KOR', 'TUR', 'IND', 'CHN', 'JPN', 'PHL', 'MEX', 'BRA', 'EGY', 'NGA'].includes(E.iso(S)) ? 0.6 : 0.35) }); return C.t(S, `${U.j(d.ko, '을')} 끝까지 썼습니다.`); }
+    if (d.path === 'short') { E.ask(S, 'ar_short', { q, poem: U.chance(0.5), qp }); return null; }
+    if (d.path === 'script') { E.ask(S, 'ar_script', { q, qp, t: titleFrom(S, SCRIPT_T.concat(lifeTpl(S)), S.cr.scripts.map((x) => x.t)), drama: U.chance(['KOR', 'TUR', 'IND', 'CHN', 'JPN', 'PHL', 'MEX', 'BRA', 'EGY', 'NGA'].includes(E.iso(S)) ? 0.6 : 0.35) }); return C.t(S, `${U.j(d.ko, '을')} 끝까지 썼습니다.`); }
     if (d.path === 'paper') { E.ask(S, 'ar_paper', { q }); return C.t(S, `논문 원고를 마무리했습니다. (완성도 ${q})`); }
     if (d.path === 'column') { E.ask(S, 'ar_column', { q }); return null; }
     return null;
@@ -27528,7 +27606,7 @@ const Ar = {};
   const litStar = (S) => typeof Cr !== 'undefined' && Cr.isBestAuthor && (Cr.isBestAuthor(S) || (S.fame || 0) >= 40);
   C.DEC.ar_short = {
     title: (S, ctx) => (ctx.poem ? '시 한 편' : '단편 소설 한 편'),
-    text: (S, ctx) => C.t(S, `${ctx.poem ? '시' : '단편 소설'} 한 편을 완성했습니다(완성도 ${ctx.q}). ${litStar(S) ? '이름난 작가라 문예지와 출판사가 먼저 원고를 청합니다.' : litKnown(S) ? (S.cr.lit.debut ? '등단한 작가라 문예지에 싣자는 곳이 있습니다.' : '이미 책을 낸 작가라 문예지에 싣자는 곳이 있습니다.') : '신춘문예나 문예지 공모에 당선되면 작가로 등단합니다. 당선은 수천 편 가운데 몇 편뿐입니다.'} 지금까지 모아 둔 원고는 ${S.cr.lit.shorts}편입니다.`),
+    text: (S, ctx) => C.t(S, `${ctx.poem ? '시' : '단편 소설'} 한 편을 완성했습니다(완성도 ${ctx.q}).${Ar.wqTxt(S, ctx)} ${litStar(S) ? '이름난 작가라 문예지와 출판사가 먼저 원고를 청합니다.' : litKnown(S) ? (S.cr.lit.debut ? '등단한 작가라 문예지에 싣자는 곳이 있습니다.' : '이미 책을 낸 작가라 문예지에 싣자는 곳이 있습니다.') : '신춘문예나 문예지 공모에 당선되면 작가로 등단합니다. 당선은 수천 편 가운데 몇 편뿐입니다.'} 지금까지 모아 둔 원고는 ${S.cr.lit.shorts}편입니다.`),
     choices: (S, ctx) => {
       const lit = S.cr.lit, out = [];
       const pD = U.clamp(lucky(S, sig((ctx.q - 70) / 6) * 0.35), 0.002, 0.5);
@@ -27642,7 +27720,7 @@ const Ar = {};
   const filmMkt = (S) => { const iso = E.iso(S); return U.clamp([0.15, 0.35, 0.6, 1][Wd.dev(iso)] * (['USA', 'IND', 'KOR', 'JPN', 'CHN', 'NGA', 'GBR', 'FRA', 'TUR', 'EGY', 'MEX', 'BRA'].includes(iso) ? 1.5 : 1), 0.1, 1.5); };
   C.DEC.ar_script = {
     title: (S, ctx) => `${ctx.drama ? '드라마 대본' : '영화 시나리오'} 《${ctx.t}》`,
-    text: (S, ctx) => C.t(S, `${U.j(ctx.drama ? '드라마 대본' : '영화 시나리오', '을')} 끝까지 썼습니다(완성도 ${ctx.q}). 공모전에 당선되거나 제작사가 판권을 사면 돈을 받고, 그중 일부만 실제로 만들어집니다. 대부분의 원고는 서랍에서 나오지 못합니다.`),
+    text: (S, ctx) => C.t(S, `${U.j(ctx.drama ? '드라마 대본' : '영화 시나리오', '을')} 끝까지 썼습니다(완성도 ${ctx.q}).${Ar.wqTxt(S, ctx)} 공모전에 당선되거나 제작사가 판권을 사면 돈을 받고, 그중 일부만 실제로 만들어집니다. 대부분의 원고는 서랍에서 나오지 못합니다.`),
     choices: (S, ctx) => {
       const fm = filmMkt(S), inf = hasCr() && Cr.folInf ? Cr.folInf(S) : 0;
       const pC = U.clamp(lucky(S, sig((ctx.q - 70) / 6) * 0.45 * fm), 0.002, 0.6);
@@ -28090,7 +28168,11 @@ const Sp = {};
   /** 그 종목에서 실제로 발휘되는 실력 */
   // 피드백 104번(기술 90·운동 실력 85인데 입단 테스트를 통과하지 못함): 재능 비중 0.45 → 0.35, 쌓은 실력 0.4 → 0.5
   Sp.skillMix = (S, sp) => 0.4 * gen(S, sp) + 0.6 * Sp.lvl(S, sp);
-  Sp.eff = (S, sp) => 0.35 * Sp.talent(S, sp) + 0.5 * Sp.skillMix(S, sp) + 0.15 * (sp === 'esports' ? S.st.smarts : S.st.health);
+  // 피드백 232번: 재능·실력의 몫은 실력에 따라(practice.js Pr.mix — 실력 0이면 재능 45%·실력 40%, 100이면 재능 20%·실력 65%)
+  Sp.eff = (S, sp) => { const t = Sp.talent(S, sp), m = Sp.skillMix(S, sp), x = sp === 'esports' ? Math.min(100, E.smEq ? E.smEq(S) : S.st.smarts) : S.st.health; return hasPr() && Pr.mix ? Pr.mix(t, m, x) : 0.35 * t + 0.5 * m + 0.15 * x; };
+  /** 합격 곡선·마지막 심사(실력이 높을수록 그날의 흩어짐이 좁고, 타고난 몫이 작다 — Pr.sigP·Pr.mix) */
+  const sigP = (eff, T, sc, p) => (hasPr() && Pr.sigP ? Pr.sigP(eff, T, sc, p) : sig((eff - T) / sc));
+  const mix2 = (t, p) => (hasPr() && Pr.mix ? Pr.mix(t, p, 0, 0) : 0.55 * t + 0.45 * p);
   /** 종목 기술을 쌓는다(높을수록 더디게, 재능이 높을수록 빨리) */
   Sp.gain = (S, sp, amt) => {
     if (!SP[sp]) return 0;
@@ -28311,7 +28393,7 @@ const Sp = {};
     choices: (S) => {
       const sp = (S.work.job && S.work.job.sp) || Sp.mainOrNat(S), d = SP[sp], F = FINAL[d.bout ? 'bout' : d.k];
       const team = Sp.teamSport(sp);
-      const pA = U.clamp(sig((Sp.eff(S, sp) - 72) / 8) + luck(S), 0.05, 0.95), pB = U.clamp(0.5 + luck(S), 0.05, 0.95);
+      const pA = U.clamp(sigP(Sp.eff(S, sp), 72, 8, Sp.skillMix(S, sp)) + luck(S), 0.05, 0.75), pB = U.clamp(0.5 + luck(S), 0.05, 0.95);
       const prize = (S2, m) => { if (typeof Ec !== 'undefined' && Ec.earn) Ec.earn(S2, 'other', H.pay(S2, m)); else E.addMoney(S2, H.pay(S2, m)); };
       const win = (S2, big) => {
         H.fameUp(S2, big ? 10 : 5); E.stat(S2, 'happy', big ? 15 : 10);
@@ -28464,11 +28546,12 @@ const Sp = {};
     const lg = { ...lg0, lv };
     const lf = lg.amateur ? 1.2 : lg.abroad ? 0.6 : 1;
     const T = 73 + (LV_T[lv] || 0) + (lg.abroad ? 4 : 0);
-    const p1 = U.clamp((sig((eff - T) / 5) * 0.8 + luck(S)) * lf, 0.002, 0.9);
-    // 마지막 계약 명단: 예전에는 타고난 재능만 봐서(재능 60이면 약 9%) 실력을 아무리 쌓아도 막혔음 → 재능 55% + 쌓은 실력 45%, 낮은 단계일수록 쉽게
-    const t2 = 0.55 * Sp.talent(S, sp) + 0.45 * Sp.skillMix(S, sp);
-    const p2 = U.clamp(0.05 + 0.85 * sig((t2 - (66 + (LV_T[lv] || 0))) / 6), 0.03, 0.92);
-    return { eff, lg, p1, p2, p: p1 * p2, t2 };
+    const sm = Sp.skillMix(S, sp);
+    const p1 = U.clamp((sigP(eff, T, 5, sm) * 0.8 + luck(S)) * lf, 0.002, 0.9);
+    // 마지막 계약 명단: 예전에는 타고난 재능만 봐서(재능 60이면 약 9%) 실력을 아무리 쌓아도 막혔음 → 재능 55% + 쌓은 실력 45% → 실력에 따라(실력 100이면 재능 24%, 피드백 232번), 낮은 단계일수록 쉽게
+    const t2 = mix2(Sp.talent(S, sp), sm);
+    const p2 = U.clamp(0.05 + 0.85 * sigP(t2, 66 + (LV_T[lv] || 0), 6, sm), 0.03, 0.92);
+    return { eff, lg, p1, p2, p: p1 * p2, t2, sm };
   };
   /** 리그 단계 이름(최고 리그가 있는 나라의 '프로'는 2부·마이너 리그) */
   Sp.tierKo = (S, sp, lv) => {
@@ -28601,7 +28684,12 @@ const Sp = {};
   };
   C.DEC.sp_tryout = {
     title: () => '어느 종목으로 도전할까요?',
-    text: (S) => C.t(S, '지금까지 해 온 종목 가운데 하나로 프로에 도전합니다. 낮은 단계 리그부터 올라가는 선수가 많고, 높은 리그일수록 문이 좁습니다. 그 나라에 리그가 없는 종목은 해외 팀 테스트를 봐야 해 훨씬 어렵습니다.'),
+    text: (S) => {
+      // 이번 테스트에 쓰일 실력(피드백 232번 — 작품의 '쓰인 실력'과 같은 형식)
+      const m0 = Sp.mainOrNat(S), sp = m0 === 'esports' ? Sp.natId(E.iso(S)) : m0;
+      const used = hasPr() && Pr.usedTxt && SP[sp] ? ` ${Pr.usedTxt(S, `이번 테스트에 쓰일 실력(${Sp.ko(S, sp)})`, [[`${Sp.ko(S, sp)} 기술`, Sp.lvl(S, sp)], ['운동 실력', Pr.lvl(S, 'sport')], ['건강', S.st.health]], 'sport', null, Pr.luckSd(Sp.skillMix(S, sp), 9))} → 발휘 실력 ${Math.round(Sp.eff(S, sp))}. 실력이 높을수록 타고난 몫보다 쌓은 실력이 결과를 가릅니다.` : '';
+      return C.t(S, `지금까지 해 온 종목 가운데 하나로 프로에 도전합니다. 낮은 단계 리그부터 올라가는 선수가 많고, 높은 리그일수록 문이 좁습니다. 그 나라에 리그가 없는 종목은 해외 팀 테스트를 봐야 해 훨씬 어렵습니다.${used}`);
+    },
     choices: (S) => {
       const m0 = Sp.mainOrNat(S), list = new Set([m0 === 'esports' ? Sp.natId(E.iso(S)) : m0]);
       // e스포츠는 '프로게임단 입단 테스트'(rec.js)에서 따로 본다(피드백 220번)
@@ -28812,9 +28900,10 @@ const Sp = {};
   Sp.upP = (S, t) => {
     const sp = S.work.job.sp, eff = Sp.eff(S, sp);
     const T = 73 + (LV_T[t.lv] || 0) + (t.abroad ? 4 : 0) - 3;
-    const p1 = U.clamp((sig((eff - T) / 5) * 0.85 + luck(S)) * (t.abroad ? 0.7 : 1), 0.002, 0.9);
-    const t2 = 0.55 * Sp.talent(S, sp) + 0.45 * Sp.skillMix(S, sp);
-    const p2 = U.clamp(0.08 + 0.85 * sig((t2 - (64 + (LV_T[t.lv] || 0))) / 6), 0.03, 0.92);
+    const sm = Sp.skillMix(S, sp);
+    const p1 = U.clamp((sigP(eff, T, 5, sm) * 0.85 + luck(S)) * (t.abroad ? 0.7 : 1), 0.002, 0.9);
+    const t2 = mix2(Sp.talent(S, sp), sm);
+    const p2 = U.clamp(0.08 + 0.85 * sigP(t2, 64 + (LV_T[t.lv] || 0), 6, sm), 0.03, 0.92);
     return p1 * p2;
   };
   const tierWhere = (S, sp, t) => (t.abroad ? `${Wd.name(t.iso)}의 ${Sp.tierKo(S, sp, t.lv)}` : `이 나라 ${Sp.tierKo(S, sp, t.lv)}`);
@@ -28929,7 +29018,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.6.9';
+E.VERSION = '0.6.10';
 E.BUILD_DATE = '26.10.16';
 
 /* ================================================================ 기본 도구 */
@@ -28954,6 +29043,9 @@ E.ask = (S, id, ctx = {}) => {
 E.pending = (S) => { if (S.queue[0] && !S.queue[0]._ch) E.pruneQueue(S); return S.queue.length ? S.queue[0] : null; };
 
 E.stat = (S, k, d) => {
+  // 지식은 높을수록 더디게 오른다: 사건·할 일로 오르는 몫도 달마다 저절로 오르는 몫과 같은 비율(E.smRoom)을 곱한다(피드백 224번).
+  // 예전에는 사건의 몫이 그대로 더해져 학교를 다니는 동안 모두 95 넘게 차올랐다. 일상 할 일(actions.js C.dailyWrap)은 거기서 이미 곱하므로 건너뛴다(E._roomed)
+  if (k === 'smarts' && d > 0 && !E._roomed && S.st.smarts !== undefined) d *= E.smRoom(S);
   S.st[k] = U.clamp(S.st[k] + d, 0, 100);
 };
 E.addStats = (S, o) => {
@@ -29299,52 +29391,135 @@ E.die = (S, causeId) => {
   if (C.lifeScore) S.score = C.lifeScore(S);
 };
 
-/* ---------------------------------------------------------------- 능력치 변화 */
+/* ---------------------------------------------------------------- 능력치 변화
+ * 건강·관계·행복(그리고 stats2.js 의 외모·인품)은 달마다 '목표값' 쪽으로 정해진 빠르기(E.RATE)만큼 다가간다.
+ * 목표값은 몫(이유)들의 합이다: E.parts(S, k) 가 [[이름, 값], …]을 돌려주고, 달마다의 움직임과 화면의 '오르내리는 이유'(statwhy.js)가
+ * 같은 식을 쓴다(피드백 224번 — 예전에는 이유가 보이지 않아 아무 일 없이 떨어지는 것처럼 느껴졌다).
+ * 다른 파일이 달마다 조금씩 더하는 몫(성격·추억·반려동물·이어지는 습관·마음 건강)은 E.pushT 로 더해 이번 달의 몫으로 남긴다(저장하지 않음). */
+E.RATE = { health: 0.03, social: 0.025, happy: 0.04, looks: 0.02, pres: 0.012 };
+E.pushT = (S, k, label, x) => {
+  if (!x || !S.st || S.st[k] === undefined) return;
+  S.st[k] = U.clamp(S.st[k] + (E.RATE[k] || 0.04) * x, k === 'happy' || k === 'social' ? 0 : 1, 100);
+  let p = S._pt;
+  if (!p || p.m !== S.ageM) { p = { m: S.ageM }; Object.defineProperty(S, '_pt', { value: p, enumerable: false, writable: true, configurable: true }); }
+  const o = p[k] || (p[k] = {});
+  o[label] = (o[label] || 0) + x;
+};
+/** 이번 달 다른 파일이 더한 몫(E.pushT): [[이름, 목표값으로 친 몫], …] */
+E.pushedT = (S, k) => (S._pt && S._pt.m === S.ageM && S._pt[k] ? Object.entries(S._pt[k]) : []);
+const hobSum = (S, key) => { let s = 0; for (const h of C.activeHobbies(S)) s += (C.HOBBY[h] && C.HOBBY[h][key]) || 0; return s; };
+E.PARTS = {};
+/** 건강 목표값의 몫. 셋째 값 'L' 은 생활 습관 몫(사망 위험에 쓰는 S.hOff — 급성 병치레·가난·흡연은 다른 곳에서 반영) */
+E.PARTS.health = (S) => {
+  const a = E.age(S), f = C.focusEffect(S), P = [], hn = Wd.healthNorm(a);
+  P.push(['기본', 76]);
+  if (hn !== 76) P.push([a < 15 ? '어린 나이' : '나이', hn - 76]);
+  if (f.health) P.push(['요즘 집중', f.health * 8, 'L']);
+  const hb = hobSum(S, 'health'); if (hb) P.push(['취미', hb, 'L']);
+  if (S.trait === 'active') P.push(['기질(활발함)', 3, 'L']);
+  else if (S.trait === 'mischief') P.push(['기질(장난꾸러기)', 1.5, 'L']); // 밖에서 뛰어노는 장난꾸러기
+  const jd = S.work.job && C.JOB[S.work.job.id];
+  if (jd && jd.stress) P.push(['일의 고됨', -jd.stress * 2, 'L']);
+  const bh = Math.min(4, (S.boost ? S.boost.health : 0) * 0.5);
+  if (bh) P.push([bh > 0 ? '최근 운동·쉼' : '최근 무리', bh, 'L']);
+  if (S.habit.smoke) P.push(['담배', -10]);
+  if (S.habit.drink >= 2) P.push(['술', -7]);
+  const wp = E.wealthP(S);
+  if (wp < 0.15) P.push(['어려운 형편', -6]); else if (wp > 0.85) P.push(['넉넉한 형편', 3]);
+  if (S.cond.diabetes) P.push(['당뇨', S.cond.diabetes === 'managed' ? -3 : -8]);
+  if (S.cond.hyper) P.push(['고혈압', S.cond.hyper === 'managed' ? -1 : -4]);
+  return P;
+};
+/** 지식이 한 달에 오르는 몫(목표값이 아니라 쌓이는 값 — 오르는 몫에는 E.smRoom 을 곱한다) */
+E.PARTS.smarts = (S) => {
+  const a = E.age(S), f = C.focusEffect(S), P = [];
+  if (f.smarts) P.push(['요즘 집중', f.smarts * 0.3]);
+  if (S.edu.stage !== null) P.push(['학교', 0.12]);
+  const hb = hobSum(S, 'smarts'); if (hb) P.push(['취미(독서 등)', hb * 0.08]);
+  // 일에서 배움(피드백 224번): 대학 학력이 필요한 일은 달마다 0.05·고졸 0.03·그 밖 0.012 — 일하는 동안 천천히 쌓인다
+  const jd = S.work.job && !S.work.retired ? C.JOB[S.work.job.id] : null;
+  if (jd && a >= 15) P.push(['일에서 배움', jd.edu >= 4 ? 0.05 : jd.edu >= 3 ? 0.03 : 0.012]);
+  const g = P.reduce((s, x) => s + x[1], 0);
+  if (g > 0 && S.trait === 'curious') P.push(['기질(호기심)', g * 0.25]);
+  else if (g > 0 && (S.trait === 'bookworm' || S.trait === 'tidy' || S.trait === 'quiet')) P.push(['기질', g * 0.12]);
+  if (a > 70) P.push(['나이', -0.06]);
+  if (a < 3) P.push(['아기 때', 0.1]);
+  return P;
+};
+/** 지식이 오를 여지: 높을수록 더디게(70이면 0.43배, 85면 0.21배, 95면 0.07배 — 예전 55로 나누던 것을 70으로: 학교만으로는 80대 중반까지) */
+E.SM_W = 70;
+E.smRoom = (S) => U.clamp((100 - S.st.smarts) / E.SM_W, 0.03, 1);
+/** 진학·채용·시험의 식이 쓰는 지식(피드백 224번): 그 식들은 예전 눈금(18세에 모두 95 넘게 차던 때)에 맞춰져 있어, 지금 지식을 예전 눈금으로 옮겨 쓴다.
+ *  같은 씨앗으로 예전·지금 인생을 나란히 돌린 짝(한국·인도·나이지리아 각 120명 — scratchpad/v0610a/pair.js)의 나라·나이별 평균에서
+ *  80까지는 예전 = 1.5 × 지금 − 28.5(8~20세 세 나라 모두 ±1.5점 안), 80 넘어서는 1점에 1점(어른이 되어 일·독서·공부로 더 쌓은 만큼은 그대로 유리 — 30~70세 0~+3.5점).
+ *  예전과 달리 100에서 막히지 않아 또래보다 많이 아는 만큼 더 유리하다. */
+E.smEq = (S) => { const x = S.st.smarts; return Math.max(0, x <= 80 ? 1.5 * x - 28.5 : 91.5 + (x - 80)); };
+/** 경력이 한 달에 쌓이는 몫 */
+E.PARTS.skill = (S, f = C.focusEffect(S)) => {
+  const a = E.age(S), P = [];
+  if (S.work.job) P.push(['일', 0.12 + (f.skill || 0) * 0.2]);
+  else if (!S.edu.stage && a > 18) P.push(['일을 쉬는 동안', -0.04]);
+  if (S.edu.stage === 3 || S.edu.stage === 4) P.push(['대학 공부', 0.08]);
+  return P;
+};
+E.PARTS.social = (S) => {
+  const a = E.age(S), f = C.focusEffect(S), P = [['기본', 45]];
+  if (f.social) P.push(['요즘 집중', f.social * 10]);
+  if (S.fam.married) P.push(['결혼', 8]);
+  const nk = Math.min(10, S.fam.kids.filter((k) => k.alive).length * 2); if (nk) P.push(['자녀', nk]);
+  const hb = hobSum(S, 'social'); if (hb) P.push(['취미', hb * 3]);
+  if (S.trait === 'kind') P.push(['기질(다정함)', 5]);
+  if (S.flags.migrantM !== undefined && S.ageM - S.flags.migrantM < 60) P.push(['낯선 곳에 온 지 얼마 안 됨', -10]);
+  if (a > 80) P.push(['나이', -6]);
+  return P;
+};
+E.PARTS.happy = (S) => {
+  const a = E.age(S), f = C.focusEffect(S), st = S.st, wp = E.wealthP(S), P = [['기본', 52]];
+  const add = (l, v) => { if (v) P.push([l, v]); };
+  add('형편', 16 * (wp - 0.5));
+  add('관계', 0.15 * (st.social - 50));
+  add('건강', 0.25 * (st.health - Wd.healthNorm(a)));
+  add('요즘 집중', (f.happy || 0) * 5);
+  if (S.fam.married) add('결혼', 3);
+  if (S.lifestyle === 'comfort') add('넉넉한 씀씀이', 4);
+  if (S.lifestyle === 'frugal') add('아끼는 씀씀이', -3);
+  add('취미', hobSum(S, 'happy') * 2.5);
+  if (S.trait === 'cheerful') add('기질(명랑함)', 6);
+  if (S.work.seeking && a >= 18) add('일자리를 찾는 중', -7);
+  if (S.ill) add('병', -12);
+  if (Wd.social('conflict', E.iso(S), 0) >= 2) add('분쟁', -6);
+  if (S.money < 0) add('빚', -Math.min(10, (-S.money / Math.max(1, S.income || 1000)) * 6));
+  if (S.boost) add(S.boost.happy >= 0 ? '최근 즐거운 일의 여운' : '최근 힘든 일의 여운', S.boost.happy);
+  if ((S.pets || []).some((p) => p.alive)) add('반려동물', 3);
+  if (S.romance) add('연애', 2 + (S.romance.love - 50) / 25);
+  if (S.prison) add('수감', -15);
+  if (S.fame > 20) add('명성', 2);
+  add('가까운 친구', Math.min(6, (S.friends || []).filter((x) => x.alive && !x.lost && x.close > 50).length));
+  return P;
+};
+/** 몫들의 합(목표값) */
+E.partSum = (P) => { let s = 0; for (const x of P) s += x[1]; return s; };
+
 E.sysStats = (S) => {
   const a = E.age(S), st = S.st;
   const f = C.focusEffect(S);
   // 건강: 목표값으로 서서히
-  // 생활 습관에서 오는 건강 편차: 사망 위험에 쓰는 값(급성 병치레·가난·흡연은 다른 곳에서 반영)
-  let life = (f.health || 0) * 8;
-  for (const h of C.activeHobbies(S)) life += (C.HOBBY[h] && C.HOBBY[h].health) || 0;
-  if (S.trait === 'active') life += 3;
-  else if (S.trait === 'mischief') life += 1.5; // 밖에서 뛰어노는 장난꾸러기
-  if (S.work.job && C.JOB[S.work.job.id] && C.JOB[S.work.job.id].stress) life -= C.JOB[S.work.job.id].stress * 2;
-  life += Math.min(4, (S.boost ? S.boost.health : 0) * 0.5);
+  const hp0 = E.PARTS.health(S);
+  let ht = 0, life = 0;
+  for (const x of hp0) { ht += x[1]; if (x[2] === 'L') life += x[1]; }
   S.hOff = life - 1;
-  let ht = Wd.healthNorm(a) + life;
-  if (S.habit.smoke) ht -= 10;
-  if (S.habit.drink >= 2) ht -= 7;
-  const wp = E.wealthP(S);
-  if (wp < 0.15) ht -= 6; else if (wp > 0.85) ht += 3;
-  if (S.cond.diabetes) ht -= S.cond.diabetes === 'managed' ? 3 : 8;
-  if (S.cond.hyper) ht -= S.cond.hyper === 'managed' ? 1 : 4;
   st.health = U.clamp(st.health + (ht - st.health) * 0.03 + U.normal(0, 0.4), 1, 100);
 
-  // 지식
-  let ds = (f.smarts || 0) * 0.3;
-  if (S.edu.stage !== null) ds += 0.12;
-  for (const h of C.activeHobbies(S)) ds += ((C.HOBBY[h] && C.HOBBY[h].smarts) || 0) * 0.08;
-  if (S.trait === 'curious') ds *= 1.25;
-  else if (S.trait === 'bookworm' || S.trait === 'tidy' || S.trait === 'quiet') ds *= 1.12;
-  if (a > 70) ds -= 0.06;
-  if (a < 3) ds += 0.1;
-  if (ds > 0) ds *= U.clamp((100 - st.smarts) / 55, 0.03, 1); // 높을수록 더디게 오른다
+  // 지식: 학교·일·독서·공부로 쌓이고, 높을수록 더디게 오른다(E.smRoom)
+  let ds = E.partSum(E.PARTS.smarts(S));
+  if (ds > 0) ds *= E.smRoom(S);
   st.smarts = U.clamp(st.smarts + ds, 1, 100);
 
-  // 경력·기술
-  if (S.work.job) st.skill = U.clamp(st.skill + 0.12 + (f.skill || 0) * 0.2, 0, 100);
-  else if (!S.edu.stage && a > 18) st.skill = U.clamp(st.skill - 0.04, 0, 100);
-  if (S.edu.stage === 3 || S.edu.stage === 4) st.skill = U.clamp(st.skill + 0.08, 0, 100);
+  // 경력·기술(달마다 쌓이는 몫 — E.PARTS.skill)
+  st.skill = U.clamp(st.skill + E.partSum(E.PARTS.skill(S, f)), 0, 100);
 
   // 관계
-  let so = 45 + (f.social || 0) * 10;
-  if (S.fam.married) so += 8;
-  so += Math.min(10, S.fam.kids.filter((k) => k.alive).length * 2);
-  for (const h of C.activeHobbies(S)) so += ((C.HOBBY[h] && C.HOBBY[h].social) || 0) * 3;
-  if (S.trait === 'kind') so += 5;
-  if (S.flags.migrantM !== undefined && S.ageM - S.flags.migrantM < 60) so -= 10;
-  if (a > 80) so -= 6;
+  const so = E.partSum(E.PARTS.social(S));
   st.social = U.clamp(st.social + (so - st.social) * 0.025, 0, 100);
 
   // 매력: 타고난 매력에 관계·건강·행복·꾸밈이 더해지고, 중년 이후 조금씩 준다
@@ -29353,28 +29528,29 @@ E.sysStats = (S) => {
     const tc = (S.talent ? S.talent.charm : 50) * 0.55 + 0.15 * st.social + 0.1 * st.health + 0.1 * st.happy + 7 + (S.boost && S.boost.charm ? S.boost.charm : 0) - Math.max(0, a - 45) * 0.35 + (S.fame > 20 ? 4 : 0);
     st.charm = U.clamp(st.charm + (tc - st.charm) * 0.02, 1, 100);
   }
-  // 운: 저절로 오르내린다(평균 50으로 돌아오는 무작위 걸음)
-  if (st.luck !== undefined) st.luck = U.clamp(st.luck + (50 - st.luck) * 0.03 + U.normal(0, 2.2), 1, 99);
+  // 운(피드백 224번): 사람마다 타고난 운의 중심(S.st.luckC, 평균 50)이 있고, 그 둘레 ±E.LUCK_W 안에서 '흐름'처럼 오르내린다
+  // (달마다 6%씩 중심으로 돌아오고 한두 해씩 이어짐 — 흐름의 표준편차 약 7). 예전에는 모두가 50으로 돌아오는 같은 걸음이었다.
+  if (st.luck !== undefined) {
+    const c = st.luckC !== undefined ? st.luckC : 50;
+    const dv = U.clamp((st.luck - c) * 0.94 + U.normal(0, 2.4), -E.LUCK_W, E.LUCK_W);
+    st.luck = U.clamp(c + dv, 1, 99);
+  }
 
   // 행복
-  let hp = 52 + 16 * (wp - 0.5) + 0.15 * (st.social - 50) + 0.25 * (st.health - Wd.healthNorm(a)) + (f.happy || 0) * 5;
-  if (S.fam.married) hp += 3;
-  if (S.lifestyle === 'comfort') hp += 4;
-  if (S.lifestyle === 'frugal') hp -= 3;
-  for (const h of C.activeHobbies(S)) hp += ((C.HOBBY[h] && C.HOBBY[h].happy) || 0) * 2.5;
-  if (S.trait === 'cheerful') hp += 6;
-  if (S.work.seeking && a >= 18) hp -= 7;
-  if (S.ill) hp -= 12;
-  if (Wd.social('conflict', E.iso(S), 0) >= 2) hp -= 6;
-  if (S.money < 0) hp -= Math.min(10, (-S.money / Math.max(1, S.income || 1000)) * 6);
-  if (S.boost) hp += S.boost.happy;
-  if ((S.pets || []).some((p) => p.alive)) hp += 3;
-  if (S.romance) hp += 2 + (S.romance.love - 50) / 25;
-  if (S.prison) hp -= 15;
-  if (S.fame > 20) hp += 2;
-  hp += Math.min(6, (S.friends || []).filter((x) => x.alive && !x.lost && x.close > 50).length);
+  const hp = E.partSum(E.PARTS.happy(S));
   st.happy = U.clamp(st.happy + (hp - st.happy) * 0.04 + U.normal(0, 0.5), 0, 100);
 };
+/** 운의 흐름이 중심에서 벗어날 수 있는 폭 */
+E.LUCK_W = 15;
+/** 타고난 운의 중심: 평균 50·표준편차 9(이름·태어난 때로 정해 주 난수 흐름을 건드리지 않는다) */
+E.luckCenter = (S) => {
+  const s = `${S.id || ''}|${(S.name && S.name.full) || ''}|luck`;
+  let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const u = (((h >>> 0) % 100003) + 0.5) / 100004;
+  return Math.round(U.clamp(50 + 9 * U.invPhi(u), 22, 78));
+};
+/** 지금 운의 흐름(−1~1): 0 이면 보통, 0.5 면 꽤 좋은 흐름 — 사건의 좋고 나쁨·도전의 성공 가능성·사고에 쓴다 */
+E.luckFlow = (S) => (S.st && S.st.luck !== undefined ? Math.tanh((S.st.luck - 50) / 25) : 0);
 
 /* ---------------------------------------------------------------- 돈 */
 const TAX = [0.03, 0.06, 0.12, 0.22];
@@ -29691,8 +29867,12 @@ E.birthday = (S, ay) => {
 };
 
 /** 해마다 상태를 기록한다(인생 그래프용, 피드백 6번) */
-/** 운이 도전의 성공 가능성에 주는 몫(-0.06 ~ +0.06) */
-E.luckP = (S) => (S.st && S.st.luck !== undefined ? ((S.st.luck - 50) / 50) * 0.06 : 0);
+/** 운이 도전의 성공 가능성에 더하는 몫(다른 파일이 확률에 바로 더해 쓰는 값): 6% × 흐름(E.luckFlow) — 운 61이면 +2.5%p, 73이면 +4.4%p, 39면 −2.5%p.
+ *  (예전 ((운 − 50)/50) × 6%는 운 61이면 +1.3%p.) 사람들 평균은 0(운의 중심이 평균 50 — 피드백 224번) */
+E.luckP = (S) => 0.06 * E.luckFlow(S);
+/** 같은 몫을 로짓(가능성의 '기울기')으로: 0.5 × 흐름 — 반반인 도전이면 운 61에 +5%p·73에 +9%p, 95%나 5%짜리는 ±1%p 안팎.
+ *  끝(2%·98%)에 막혀 평균이 한쪽으로 쏠리지 않게, 결정 창의 성공 가능성(dsl.js)은 이것을 쓴다 */
+E.luckL = (S) => 0.5 * E.luckFlow(S);
 E.snap = (S, ay) => {
   S.hist = S.hist || [];
   const r = (x) => Math.round(x);
@@ -29842,7 +30022,7 @@ E.stageDur = (S, k) => {
 
 E.indivShift = (S) => {
   const iso = E.iso(S), dev = Wd.dev(iso);
-  const rel = U.clamp(S.st.smarts - 50 - 3.2 * (S.edu.yrs || 0), -40, 40);
+  const rel = U.clamp(E.smEq(S) - 50 - 3.2 * (S.edu.yrs || 0), -40, 40);
   let sh = 1.7 * (S.fam.famP - 0.5) + 0.035 * rel;
   sh += (S.place.urban ? 0.25 : -0.25) * (dev < 2 ? 1 : 0.3);
   if (S.flags.orphan) sh -= 0.6;
@@ -30192,8 +30372,9 @@ E.sysEvents = (S) => {
     if (ev.major && S.ageM < S.nextMajorM) continue;
     if (ev.when && !ev.when(S)) continue;
     let r = typeof ev.rate === 'function' ? ev.rate(S) : ev.rate;
-    // 운이 좋으면 좋은 일이, 나쁘면 나쁜 일이 조금 더 잦다(작은 사건만, 최대 ±30%)
-    if (r > 0 && ev.tone && S.st.luck !== undefined) r *= ev.tone === 'good' ? 1 + (S.st.luck - 50) / 165 : ev.tone === 'bad' ? 1 - (S.st.luck - 50) / 165 : 1;
+    // 운이 좋은 흐름이면 좋은 일이, 나쁜 흐름이면 나쁜 일이 더 잦다(작은 사건만 — 좋은 일 ×(1 + 0.5·흐름), 나쁜 일 ×(1 − 0.4·흐름):
+    // 운 73이면 좋은 일 1.36배·나쁜 일 0.71배, 27이면 그 반대. 운의 중심이 평균 50이라 사람들 전체의 사건 수는 그대로 — 피드백 224번)
+    if (r > 0 && ev.tone && S.st.luck !== undefined) { const lf = E.luckFlow(S); r *= ev.tone === 'good' ? 1 + 0.5 * lf : ev.tone === 'bad' ? 1 - 0.4 * lf : 1; }
     if (r > 0) cand.push([ev, r]);
   }
   // 작은 사건과 큰 결정을 따로 뽑는다. 사건이 아무리 많아도 한 달에 작은 사건은 최대 약 40%,
@@ -30592,8 +30773,9 @@ const Vc = {};
   /** 달마다 이어지는 득을 더한다(Vc.month) */
   const ongoingMonth = (S) => {
     const g = Vc.ongoing(S);
-    if (g.happy) S.st.happy = clamp(S.st.happy + ON_RATE.happy * g.happy, 0, 100);
-    if (g.social) S.st.social = clamp(S.st.social + ON_RATE.social * g.social, 0, 100);
+    // 목표의 몫으로 더한다(engine.js E.pushT — ON_RATE 와 같은 빠르기, 화면의 '오르내리는 이유'에 '이어지는 습관')
+    if (g.happy) E.pushT(S, 'happy', '이어지는 습관', g.happy);
+    if (g.social) E.pushT(S, 'social', '함께하는 무리', g.social);
     if (g.str && S.ab && typeof S.ab.str === 'number') S.ab.str = clamp(S.ab.str - ON_RATE.str * g.str, 0, 100);
     // 외모: 꾸밈(boost.charm)의 바닥값으로(외모 목표 = … + 꾸밈 × 2, stats2.js)
     if (g.looks && S.boost) S.boost.charm = Math.max(S.boost.charm || 0, g.looks / 2);
@@ -32663,7 +32845,7 @@ const Dv = {};
     nurse: { job: 'nurse', ko: '간호사 국가시험', base: [0.65, 0.75, 0.85, 0.92] },
     law: { job: 'lawyer', ko: '변호사 시험', base: [0.45, 0.5, 0.55, 0.6] },
   };
-  Ct.licExamP = (S, mj) => U.clamp(LICX[mj].base[Wd.dev(E.iso(S))] + (S.st.smarts - 60) / 150, 0.2, 0.98);
+  Ct.licExamP = (S, mj) => U.clamp(LICX[mj].base[Wd.dev(E.iso(S))] + (E.smEq(S) - 60) / 150, 0.2, 0.98);
   Ct.licensed = (S, mj) => !!(S.flags['lic_' + mj]);
   if (E.finishStage) {
     const fs0 = E.finishStage;
@@ -34575,7 +34757,7 @@ const Ps = {};
   E.hook('month', (S) => {
     if (!S.ps || !S.alive) return;
     const x = -4 * Ps.z(S, 'N') + 2 * Ps.z(S, 'E');
-    S.st.happy = clamp(S.st.happy + 0.04 * x, 0, 100);
+    E.pushT(S, 'happy', '성격', x); // 행복 목표의 몫(화면의 '오르내리는 이유' — engine.js E.pushT, 피드백 224번)
   });
   // N: 나쁜 일에 행복이 깎이는 폭 ×(1 + 0.25zN)(평균 1)
   {
@@ -41133,7 +41315,7 @@ const Rl = {};
     if (!urb) delete w.street;
     return U.weighted(w) || 'love';
   };
-  const joinP = (S) => clamp(0.3 + (S.st.happy < 40 ? 0.12 : 0) + (lonely(S) ? 0.12 : 0) + (E.age(S) < 25 ? 0.06 : 0) - (S.st.smarts - 50) / 300
+  const joinP = (S) => clamp(0.3 + (S.st.happy < 40 ? 0.12 : 0) + (lonely(S) ? 0.12 : 0) + (E.age(S) < 25 ? 0.06 : 0) - (E.smEq(S) - 50) / 300
     - (S.rel !== 'none' && H.vl(S, 'faith') >= 70 ? 0.08 : 0) - (S.cult ? 0.15 : 0), 0.1, 0.7);
   const lureOf = (ctx) => LURE[ctx && ctx.k] || LURE.love;
   const txt = (t, S, ctx) => (typeof t === 'function' ? t(S, ctx) : t);
@@ -42220,7 +42402,7 @@ const Ml = {};
     const vocOk = (!!S.edu.voc && S.edu.level >= 3) || ['factory', 'mechanic', 'welder', 'electrician', 'engineer', 'construction', 'plantmgr'].includes(H.job(S));
     const resOk = S.edu.level >= 5 && ['eng', 'cs', 'med', 'agri'].includes(S.edu.major);
     const docOk = S.edu.major === 'med' && typeof Ct !== 'undefined' && !!Ct.licensed && Ct.licensed(S, 'med');
-    const engOk = ((S.langs && S.langs.en) || 0) >= 2 || S.st.smarts >= 78;
+    const engOk = ((S.langs && S.langs.en) || 0) >= 2 || E.smEq(S) >= 78;
     if (ctx.alt === 'social') {
       const indTyp = vocOk && !leave && h01(S, 'ind4') < 0.15;
       out.push({ label: '사회복무요원으로 복무한다', sub: '21개월 · 집에서 주민센터·복지 시설 같은 곳으로 다니며 복무', typ: !indTyp, run: (S2) => Ml.socialStart(S2, leave) });
@@ -42286,7 +42468,7 @@ const Ml = {};
     if (c === 'ISR' && S.sex === 'f' && h01(S, 'natl') < 0.25) typ = 'natl';
     if (c === 'ISR' && S.sex === 'm') {
       const u = typPick(S, 'unit', [['combat', 0.35], ['intel', 0.1], ['support', 0.55]]);
-      const ip = clamp(0.15 + (S.st.smarts - 60) / 60, 0.05, 0.7);
+      const ip = clamp(0.15 + (E.smEq(S) - 60) / 60, 0.05, 0.7);
       out.push({ label: '전투 부대에 지원한다', sub: '훈련이 가장 고되고 위험합니다', typ: u === 'combat', run: (S2) => Ml.enlistTxt(S2, { br: 'combat' }) });
       out.push({ label: '정보·기술 부대 선발 시험을 본다', sub: `합격 가능성 약 ${pct(ip)}%`, typ: u === 'intel', run: (S2) => (U.chance(ip + luck(S2)) ? Ml.enlistTxt(S2, { br: 'intel', note: '선발 시험에 붙어 정보·기술 부대에 들어갔습니다.' }) : Ml.enlistTxt(S2, { br: 'support', note: '선발 시험에 떨어져 지원 부대로 입대했습니다.' })) });
       out.push({ label: '배치되는 대로 간다', typ: u === 'support', run: (S2) => Ml.enlistTxt(S2, { br: 'support' }) });
@@ -42611,7 +42793,7 @@ const Ml = {};
       text: '레바논 동명부대·남수단 한빛부대·아덴만 청해부대가 병사를 뽑습니다. 8개월쯤 나라 밖에서 복무하고, 해외 파병 수당이 따로 나옵니다. 지원자가 많아 뽑히기 쉽지 않습니다.',
       choices: [
         {
-          l: '지원한다', p: (S) => U.clamp(0.2 + (S.st.health - 60) / 200 + (S.st.smarts - 50) / 300, 0.08, 0.45),
+          l: '지원한다', p: (S) => U.clamp(0.2 + (S.st.health - 60) / 200 + (E.smEq(S) - 50) / 300, 0.08, 0.45),
           ok: { run: (S) => { const u = U.pick(['레바논 동명부대', '남수단 한빛부대', '아덴만 청해부대']); give(S, 9000000 / ppp('KOR')); S.flags.pko = 1; E.stat(S, 'happy', 4); return `${u} 장병으로 뽑혀 8개월 동안 파병을 다녀왔습니다. 해외 파병 수당으로 약 ${won(9000000)}을 모았습니다.`; } },
           no: { t: '지원했지만 뽑히지 않았습니다. 경쟁이 셌습니다.', fx: { happy: -1 } },
         },
@@ -43089,7 +43271,7 @@ const Cg = {};
   Cg.zOf = (S, o = {}) => {
     const P = Cg.P(o.iso || isoOf(S));
     const tal = (((S.talent && S.talent.study !== undefined) ? S.talent.study : 50) - 50) / 15;
-    const sm = clamp((S.st.smarts - 92) / 6, -3, 1.5);
+    const sm = clamp((E.smEq(S) - 92) / 6, -3, 1.5);
     const ex = o.fresh ? 0.3 : S.flags.examGood ? 0.5 : S.flags.examBad ? -0.9 : S.flags.examSkip ? -0.6 : 0.3;
     const famW = P.famW !== undefined ? P.famW : 0.6 + 0.8 * P.hier;
     let z = 0.5 * tal + 0.3 * sm + 0.55 * (ex - 0.3) + famW * 0.6 * ((S.fam && S.fam.famP !== undefined ? S.fam.famP : 0.5) - 0.5);
@@ -43113,7 +43295,7 @@ const Cg = {};
   };
   /** 어려운 전공 합격 가능성(content.js 의 식 그대로 + 재수 가산) */
   const RTB = [0, 0.7, 0.35, 0.12];
-  Cg.mjP = (S, id, n = 0) => { const m = C.MAJOR[id] || { hard: 0 }; return clamp(sig(0.08 * (S.st.smarts - 50) - m.hard + 1.2 + (RTB[Math.min(3, n)] || 0)), 0.02, 0.98); };
+  Cg.mjP = (S, id, n = 0) => { const m = C.MAJOR[id] || { hard: 0 }; return clamp(sig(0.08 * (E.smEq(S) - 50) - m.hard + 1.2 + (RTB[Math.min(3, n)] || 0)), 0.02, 0.98); };
   const hardMj = (id) => !!C.MAJOR[id] && C.MAJOR[id].hard > 0.3;
   /** 떨어졌을 때 가까운 전공 */
   const NEAR = { med: ['nurse', 'eng'], law: ['hum', 'biz'], cs: ['eng', 'biz'], eng: ['cs', 'agri'], nurse: ['hum', 'edu'] };
@@ -43474,8 +43656,8 @@ const Cg = {};
   /* ---------------------------------------------------------------- 편입 */
   Cg.xferP = (S, from) => {
     const g = (S.cg && S.cg.gpa) || 0.5, P = Cg.P(isoOf(S));
-    if (from === 'jc') return clamp(sig(0.4 + 2.6 * (g - 0.5) + (S.st.smarts - 90) / 25 - 0.8 * P.hier + (isoOf(S) === 'USA' || isoOf(S) === 'CAN' ? 0.8 : 0)), 0.1, 0.9);
-    return clamp(sig(-1.2 + 3 * (g - 0.6) + (S.st.smarts - 92) / 20), 0.05, 0.6);
+    if (from === 'jc') return clamp(sig(0.4 + 2.6 * (g - 0.5) + (E.smEq(S) - 90) / 25 - 0.8 * P.hier + (isoOf(S) === 'USA' || isoOf(S) === 'CAN' ? 0.8 : 0)), 0.1, 0.9);
+    return clamp(sig(-1.2 + 3 * (g - 0.6) + (E.smEq(S) - 92) / 20), 0.05, 0.6);
   };
   /** 전문대 졸업 → 4년제 3학년 */
   Cg.xferJc = (S) => {
@@ -43581,7 +43763,7 @@ const Cg = {};
     else if (lv.why === 'prep') { E.stat(S, 'skill', 5); E.stat(S, 'smarts', 1); t = '{N은} 인턴과 자격증 준비로 한 해를 보내고 복학했습니다.'; }
     else if (lv.why === 'wh' || lv.why === 'lang') {
       const code = hasLg() && lv.d && lv.why === 'lang' ? Lg.mainOf(lv.d) : null;
-      if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, (lv.why === 'lang' ? 1.0 : 0.7) * (0.55 + S.st.smarts / 110) / Math.pow(Lg.hard(code), 0.8));
+      if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, (lv.why === 'lang' ? 1.0 : 0.7) * (0.55 + E.smEq(S) / 110) / Math.pow(Lg.hard(code), 0.8));
       if (lv.why === 'lang') { E.stat(S, 'social', 4); E.stat(S, 'happy', 6); }
       t = `{N은} ${nm(lv.d || 'AUS')}에서 한 해를 보내고 돌아와 복학했습니다. 말이 제법 늘었습니다.`;
       if (lv.why === 'wh') { cg.whN = (cg.whN || 0) + 1; t = `{N은} ${nm(lv.d || 'AUS')}에서 워킹홀리데이를 마치고 돌아와 복학했습니다. ${Cg.whEffects(S, lv.d, lv.job || 'cafe')}`; }
@@ -43707,7 +43889,7 @@ const Cg = {};
   Cg.whEffects = (S, d, job) => {
     const J = WH_JOB[job] || WH_JOB.cafe;
     const code = hasLg() && d ? Lg.mainOf(d) : null;
-    if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, J.lang * (0.55 + S.st.smarts / 110) / Math.pow(Lg.hard(code), 0.8));
+    if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, J.lang * (0.55 + E.smEq(S) / 110) / Math.pow(Lg.hard(code), 0.8));
     E.stat(S, 'social', 5); E.stat(S, 'happy', 6); E.stat(S, 'skill', job === 'lang' ? 1 : 3);
     if (job === 'farm') E.stat(S, 'health', -2);
     const bits = [];
@@ -43823,7 +44005,7 @@ const Cg = {};
   /* ================================================================ 대학원·전문대학원 */
   Cg.profP = (S, kind) => {
     const g = (S.cg && S.cg.gpa) || 0.5;
-    return clamp(sig(-0.7 + 2.4 * (g - 0.5) + (S.edu.tier === 'top' ? 0.5 : 0) + (S.st.smarts - 92) / 15 + (kind === 'law' ? 0.3 : 0)), 0.05, 0.85);
+    return clamp(sig(-0.7 + 2.4 * (g - 0.5) + (S.edu.tier === 'top' ? 0.5 : 0) + (E.smEq(S) - 92) / 15 + (kind === 'law' ? 0.3 : 0)), 0.05, 0.85);
   };
   Cg.profGo = (S, kind) => {
     const cg = Cg.ens(S), p = Cg.profP(S, kind), P = Cg.P(isoOf(S));
@@ -43887,7 +44069,7 @@ const Cg = {};
     const la = L.lv >= 3 ? 0.4 : L.lv >= L.need ? 0 : -0.2;
     if (kind === 'grad') { const g = (S.cg && S.cg.gpa) || 0.5; return clamp(sig(0.2 + 3 * (g - 0.5) + (S.edu.tier === 'top' ? 0.6 : S.edu.tier === 'jc' ? -2 : 0) + la), 0.03, 0.92); }
     if (kind === 'ug') return clamp(sig(0.6 + 0.9 * Cg.zOf(S) + la - (dest === 'USA' || dest === 'GBR' ? 0.2 : 0)), 0.05, 0.95);
-    if (kind === 'exch') return clamp(0.4 + (S.st.smarts - 60) / 80 + la * 0.3, 0.2, 0.9);
+    if (kind === 'exch') return clamp(0.4 + (E.smEq(S) - 60) / 80 + la * 0.3, 0.2, 0.9);
     return 0.97;
   };
   const KIND_KO = { early: '조기 유학', ug: '학부 유학', grad: '대학원 유학', lang: '어학연수', exch: '교환학생', wh: '워킹홀리데이' };
@@ -43971,7 +44153,7 @@ const Cg = {};
       pay(S, c.need);
       H.travel(S, d);
       const code = hasLg() ? Lg.mainOf(d) : null;
-      if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, 0.8 * (0.55 + S.st.smarts / 110) / Math.pow(Lg.hard(code), 0.8));
+      if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, 0.8 * (0.55 + E.smEq(S) / 110) / Math.pow(Lg.hard(code), 0.8));
       E.stat(S, 'happy', 5); E.stat(S, 'social', 3);
       cg.langN = (cg.langN || 0) + 1;
       return T(S, `{N은} ${U.j(nm(d), '으로')} 어학연수를 다녀왔습니다. 몇 달 동안 현지 말로 장을 보고 길을 물으며 지냈습니다.`);
@@ -44022,7 +44204,7 @@ const Cg = {};
     S.edu.retryAt = null;
     if (!cg.ab || cg.ab.iso !== isoOf(S) || S.edu.stage !== null || S.mil || S.prison) return;
     const code = hasLg() ? Lg.mainOf(isoOf(S)) : null;
-    if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, 1.1 * (0.55 + S.st.smarts / 110) / Math.pow(Lg.hard(code), 0.8));
+    if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, 1.1 * (0.55 + E.smEq(S) / 110) / Math.pow(Lg.hard(code), 0.8));
     log(S, '{N은} 한 해 동안의 어학 과정을 마쳤습니다.');
     if (pr.kind === 'grad') E.startStage(S, 4);
     else E.ask(S, 'major', {});
@@ -44034,7 +44216,7 @@ const Cg = {};
     ab.y = (ab.y || 0) + 1;
     if (ab.y >= 1) Cg.abPayYear(S, Cg.abCost(S, ab.iso, ab.kind === 'grad' || S.edu.stage === 4 ? 'grad' : 'ug'), !!ab.sch, S.edu.stage === 4 ? 'grad' : 'ug');
     const code = hasLg() ? Lg.mainOf(ab.iso) : null;
-    if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, 0.3 * (0.55 + S.st.smarts / 110) / Math.pow(Lg.hard(code), 0.8));
+    if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, 0.3 * (0.55 + E.smEq(S) / 110) / Math.pow(Lg.hard(code), 0.8));
     if (ab.y === 1 && !ab.hs && !S.queue.some((q) => /^cg_/.test(q.id))) { ab.hs = 1; if (U.chance(0.7)) E.ask(S, 'cg_homesick', {}); }
     else if (ab.y >= 2 && U.chance(0.25)) log(S, U.pick(['명절에 고향에 가지 못하고 기숙사에서 혼자 라면을 끓여 먹었습니다.', '다른 나라에서 온 유학생 친구들과 서로의 음식을 나눠 먹었습니다.', '처음에는 알아듣기 힘들던 강의가 이제는 제법 귀에 들어옵니다.', '방학에 집에 다녀오는 비행기 값을 아끼려 아르바이트를 늘렸습니다.']));
   };
@@ -44074,7 +44256,7 @@ const Cg = {};
     H.travel(S, d);
     cg.exch = d;
     const code = hasLg() ? Lg.mainOf(d) : null;
-    if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, 0.6 * (0.55 + S.st.smarts / 110) / Math.pow(Lg.hard(code), 0.8));
+    if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, 0.6 * (0.55 + E.smEq(S) / 110) / Math.pow(Lg.hard(code), 0.8));
     E.stat(S, 'smarts', 4); E.stat(S, 'happy', 8); E.stat(S, 'social', 3);
     return T(S, `{N은} ${nm(d)}의 대학에서 교환학생으로 한 학기를 보냈습니다. 낯선 말과 음식에 금세 익숙해졌습니다.`);
   };
@@ -44100,7 +44282,7 @@ const Cg = {};
     e.y = (e.y || 0) + 1;
     pay(S, Cg.abCost(S, e.iso, 'early').need);
     const code = hasLg() ? Lg.mainOf(e.iso) : null;
-    if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, 1.0 * (0.55 + S.st.smarts / 110) / Math.pow(Lg.hard(code), 0.8));
+    if (code && S.langs && !Lg.isNative(S, code)) Lg.grow(S, code, 1.0 * (0.55 + E.smEq(S) / 110) / Math.pow(Lg.hard(code), 0.8));
     E.stat(S, 'smarts', 1);
     if (e.y === 1) { E.stat(S, 'happy', -4); E.stat(S, 'social', -3); }
     else E.stat(S, 'social', 1);
@@ -48425,7 +48607,7 @@ const So = {};
   /** 진급 가능성: 기본값에 능력치·사관학교 출신·장기 복무 여부를 곱하고, 같은 계급에서 떨어질수록 낮아진다(해마다 다시 보더라도 누적이 실제 비율과 비슷하게) */
   So.promoP = (S, so, nx) => {
     if (nx.p >= 0.99) return 1;
-    let f = 1 + (S.st.smarts - 50) / 120 + (S.st.skill - 30) / 200;
+    let f = 1 + (E.smEq(S) - 50) / 120 + (S.st.skill - 30) / 200;
     if (S.st.health < 35) f -= 0.3;
     if (so.track === 'off' && so.path === 'acad' && eqOf(so) >= 2) f += 0.25;
     if (nx.rev && !so.long) f -= 0.3;
@@ -48512,9 +48694,9 @@ const So = {};
     if (mj === 'med' && off) return 'med';
     if (mj === 'law' && off) return 'law';
     if (mj === 'nurse') return 'med';
-    if (mj === 'cs' && S.st.smarts >= 55) return 'cyber';
+    if (mj === 'cs' && E.smEq(S) >= 55) return 'cyber';
     if (mj === 'eng' && U.chance(0.6)) return U.chance(0.5) ? 'eng' : 'sig';
-    if (S.st.smarts >= 72 && U.chance(0.3)) return 'intel';
+    if (E.smEq(S) >= 72 && U.chance(0.3)) return 'intel';
     if (S.sex === 'm' && S.st.health >= 75 && U.chance(0.2)) return 'sf';
     const w = [['inf', 0.34], ['art', 0.12], ['armor', 0.08], ['eng', 0.08], ['sig', 0.1], ['log', 0.14], ['adm', 0.08]];
     if (off) w.push(['avi', 0.06]);
@@ -48909,7 +49091,7 @@ const So = {};
     let p = so.iso === 'KOR' ? (so.track === 'off' ? 0.3 : 0.9) : so.path === 'legion' ? 0.9 : so.iso === 'USA' ? 0.85 : 0.8;
     if (S.st.health < 35) p -= 0.3;
     if (S.flags.exCon) p -= 0.3;
-    return clamp(p + (so.iso === 'KOR' && so.track === 'off' ? (S.st.smarts - 55) / 200 : 0), 0.05, 0.95);
+    return clamp(p + (so.iso === 'KOR' && so.track === 'off' ? (E.smEq(S) - 55) / 200 : 0), 0.05, 0.95);
   };
   C.DEC.so_long = {
     title: (S) => { const j = soJob(S); return j && j.so && j.so.iso === 'KOR' ? '장기 복무 심사' : '복무 연장'; },
@@ -49023,10 +49205,10 @@ const So = {};
     if (iso === 'PRK' || S.fam.married || a > 22 || S.edu.stage !== 3 || (S.edu.year || 1) > 1) return false;
     if (S.edu.major === 'med' || S.edu.major === 'art' || S.edu.tier === 'jc') return false;
     if (S.cg && S.cg.ab && !S.cg.ab.done) return false;
-    if (S.st.smarts < 62 || S.st.health < 55 || (hasDs() && Ds.milExempt(S))) return false;
+    if (E.smEq(S) < 62 || S.st.health < 55 || (hasDs() && Ds.milExempt(S))) return false;
     return !(S.sol && (S.sol.cadet || S.sol.acadNo));
   };
-  const acadP = (S) => clamp(0.25 + (S.st.smarts - 62) / 80 + (S.st.health - 60) / 150, 0.1, 0.7);
+  const acadP = (S) => clamp(0.25 + (E.smEq(S) - 62) / 80 + (S.st.health - 60) / 150, 0.1, 0.7);
   C.DEC.so_acad = {
     title: () => '사관학교',
     text: (S) => {
@@ -49073,7 +49255,7 @@ const So = {};
   const promoChoices = (S) => {
     const j = soJob(S), so = j.so, nx = So.nextRule(so);
     if (!nx) return [{ label: '지금 자리를 지킨다', typ: true, run: () => null }];
-    const p = So.promoP(S, so, nx), p2 = clamp(p * (1.1 + Math.max(0, S.st.smarts - 50) / 200) + 0.01, 0.01, 0.97);
+    const p = So.promoP(S, so, nx), p2 = clamp(p * (1.1 + Math.max(0, E.smEq(S) - 50) / 200) + 0.01, 0.01, 0.97);
     const up = (S2, fx) => {
       const r = So.rankUp(S2, { quiet: true });
       if (fx) fx(S2);
@@ -49163,7 +49345,7 @@ const So = {};
       choices: [
         {
           l: '장교 후보생에 지원한다', typ: (S) => h01(S, 'off') < 0.1,
-          p: (S) => clamp(0.45 + (S.st.smarts - 55) / 150 + (S.st.health - 60) / 200, 0.15, 0.85),
+          p: (S) => clamp(0.45 + (E.smEq(S) - 55) / 150 + (S.st.health - 60) / 200, 0.15, 0.85),
           ok: { run: (S) => { So.commission(S, { track: 'off', rk: 0, path: 'ocs' }); return null; } },
           no: { t: '장교 후보생 선발에서 떨어졌습니다.', fx: { happy: -2 } },
         },
@@ -49180,7 +49362,7 @@ const So = {};
       choices: [
         {
           l: '오바뉴 모집소로 간다', cost: 1, typ: (S) => h01(S, 'legion') < 0.04,
-          p: (S) => clamp(0.15 + (S.st.health - 50) / 200 + (S.st.smarts - 50) / 400, 0.08, 0.35),
+          p: (S) => clamp(0.15 + (S.st.health - 50) / 200 + (E.smEq(S) - 50) / 400, 0.08, 0.35),
           ok: { run: (S) => {
             const from = isoOf(S);
             S.mgNext = 'work';
@@ -49493,7 +49675,7 @@ const So = {};
       const out = mc0(S, ctx);
       if (isoOf(S) !== 'KOR' || S.sex !== 'm' || S.edu.level < 4 || ctx.leave || ctx.alt || (ctx.g && ctx.g > 3) || ageOf(S) > 27.99 || S.mil) return out;
       const rotc = h01(S, 'rotc') < 0.75, typ = h01(S, 'rotcT') < 0.12;
-      const p = clamp(0.6 + (S.st.health - 60) / 250 + (S.st.smarts - 55) / 300, 0.3, 0.9);
+      const p = clamp(0.6 + (S.st.health - 60) / 250 + (E.smEq(S) - 55) / 300, 0.3, 0.9);
       const ch = {
         label: rotc ? '학군장교(ROTC)로 임관한다' : '학사장교로 임관한다', sub: `${rotc ? '28' : '36'}개월 · 소위로 복무 · 선발 ${pTxt(p)}`, typ,
         run: (S2) => {
@@ -50048,7 +50230,7 @@ const Mp = {};
           } },
       ];
       // 제대군인 대학 추천(예전보다 드묾, 근삿값 10~15%)
-      if (S.edu.stage === null && S.edu.level === 3 && E.age(S) < 32 && S.st.smarts >= 55 && x.end === 'done') {
+      if (S.edu.stage === null && S.edu.level === 3 && E.age(S) < 32 && E.smEq(S) >= 55 && x.end === 'done') {
         const pU = clamp(0.12 + (party(S) ? 0.1 : 0) + (sb === 'host' ? -0.08 : 0), 0.02, 0.4);
         out.push({ label: '제대군인 대학 추천을 받아 본다', sub: `가능성 약 ${pct(pU)}% · 안 되면 집단배치`,
           run: (S2) => {
@@ -50421,7 +50603,7 @@ const Mp = {};
     const listP = clamp(0.25 + 0.08 * (m.good || 0) - (m.refused ? 0.15 : 0) - (m.bad ? 0.1 : 0), 0.05, 0.6) * (sbOf(S) === 'host' ? 0.3 : 1);
     if (ay >= 20 && !m.ocs && n >= Math.min(36, (m.mo || 120) - 12) && !party(S) && !(S.rg && S.rg.exPol) && U.chance(listP) && !S.queue.some((q) => q.id === 'mp_party')) E.ask(S, 'mp_party', {});
     // 군관 추천: 복무 3~5년 하전사, 지식 55 이상, 적대 계층 아님 — 연 5~10%(당원 +5%)
-    if (m.br !== 'med' && !m.ocs && n >= 36 && n <= 60 && S.st.smarts >= 55 && sbOf(S) !== 'host' && !m.bad) {
+    if (m.br !== 'med' && !m.ocs && n >= 36 && n <= 60 && E.smEq(S) >= 55 && sbOf(S) !== 'host' && !m.bad) {
       const p = ((sbOf(S) === 'core' ? 0.1 : 0.05) + (party(S) ? 0.05 : 0)) * (S.sex === 'f' ? 0.3 : 1);
       if (U.chance(p) && !S.queue.some((q) => q.id === 'mp_officer')) E.ask(S, 'mp_officer', {});
     }
@@ -50809,7 +50991,7 @@ const Nk = {};
     text: (S) => T(S, '북한에서 개인이 외국으로 유학을 가는 길은 없습니다. 다만 성적과 성분, 당성이 좋은 소수를 국가가 뽑아 중국·러시아의 대학으로 보내는 연수가 있습니다. 감시 속에서 공부하고, 기한이 끝나면 반드시 돌아와야 합니다.'),
     choices: (S) => {
       const d = chance(0.6) ? 'CHN' : 'RUS';
-      const p = clamp(0.2 + (S.st.smarts - 65) / 80 + (party(S) ? 0.1 : 0) + (sbOf(S) === 'core' ? 0.1 : 0), 0.05, 0.7);
+      const p = clamp(0.2 + (E.smEq(S) - 65) / 80 + (party(S) ? 0.1 : 0) + (sbOf(S) === 'core' ? 0.1 : 0), 0.05, 0.7);
       return [
         { label: `${Wd.name(d)} 연수 선발에 응한다`, sub: `가능성 약 ${pct(p)}% · 감시 속 2~3년, 반드시 귀국`, typ: true,
           run: (S2) => { if (!chance(p)) { E.stat(S2, 'happy', -3); return T(S2, '연수 대상에서 빠졌습니다. 성분과 추천이 더 좋아야 한다는 말이 돌았습니다.'); }
@@ -50821,7 +51003,7 @@ const Nk = {};
   };
   C.addEvents([{
     id: 'nk_p_study', age: [18, 27], cd: 6, major: true,
-    when: (S) => prkNative(S) && (student(S) || (S.edu.level >= 3 && S.edu.stage === null && !working(S))) && S.st.smarts >= 70 && (sbOf(S) === 'core' || party(S)),
+    when: (S) => prkNative(S) && (student(S) || (S.edu.level >= 3 && S.edu.stage === null && !working(S))) && E.smEq(S) >= 70 && (sbOf(S) === 'core' || party(S)),
     rate: 0.04,
     run: (S) => E.ask(S, 'nk_study', {}),
   }]);
@@ -50836,7 +51018,7 @@ const Nk = {};
       const c = r.c || {};
       if (c.male && S.sex !== 'm') return false;
       if (c.age && (age(S) < c.age[0] || age(S) > c.age[1])) return false;
-      if (c.smarts && S.st.smarts < c.smarts) return false;
+      if (c.smarts && E.smEq(S) < c.smarts) return false;
       if (c.edu && S.edu.level < c.edu) return false;
       if (c.party && !party(S)) return false;
       if (c.sb && sbOf(S) !== c.sb) return false;
@@ -51064,7 +51246,7 @@ const Nk = {};
       { label: '방송에 출연한다', sub: '잘되면 명성이 쌓입니다',
         run: (S2) => { if (chance(clamp(0.4 + (H.presT(S2) - 50) / 90, 0.2, 0.8))) { H.fameUp(S2, 5); E.stat(S2, 'happy', 5); if (Ec.earn) Ec.earn(S2, 'gig', H.pay(S2, 2)); return T(S2, '담담하게 풀어낸 이야기에 시청자들이 귀를 기울였습니다.'); } H.fameUp(S2, 1); E.stat(S2, 'happy', -3); return T(S2, '카메라 앞에서 긴장해 말을 제대로 잇지 못했습니다.'); } },
       { label: '강연을 다닌다', run: (S2) => { H.fameUp(S2, 3); E.stat(S2, 'social', 3); E.stat(S2, 'happy', 3); if (Ec.earn) Ec.earn(S2, 'gig', H.pay(S2, 1)); return T(S2, '학교와 단체를 돌며 북에서의 삶을 이야기했습니다. 듣는 이들의 눈빛이 오래 기억에 남았습니다.'); } },
-      { label: '수기를 출간한다', run: (S2) => { if (typeof Cr !== 'undefined' && Cr.publish && S2.books) { const b = Cr.publish(S2, clamp(R(55 + (S2.st.smarts - 50) / 3), 30, 90), 'memoir'); b.t = pick(['두만강을 건너', '그래도 봄은 온다', '내가 온 길']); b.memoir = true; } H.fameUp(S2, 3); E.stat(S2, 'happy', 6); return T(S2, '북에서의 삶과 탈북의 길을 수기로 펴냈습니다.'); } },
+      { label: '수기를 출간한다', run: (S2) => { if (typeof Cr !== 'undefined' && Cr.publish && S2.books) { const b = Cr.publish(S2, clamp(R(55 + (E.smEq(S2) - 50) / 3), 30, 90), 'memoir'); b.t = pick(['두만강을 건너', '그래도 봄은 온다', '내가 온 길']); b.memoir = true; } H.fameUp(S2, 3); E.stat(S2, 'happy', 6); return T(S2, '북에서의 삶과 탈북의 길을 수기로 펴냈습니다.'); } },
       { label: '유튜브를 시작한다', run: (S2) => { if (!S2.stream) S2.stream = { on: true, fans: 20 }; H.fameUp(S2, 2); return T(S2, '탈북민 유튜브 채널을 열어 북에서의 일상과 정착 이야기를 올리기 시작했습니다.'); } },
       { label: '조용히 지내고 싶어 사양한다', typ: true, run: () => null },
     ],
@@ -51541,8 +51723,9 @@ const Md = {};
     const voc = Pr.lvl(S, 'music'), cOwn = Pr.lvl(S, 'compose'), comp = Math.max(cOwn, 0.75 * voc);
     const tal = H.talent(S, 'music'), ch = H.looks(S); // 무대·화면의 매력은 외모 쪽(피드백 203번)
     const skill = 0.55 * comp + 0.45 * voc;
-    const e = 0.3 * tal + 0.55 * skill + 0.15 * ch + 3 + 0.3 * Math.max(0, skill - 80);
-    const sd = 9 * (1 - 0.55 * U.clamp((skill - 60) / 40, 0, 1)); // 실력이 높을수록 운의 폭이 준다(실력 97이면 ±4~5)
+    // 피드백 232번: 재능·실력의 몫은 실력에 따라(practice.js Pr.mix — 예전 재능 30%·실력 55% 고정 → 실력 60까지 비슷, 100이면 재능 20%·실력 65%), 80 위로 더 오르는 몫은 그대로
+    const e = (Pr.mix ? Pr.mix(tal, skill, ch) : 0.3 * tal + 0.55 * skill + 0.15 * ch) + 3 + 0.3 * Math.max(0, skill - 80);
+    const sd = Pr.luckSd ? Pr.luckSd(skill, 9) : 9 * (1 - 0.55 * U.clamp((skill - 60) / 40, 0, 1)); // 실력이 높을수록 운의 폭이 준다(실력 97이면 ±4~5) — 모든 작품과 같은 Pr.luckSd
     const luck = U.normal(0, sd);
     return { q: Math.round(U.clamp(e + luck, 1, 100)), comp: Math.round(comp), compOwn: cOwn >= 0.75 * voc, voc: Math.round(voc), tal: Math.round(tal), luck: Math.round(luck), sd: Math.round(sd) };
   };
@@ -55362,7 +55545,7 @@ const Kn = {};
       id: 'k_foster_life', age: [3, 17.9], cd: 3, rate: (S) => (kin(S) && S.kin.now === 'foster' ? 0.2 : 0),
       text: (S) => U.pick([
         `위탁 가정 어른들이 {N}의 생일을 처음으로 챙겨 주었습니다. 케이크 앞에서 어떤 표정을 지어야 할지 몰랐습니다.`,
-        '한 달에 한 번 상담 선생님이 찾아와 지내기가 어떤지 묻습니다.',
+        '한 달에 한 번 담당 사회복지사가 찾아와 지내기가 어떤지 묻습니다.', // 위탁 아동을 맡는 사람(학교 밖 아이에게 '선생님'으로 걸렸음 — state_audit)
         '위탁 가정의 다른 아이와 방을 나눠 씁니다. 처음엔 서먹했지만 이제는 밤늦게까지 수다를 떱니다.',
         '언제 또 옮길지 몰라 짐을 다 풀지 않고 지냅니다.',
       ]),
@@ -55704,9 +55887,10 @@ const Pt = {};
     if (!cs.length) return;
     const a = age(S);
     // 혼자 사는 사람의 외로움을 덜어 준다(관계·행복이 천천히 +3 안팎)
-    if (alone(S) && a >= 30) { S.st.social = clamp(S.st.social + 0.08, 0, 100); S.st.happy = clamp(S.st.happy + 0.1, 0, 100); }
+    // (목표의 몫으로 더한다 — engine.js E.pushT: 관계 0.08 = 목표 +3.2, 행복 0.1 = 목표 +2.5, 화면의 '오르내리는 이유'에 '반려동물')
+    if (alone(S) && a >= 30) { E.pushT(S, 'social', '반려동물', 3.2); E.pushT(S, 'happy', '반려동물(혼자 사는 집)', 2.5); }
     // 아이의 정서(행복·관계 +1 안팎)
-    else if (a >= 4 && a < 15) { S.st.happy = clamp(S.st.happy + 0.04, 0, 100); S.st.social = clamp(S.st.social + 0.03, 0, 100); }
+    else if (a >= 4 && a < 15) { E.pushT(S, 'happy', '반려동물(어린 시절)', 1); E.pushT(S, 'social', '반려동물', 1.2); }
   };
   E.hook('month', (S) => Pt.month(S));
 
@@ -56032,15 +56216,43 @@ const Ab = {};
     const dl = hl.lv(S, 'dementia') || 0, sl = hl.lv(S, 'stroke') || 0;
     return (dl >= 3 ? 22 : dl === 2 ? 6 : 0) + (sl >= 3 ? 12 : sl === 2 ? 4 : 0);
   };
-  Ab.looksTarget = (S) => {
-    const st = S.st;
-    return 0.6 * H.talent(S, 'charm') + 0.15 * st.health + 0.05 * st.happy + 12 + 2 * ((S.boost && S.boost.charm) || 0) - Math.max(0, age(S) - 40) * 0.45;
+  /* 외모의 오래가는 길(피드백 224번 — 예전에는 오르는 것은 대부분 잠깐(꾸밈이 달마다 5%씩 빠짐)이고 내리는 것(나이·건강)은 오래 갔다):
+   *   나이: 40세부터 해마다 0.45씩 쌓이던 몫을 '그해의 운동 습관'에 따라 쌓는다(S.ab.ag) — 습관 40 이하 0.45, 80 이상 0.30/년.
+   *   체형: 운동 습관이 같은 나이 사람들보다 많으면 +, 적으면 −(Ft.z 당 3점, −3~+4.5 — 사람들 평균 0).
+   *   몸 관리: 식단 관리를 꾸준히 하면 +2까지(S.ab.dm, 달마다 4%씩 옅어짐), 몸무게 경향(vice.js S.vc.fat)이 높으면 −(50이면 −3).
+   *   오래가는 손질(S.ab.lk — statwhy.js '외모 오래 가꾸기'): 치아 교정·피부 관리·시력 교정·옷차림 바꾸기가 몇 해 동안 +2~4(끝나기 전 1년에 걸쳐 옅어짐).
+   *   꾸밈(가꾸기·쇼핑 옷·성형·명품의 S.boost.charm × 2): 달마다 3.5%, 꾸준히 가꾸는 사람(S.ab.gh — 가꾸기 습관)은 2%까지만 빠진다(Ab.charmFade). */
+  Ab.ageSlope = (S) => 0.45 - 0.15 * clamp((((S.ft && S.ft.hab) || 0) - 40) / 40, 0, 1);
+  Ab.charmFade = (S) => 0.035 - 0.015 * clamp((S.ab && S.ab.gh) || 0, 0, 1);
+  /** 오래가는 손질 가운데 아직 남은 것: [{k, ko, v, until}] — 끝나기 전 1년에 걸쳐 옅어진다 */
+  Ab.lkNow = (S) => ((S.ab && S.ab.lk) || []).filter((x) => x.until > S.ageM).map((x) => ({ ...x, now: x.v * clamp((x.until - S.ageM) / 12, 0, 1) }));
+  Ab.looksParts = (S) => {
+    const st = S.st, ab = S.ab || {}, a = age(S), P = [['타고난 외모', 0.6 * H.talent(S, 'charm'), 0, 30], ['기본', 12], ['건강', 0.15 * st.health, 0, 10.5], ['행복', 0.05 * st.happy, 0, 3]]; // 넷째 값: 보통 사람의 몫(화면에서 '기본'에 합치고 차이만 보임)
+    const b = 2 * ((S.boost && S.boost.charm) || 0);
+    if (b) P.push(['꾸밈', b]);
+    const ag = ab.ag !== undefined ? ab.ag : Math.max(0, a - 40) * 0.45;
+    if (ag > 0) P.push(['나이', -ag]);
+    if (a >= 15 && S.ft && typeof Ft !== 'undefined' && Ft && typeof Ft.z === 'function') { const z = clamp(Ft.z(S), -1, 1.5); if (Math.abs(z) > 0.02) P.push(['체형·운동 습관', 3 * z]); }
+    if (ab.dm) P.push(['몸 관리(식단)', Math.min(2, 0.7 * ab.dm)]);
+    if (S.vc && S.vc.fat > 0) P.push(['몸무게', -0.06 * S.vc.fat]);
+    for (const x of Ab.lkNow(S)) P.push([x.ko, x.now]);
+    return P;
   };
-  Ab.presTarget = (S) => {
-    const st = S.st, rep = hasSt() ? St.rep(S) : 50;
-    return 0.35 * H.talent(S, 'charm') + 0.2 * st.social + 0.05 * st.happy + 0.25 * (Ab.talk(S) - nat0(S)) + Ab.expB(S)
-      + Math.min(8, (S.fame || 0) / 6) + Math.min(6, (S.power || 0) / 10) + (rep - 50) / 10 + 24 - illPen(S);
+  Ab.presParts = (S) => {
+    const st = S.st, rep = hasSt() ? St.rep(S) : 50, P = [['타고난 매력', 0.35 * H.talent(S, 'charm'), 0, 17.5], ['기본', 24], ['관계', 0.2 * st.social, 0, 12], ['행복', 0.05 * st.happy, 0, 3]];
+    const add = (l, v) => { if (v) P.push([l, v]); };
+    add('말솜씨', 0.25 * (Ab.talk(S) - nat0(S)));
+    add('이끈 경험', Ab.expB(S));
+    add('명성', Math.min(8, (S.fame || 0) / 6));
+    add('권력', Math.min(6, (S.power || 0) / 10));
+    add('평판', (rep - 50) / 10);
+    add('병(치매·뇌졸중 후유증)', -illPen(S));
+    return P;
   };
+  E.PARTS.looks = Ab.looksParts;
+  E.PARTS.pres = Ab.presParts;
+  Ab.looksTarget = (S) => E.partSum(Ab.looksParts(S));
+  Ab.presTarget = (S) => E.partSum(Ab.presParts(S));
   const syncCharm = (S) => { S.st.charm = clamp((S.st.looks + S.st.pres) / 2, 1, 100); if (S.ab) S.ab.cm = S.st.charm; };
   /** 옛 저장·새 인생: 매력 하나를 두 값으로 나눈다(합친 값은 그대로, 나이가 많을수록 외모가 낮고 인품이 높게) */
   const splitCharm = (S) => {
@@ -56055,6 +56267,12 @@ const Ab = {};
     if (st.looks === undefined || st.pres === undefined) splitCharm(S);
     // 다른 곳에서 매력을 직접 바꿨으면(운영자 모드 등) 두 값에 같은 만큼 더한다
     if (S.ab.cm !== undefined && Math.abs(st.charm - S.ab.cm) > 0.05) { const d = st.charm - S.ab.cm; st.looks = clamp(st.looks + d, 1, 100); st.pres = clamp(st.pres + d, 1, 100); }
+    // 나이의 몫은 그해의 운동 습관만큼 쌓이고(Ab.ageSlope), 가꾸기 습관·식단 관리의 몫은 하지 않으면 옅어진다
+    const ab = S.ab;
+    if (age(S) > 40) ab.ag = (ab.ag || 0) + Ab.ageSlope(S) / 12;
+    if (ab.gh) { ab.gh *= 0.95; if (ab.gh < 0.01) delete ab.gh; }
+    if (ab.dm) { ab.dm *= 0.96; if (ab.dm < 0.05) delete ab.dm; }
+    if (ab.lk && ab.lk.length && ab.lk.some((x) => x.until <= S.ageM)) ab.lk = ab.lk.filter((x) => x.until > S.ageM);
     st.looks = clamp(st.looks + (Ab.looksTarget(S) - st.looks) * 0.02, 1, 100);
     st.pres = clamp(st.pres + (Ab.presTarget(S) - st.pres) * 0.012, 1, 100);
     syncCharm(S);
@@ -56081,7 +56299,7 @@ const Ab = {};
   Ab.lead = (S) => clamp(50 + 7 * psz(S, 'E') - 4 * psz(S, 'N') + 1.5 * psz(S, 'C') + 0.45 * ((S.st.pres !== undefined ? S.st.pres : H.charm(S)) - PRES_MID) + Math.min(6, (S.power || 0) / 8), 1, 99);
   Ab.leadZ = (S) => clamp((Ab.lead(S) - 50) / 9, -2.5, 2.5);
   Ab.leadKo = (S) => { const v = Ab.lead(S); return v >= 72 ? '타고난 리더' : v >= 60 ? '사람을 이끄는 힘이 있음' : v >= 42 ? '보통' : v >= 32 ? '앞에 나서기보다 함께하는 편' : '조용히 뒤에서 돕는 편'; };
-  Ab.crea = (S) => clamp(50 + 8 * psz(S, 'O') + 0.3 * (Math.max(H.talent(S, 'art'), H.talent(S, 'music')) - 62) + 0.08 * (S.st.smarts - 65), 1, 99); // 또래 평균이 50 근처(시험: 한국·인도)
+  Ab.crea = (S) => clamp(50 + 8 * psz(S, 'O') + 0.3 * (Math.max(H.talent(S, 'art'), H.talent(S, 'music')) - 62) + 0.08 * (E.smEq(S) - 65), 1, 99); // 또래 평균이 50 근처(시험: 한국·인도)
   Ab.creaZ = (S) => clamp((Ab.crea(S) - 50) / 9, -2.5, 2.5);
   Ab.creaKo = (S) => { const v = Ab.crea(S); return v >= 72 ? '번뜩이는 생각이 많음' : v >= 60 ? '새로운 생각을 잘 냄' : v >= 42 ? '보통' : '익숙한 방식을 좋아함'; };
   /** 선거(Cr.electP 로짓): 카리스마와 언변 */
@@ -56203,7 +56421,9 @@ const Ab = {};
       if (U.chance(pr)) endEp(S);
     } else if (a >= 12 && !H.incap(S) && U.chance(Ab.onsetP(S))) startEp(S);
     const b = bandOf(a);
-    S.st.happy = clamp(S.st.happy + 0.04 * (0.12 * (ab.mh - Ab.MH_REF[b]) + Ab.HC[b] - epHit(ab.ep)), 0, 100);
+    // 행복 목표의 몫으로 더한다(engine.js E.pushT — 화면의 '오르내리는 이유'에 '마음 건강'·'우울·불안'으로 보임, 피드백 224번)
+    E.pushT(S, 'happy', '마음 건강', 0.12 * (ab.mh - Ab.MH_REF[b]) + Ab.HC[b]);
+    if (ab.ep) E.pushT(S, 'happy', ab.ep.k === 'dep' ? '우울감' : '불안', -epHit(ab.ep));
   };
 
   // 결정: 우울·불안을 겪기 시작했을 때(15세 이상)
@@ -56262,7 +56482,12 @@ const Ab = {};
   Ab.credit = (S) => {
     if (!S.indep || age(S) < 18) return null;
     const iso = E.iso(S), med = Math.max(1, Wd.workerMedian(iso)), inc = Math.max(0, S.income || 0);
-    let v = 60 + 10 * clamp(Math.log(Math.max(0.05, inc / med)) / Math.log(3), -1, 1);
+    // 은퇴했거나 62세 넘어 일하지 않으면: 소득 대신 연금(S.income 에 들어 있음)과 재산(한 해 4%를 꺼내 쓸 수 있는 것으로)을
+    // 같은 나이 보통 수준(일하는 사람 중위 소득의 60%)과 견준다(피드백 224번 — 예전에는 은퇴하면 소득 몫이 줄어 신용이 내려갔다)
+    const elder = S.work.retired || (age(S) >= 62 && !S.work.job);
+    const nw = elder && typeof Ec !== 'undefined' && Ec.netWorth ? Math.max(0, Ec.netWorth(S)) : 0;
+    let v = elder ? 60 + 10 * clamp(Math.log(Math.max(0.05, (inc + 0.04 * nw) / (med * 0.6))) / Math.log(3), -1, 1)
+      : 60 + 10 * clamp(Math.log(Math.max(0.05, inc / med)) / Math.log(3), -1, 1);
     let unsec = Math.max(0, -S.money);
     for (const l of S.loans || []) if (l.type !== 'mortgage') unsec += typeof Ec !== 'undefined' && Ec.conv ? Ec.conv(l.bal, l.iso, iso) : l.bal;
     v -= 22 * clamp(unsec / Math.max(med * 0.25, inc) / 1.5, 0, 1);
@@ -56372,11 +56597,11 @@ const Ab = {};
     { id: 'ab_captain', age: [12, 38], once: true,
       rate: (S) => { const sp = hasSp() && Sp.main ? Sp.main(S) : null; return S.ab && sp && Sp.teamSport(sp) && (S.hobbies.includes('sport') || H.jobIs(S, 'athlete')) && Ab.lead(S) >= 62 ? 0.25 : 0; },
       text: (S) => { const ko = Sp.ko(S, Sp.main(S)); return H.jobIs(S, 'athlete') ? `{N은} 동료 선수들의 추천으로 ${ko} 팀 주장을 맡았습니다. 경기 전 둥글게 모인 동료들 앞에서 처음으로 목소리를 높였습니다.` : `{N은} 함께 ${U.j(ko, '을')} 하는 사람들의 추천으로 팀 주장이 되었습니다. 작은 일에도 먼저 나서게 되었습니다.`; },
-      fx: { social: 3, happy: 3 }, run: (S) => { S.ab.lx = (S.ab.lx || 0) + 2; } },
+      fx: { social: 3, happy: 3 }, run: (S) => { S.ab.lx = (S.ab.lx || 0) + 2; if (hasPr()) Pr.gain(S, 'speech', 2); } }, // 동료 앞에서 말하는 자리(언변 — 피드백 224번)
     { id: 'ab_club', age: [16, 85], cd: 12,
       rate: (S) => (S.ab && Ab.lead(S) >= 60 && S.st.social >= 55 && C.activeHobbies(S).length && !H.incap(S) ? 0.06 : 0),
       text: (S) => { const h = C.activeHobbies(S)[0]; return `{N은} ${U.j(C.hobbyName(S, h), '을')} 좋아하는 사람들을 모아 작은 모임을 만들었습니다. 한 달에 한 번, 열 명 남짓이 모입니다.`; },
-      fx: { social: 4, happy: 2 }, run: (S) => { S.ab.lx = (S.ab.lx || 0) + 1.5; } },
+      fx: { social: 4, happy: 2 }, run: (S) => { S.ab.lx = (S.ab.lx || 0) + 1.5; if (hasPr()) Pr.gain(S, 'speech', 2); } },
     { id: 'ab_rent', age: [20, 85], cd: 6,
       rate: (S) => { if (!S.ab || !S.indep || H.dev(S) < 2 || (typeof Ec !== 'undefined' && Ec.home && Ec.home(S))) return 0; const v = Ab.credit(S); return v !== null && v < 32 ? 0.2 : 0; },
       text: '새로 세 들 집을 구하는데, 집주인이 신용 기록을 보고 보증금을 더 내거나 보증인을 세우라고 했습니다. 몇 군데를 더 돌고서야 계약했습니다.',
@@ -56401,6 +56626,7 @@ const Ab = {};
       ab.lx = j ? ((j.lv || 0) * 2 + (j.id === 'manager' || j.id === 'plantmgr' ? 2 : 0) + (hasCr() && Cr.curTier ? Cr.curTier(S) * 2 : 0)) : 0;
     }
     if (ab.late === undefined) ab.late = 0;
+    if (ab.ag === undefined) ab.ag = Math.max(0, age(S) - 40) * 0.45; // 외모에서 나이의 몫(옛 저장은 예전 식 그대로)
     if (hasPr()) {
       S.prac = S.prac || {};
       if (S.prac.speech === undefined) S.prac.speech = nat0(S, H.talent(S, 'charm'), S.st.social);
@@ -56418,6 +56644,7 @@ const Ab = {};
       if (v < nat) S.prac.speech = v + Math.min(0.4, nat - v);
       const j = S.work.job;
       if (j && !S.work.retired && TALK_JOBS.has(j.id)) Pr.gain(S, 'speech', 0.15);
+      else if (j && !S.work.retired && (j.lv || 0) >= 2) Pr.gain(S, 'speech', 0.05); // 회의를 이끌고 보고하는 자리(팀장 이상 — 피드백 224번)
     }
     // 이끈 경험: 직급·관리자·정치인
     const j = S.work.job;
@@ -57722,7 +57949,8 @@ const Rc = {};
   /* 할 일 '프로게임단 입단 테스트'(꿈에 도전): 선수 일자리(athlete, 종목 esports)의 리그·연봉·은퇴를 그대로 쓴다 */
   C.DEC.gm_tryout = {
     title: () => '프로게임단 입단 테스트',
-    text: (S) => `게임 실력 ${R(gameLv(S))}${hasPr() ? ` · 두뇌 겨루기 ${R(Pr.lvl(S, 'mind'))}` : ''} · 지식 ${R(S.st.smarts)}. 프로게임단은 반응 속도와 판단력을 봅니다. 낮은 단계(세미프로)부터 올라가는 선수가 많고, 이 나라에 리그가 없으면 해외 팀 테스트를 봐야 해 훨씬 어렵습니다. 선수 생활은 보통 20대 중반에 끝납니다.`,
+    // 이번 테스트에 쓰일 실력(피드백 232번 — 작품의 '쓰인 실력'과 같은 형식)
+    text: (S) => `${hasPr() && Pr.usedTxt ? `${Pr.usedTxt(S, '이번 테스트에 쓰일 실력', [['게임 실력', gameLv(S)], ['두뇌 겨루기', Pr.lvl(S, 'mind')], ['지식', S.st.smarts]], ['sport', 'study'], null, Pr.luckSd(Sp.skillMix(S, 'esports'), 9))} → 발휘 실력 ${R(Sp.eff(S, 'esports'))}` : `게임 실력 ${R(gameLv(S))} · 지식 ${R(S.st.smarts)}`}. 프로게임단은 반응 속도와 판단력을 봅니다. 낮은 단계(세미프로)부터 올라가는 선수가 많고, 이 나라에 리그가 없으면 해외 팀 테스트를 봐야 해 훨씬 어렵습니다. 선수 생활은 보통 20대 중반에 끝납니다.`,
     choices: (S) => {
       const tiers = Sp.tiers(S, 'esports');
       const levels = tiers.length ? tiers.slice().reverse() : [null];
@@ -57798,6 +58026,10 @@ const Ax = {};
 (() => {
   const clamp = U.clamp, R = Math.round;
   const gh = (g, r) => (C.gh ? C.gh(g, r) : r ? `얻음: ${g} · 위험: ${r}` : `얻음: ${g}`);
+  /** 식단 관리의 몸 관리 몫(stats2.js Ab.looksParts — 외모 0.7 × 횟수, 2까지): 지금·한 번 더 하면 */
+  const dmLooks = (S, add) => Math.round(Math.min(2, 0.7 * Math.min(3, ((S.ab && S.ab.dm) || 0) + add)) * 10) / 10;
+  /** 지식 할 일이 지금 실제로 올리는 몫(소수 한 자리) */
+  const smGain = (S, x) => Math.round(x * Math.max(0.1, E.smRoom ? E.smRoom(S) : 1) * (typeof A !== 'undefined' && A.dfxM ? A.dfxM(S, 'smarts') : 1) * 10) / 10;
   const ageOf = (S) => E.age(S);
   const isoOf = (S) => E.iso(S);
   const hasAc = () => typeof Ac !== 'undefined' && !!Ac && typeof Ac.hurt === 'function';
@@ -58465,13 +58697,15 @@ const Ax = {};
   const HINT = {
     rest: (S) => gh(`행복 +4 · 스트레스 −${relaxNow(S, 3)} · 돈 안 드는 작은 회복`),
     therapy: (S) => gh(`행복 +6~12 · 마음 건강 +3·스트레스 −${relaxNow(S, 3)}${S.ab && S.ab.ep ? ' · 지금 겪는 우울·불안의 회복이 빨라짐' : ''} · 중독 −4`),
-    groom: () => gh('외모 +4 안팎(몇 달 동안 옅어짐) 또는 말하기 연습(언변·인품)'),
-    diet: (S) => gh(`건강 보너스 +2${S.vc && S.vc.fat > 0 ? ` · 몸무게 경향 ${R(S.vc.fat)} → ${R(Math.max(0, S.vc.fat - 6))}${S.vc.obese ? '(비만 — 30 아래면 벗어남)' : ''}` : ''}`, '먹고 싶은 것을 참음(행복 −1)'),
+    // 꾸밈이 옅어지는 빠르기는 가꾸기 습관에 따라(stats2.js Ab.charmFade — 피드백 224번)
+    groom: (S) => gh(`외모 +4 안팎(꾸밈 — 달마다 ${hasAb() && Ab.charmFade ? Math.round(Ab.charmFade(S) * 1000) / 10 : 5}%씩 옅어짐, 꾸준히 가꾸면 2%까지) 또는 말하기 연습(언변·인품)`),
+    diet: (S) => gh(`건강 보너스 +2 · 몸 관리(외모 +${dmLooks(S, 0)} → +${dmLooks(S, 1)}, 꾸준히 하면 +2까지)${S.vc && S.vc.fat > 0 ? ` · 몸무게 경향 ${R(S.vc.fat)} → ${R(Math.max(0, S.vc.fat - 6))}${S.vc.obese ? '(비만 — 30 아래면 벗어남)' : ''}` : ''}`, '먹고 싶은 것을 참음(행복 −1)'),
     gym: () => gh('건강 +2·건강 보너스 +4'),
     bathhouse: (S) => gh(`행복 +3·건강 +1 · 스트레스 −${relaxNow(S, 5)}`),
     garden: (S) => gh(`장 볼 돈 조금·건강 +1 · 스트레스 −${relaxNow(S, 3)}`),
-    study: (S) => gh(`지식 +2(높을수록 더딤)${S.edu.stage !== null ? ' · 학교를 그만둘 위험 −15%' : ''}`),
-    online: () => gh('지식 +2·경력 +2'),
+    // 지식은 지금 값이 높을수록(engine.js E.smRoom)·최근 자주 할수록(actions.js C.DFX) 덜 오른다 — 지금 실제로 오를 몫을 보인다(피드백 224번)
+    study: (S) => gh(`지식 +${smGain(S, 2)}(지금 ${R(S.st.smarts)} — 높을수록·자주 할수록 더딤)${S.edu.stage !== null ? ' · 학교를 그만둘 위험 −15%' : ''}`),
+    online: (S) => gh(`지식 +${smGain(S, 2)}·경력 +2`),
     nightclass: () => gh('지식·경력 +2·관계 +1 · 같이 듣는 사람과 친구(10%) · 새 취미'),
     scripture: () => gh('신앙 +3·지식 +1 · 마음 건강 조금'),
     cg_abroad: () => gh('외국 학위·외국어·해외 경력(고르는 창에서 학교·비용)', '큰돈·몇 해'),
@@ -58523,7 +58757,7 @@ const Ax = {};
   // 이미 설명이 있는 할 일 가운데 숫자가 없던 것에 득을 덧붙임
   const AUG = {
     seek: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}${gh(`마음 건강 +3·스트레스 −${relaxNow(S, 4)} · 길을 찾으면 마음 건강이 오래 +3`)}`,
-    ged: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}합격 가능성 약 ${R(100 * clamp(0.3 + (S.st.smarts - 50) / 120, 0.08, 0.85))}%`,
+    ged: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}합격 가능성 약 ${R(100 * clamp(0.3 + (E.smEq(S) - 50) / 120, 0.08, 0.85))}%`,
     license: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}${gh('붙으면 그 자격이 필요한 일자리·급여', '떨어지면 시험 비용만')}`,
     novel: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}${gh('원고를 끝내면 출판·연재 — 수입·명성(완성도에 따라)')}`,
     artwork: (S, h0) => `${h0 ? h0(S) + ' · ' : ''}${gh('완성하면 전시·판매·명성(완성도에 따라)')}`,
@@ -58549,14 +58783,14 @@ const Ax = {};
     const a = ageOf(S);
     // 추억: 60세부터 행복 목표 최대 +3(엔진의 행복은 목표 쪽으로 달마다 4%씩)
     const w = memW(S);
-    if (w && a >= 60) S.st.happy = clamp(S.st.happy + 0.04 * Math.min(3, 0.4 * w), 0, 100);
+    if (w && a >= 60) E.pushT(S, 'happy', '추억', Math.min(3, 0.4 * w)); // 목표의 몫(engine.js E.pushT — 화면의 '오르내리는 이유')
     // 집·동네
     const h = x.home;
     if (h && S.indep && !S.prison) {
-      if (h.sz === 'big') { S.st.happy = clamp(S.st.happy + 0.04 * 2, 0, 100); S.money -= H.pay(S, 0.05); }
-      else if (h.sz === 'small') { S.st.happy = clamp(S.st.happy - 0.04, 0, 100); S.money += H.pay(S, 0.04); }
+      if (h.sz === 'big') { E.pushT(S, 'happy', '넓은 집', 2); S.money -= H.pay(S, 0.05); }
+      else if (h.sz === 'small') { E.pushT(S, 'happy', '좁은 집', -1); S.money += H.pay(S, 0.04); }
       if (h.nb === 'school') S.money -= H.pay(S, 0.04);
-      if (h.nb === 'neighbor') S.st.social = clamp(S.st.social + 0.025 * 3, 0, 100);
+      if (h.nb === 'neighbor') E.pushT(S, 'social', '정다운 이웃', 3);
     }
     // 쇼핑 중독: 한 해 동안 충동구매를 하지 않으면 벗어남
     if (x.shopAdd && impRecent(S) === 0 && S.ageM - x.shopAdd >= 12) { delete x.shopAdd; E.log(S, '한동안 충동구매를 참았습니다. 사고 싶은 마음이 예전만큼 들끓지 않습니다.', 'good'); }
@@ -58604,11 +58838,415 @@ const Ax = {};
   }
 })();
 
+/* 지구 어딘가에서 — 능력치가 오르내리는 이유·운의 흐름·외모와 건강의 오래가는 길 (피드백 224번, v0.6.10)
+ *
+ * 224 "매력은 올릴 방법은 적은데 뚝뚝 떨어짐 — 비슷하게 떨어지기만 하는 능력치를 찾아 대안"(사용자 결정 261018):
+ *   1. 오르내리는 이유 보이기(Sw.why·Sw.html — 화면 ui.js 의 능력치 막대를 누르면 열림):
+ *      지금 목표값을 이루는 몫(engine.js E.PARTS·stats2.js Ab.looksParts/presParts — 달마다 움직이는 식과 같은 함수)과
+ *      다른 파일이 달마다 더한 몫(E.pushT — 성격·마음 건강·추억·반려동물·이어지는 습관), 최근 1년 사이 사건·할 일로 직접 오르내린 일(S.why).
+ *      최근 기록은 E.stat 을 감싸 실제로 바뀐 값을 남기고, 이름은 할 일(E.doAction)·결정(E.choose)의 제목, 사건은 그 사건의 기록 문장에서 딴다.
+ *   2. 운(engine.js — 타고난 중심 S.st.luckC 와 그 둘레의 흐름): 흐름이 좋으면 좋은 일이 잦고(engine.js E.sysEvents) 도전이 잘 되며(결정 창은 E.luckL — 반반인 도전이면 ±9%p까지, 다른 파일이 확률에 더해 쓰는 E.luckP 는 ±6%p까지)
+ *      사고가 덜 나고(accident.js Ac.rates × (1 − 0.3·흐름)) 복권이 조금 더 맞는다(actions.js). 흐름이 크게 바뀌면 기록에 한 줄, 상태 줄에 '운이 좋은 흐름'.
+ *   3. 외모의 오래가는 길(식은 stats2.js): 할 일 '외모 오래 가꾸기'(치아 교정·피부 관리·시력 교정·옷차림 바꾸기 — 몇 해 동안 +1~3, S.ab.lk),
+ *      식단 관리(S.ab.dm — 몸 관리 +2까지), 가꾸기 습관(S.ab.gh — 꾸밈이 덜 빠짐, actions.js), 운동 습관(체형 몫·나이 몫).
+ *   4. 인품이 오른 까닭을 기록에 짧게: 이끈 경험·명성·말솜씨·평판의 몫이 지난번 기록 뒤로 2점 넘게 오르면(3년에 한 번까지).
+ *   5. 건강이 오르는 일: 병을 이겨 낸 뒤 체력 되찾기 · 재활 치료를 마침 · 담배를 끊고 1년·5년 · 꾸준한 운동의 덕 · 관리하던 혈압·혈당이 안정됨.
+ *      (나이에 따른 하락과 수명 보정은 그대로 — 건강은 달마다 목표값 쪽으로 3%씩 돌아가므로 잠깐의 덕이다.)
+ *   6. 언변: 말로 하는 일·팀장 이상은 stats2.js 가 달마다 더하고, 여기서는 발표·연설·강연·면접·사회 같은 일을 겪으면 조금씩(기록 문장으로 알아봄).
+ * 상태: S.why = [[달, 능력치, 바뀐 값, 이름], …](최근 2년, 120개까지)
+ *       S.sw = { lf·lf0·lfM(운 흐름 — 지금 방향·마지막으로 적은 방향·달), pn·pnM(인품 까닭 — 몫·달), rec(병을 이겨 낸 달), reh(재활을 시작한 달), q1·q5(담배 1년·5년 기록한 끊은 달),
+ *                ch·cd(혈압·혈당 안정 기록), spM(말할 일로 언변이 오른 달) }
+ * 수명·재산: 새로 오르는 건강은 몇 달 안에 목표값으로 돌아가는 잠깐의 몫이고, 운의 영향은 사람들 평균이 0(운의 중심 평균 50)이다 — 점검은 처리 기록 참고.
+ */
+'use strict';
+
+const Sw = {};
+(() => {
+  const clamp = U.clamp, R = Math.round;
+  const ageOf = (S) => E.age(S);
+  const hasPr = () => typeof Pr !== 'undefined' && !!Pr && typeof Pr.gain === 'function' && !!Pr.KINDS && !!Pr.KINDS.speech;
+  const hasEc = () => typeof Ec !== 'undefined' && !!Ec;
+  E.Sw = Sw;
+  const KO = { health: '건강', smarts: '지식', happy: '행복', social: '관계', charm: '매력', looks: '외모', pres: '인품', luck: '운', skill: '경력' };
+  Sw.KO = KO;
+  const sw = (S) => S.sw || (S.sw = {});
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const sg = (v, d = 0) => { const x = d ? Math.round(v * 10 ** d) / 10 ** d : R(v); return `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(x)}`; };
+
+  /* ================================================================ 1. 최근 오르내린 일(S.why) */
+  const SNAPK = ['health', 'smarts', 'happy', 'social', 'looks', 'pres', 'skill'];
+  const CTX = []; // 진행 중인 묶음: { S, label, fall, ref0, pend:[[능력치, 바뀐 값, 그때 마지막 기록]], talk }
+  /** 기록 문장을 이유 이름으로: 첫 문장, 26자 안 */
+  const shortT = (t) => {
+    let s = String(t || '').replace(/\s+/g, ' ').trim();
+    const i = s.search(/[.!?](\s|$)/);
+    if (i > 0) s = s.slice(0, i);
+    return s.length > 26 ? s.slice(0, 25) + '…' : s;
+  };
+  Sw.shortT = shortT;
+  const lastLog = (S) => (S.log && S.log.length ? S.log[S.log.length - 1] : null);
+  const addWhy = (S, k, d, t) => {
+    const W = S.why || (S.why = []);
+    const m = S.ageM;
+    // 같은 이름·같은 능력치가 이어지면(투병 중 달마다 조금씩 등) 한 줄로 합친다(최근 여섯 줄 안에서)
+    for (let i = W.length - 1; i >= Math.max(0, W.length - 6); i--) {
+      const x = W[i];
+      if (m - x[0] > 1) break;
+      if (x[1] === k && x[3] === t) { x[0] = m; x[2] = R((x[2] + d) * 100) / 100; return; }
+    }
+    W.push([m, k, R(d * 100) / 100, t]);
+  };
+  const pruneWhy = (S) => {
+    const W = S.why;
+    if (!W) return;
+    let i = 0;
+    while (i < W.length && W[i][0] < S.ageM - 24) i++;
+    if (i) W.splice(0, i);
+    if (W.length > 120) W.splice(0, W.length - 120);
+  };
+  // 말로 하는 자리(언변 — 6번)
+  const TALK_RE = /발표|연설|강연|설교|토론|면접|사회를 (보|맡)|인터뷰|프레젠테이션|브리핑|강의를|주례|건배사|추도사/;
+  const settle = (S, c) => {
+    const L = S.log || [];
+    const i0 = c.ref0 ? L.lastIndexOf(c.ref0) : -1;
+    const fresh = [];
+    for (let i = i0 + 1; i < L.length; i++) if (L[i] && L[i].t && L[i].k !== 'year') fresh.push(i);
+    if (c.talk && fresh.length && hasPr() && S.alive && ageOf(S) >= 12) {
+      const x = sw(S);
+      if (fresh.some((i) => TALK_RE.test(L[i].t)) && !(x.spM !== undefined && S.ageM - x.spM < 2)) { x.spM = S.ageM; Pr.gain(S, 'speech', 1.2); }
+    }
+    if (!c.pend.length) return;
+    for (const [k, d, ref] of c.pend) {
+      let t = c.label;
+      if (!t) {
+        // 바뀐 뒤 처음 남은 기록(사건은 몫을 더한 뒤 문장을 남긴다), 없으면 바로 앞의 기록, 그것도 없으면 묶음의 이름
+        const j = ref ? L.lastIndexOf(ref) : -1;
+        const after = fresh.find((i) => i > j);
+        const before = fresh.filter((i) => i <= j).pop();
+        const i = after !== undefined ? after : before;
+        t = i !== undefined ? shortT(L[i].t) : c.fall || '그 밖의 일';
+      }
+      addWhy(S, k, d, t);
+    }
+    pruneWhy(S);
+  };
+  /** fn 을 하는 동안 바뀐 능력치를 label(없으면 그때 남은 기록 문장)로 남긴다 */
+  const within = (S, label, fall, talk, fn) => {
+    if (!S || !S.st || S.mode === 'tribe') return fn();
+    const c = { S, label, fall, talk, ref0: lastLog(S), pend: [] };
+    CTX.push(c);
+    try { return fn(); } finally {
+      CTX.pop();
+      try { settle(S, c); } catch (e) { /* 기록이 안 되어도 진행은 그대로 */ }
+    }
+  };
+  Sw.within = within;
+  {
+    const st0 = E.stat;
+    E.stat = (S, k, d) => {
+      const c = CTX.length ? CTX[CTX.length - 1] : null;
+      if (!c || c.S !== S || !S || !S.st) return st0(S, k, d);
+      const v0 = SNAPK.map((x) => S.st[x]);
+      const r = st0(S, k, d);
+      for (let i = 0; i < SNAPK.length; i++) {
+        const a = v0[i], b = S.st[SNAPK[i]];
+        if (typeof a === 'number' && typeof b === 'number' && Math.abs(b - a) >= 0.05) c.pend.push([SNAPK[i], b - a, lastLog(S)]);
+      }
+      return r;
+    };
+  }
+  {
+    const actKo = (S, id) => { const a = C.ACTION[id]; if (!a) return null; try { return typeof a.koS === 'function' ? a.koS(S) : a.ko; } catch (e) { return a.ko; } };
+    const da0 = E.doAction;
+    E.doAction = (S, id) => within(S, actKo(S, id), null, true, () => da0(S, id));
+    const ch0 = E.choose;
+    E.choose = (S, idx) => {
+      const q = S && S.queue && S.queue[0];
+      let t = null;
+      if (q && C.DEC[q.id] && C.DEC[q.id].title) { try { t = C.t(S, C.DEC[q.id].title(S, q.ctx || {}), q.ctx || {}); } catch (e) { t = null; } }
+      return within(S, t ? shortT(t) : null, '고른 일', true, () => ch0(S, idx));
+    };
+    const mo0 = E.month;
+    E.month = (S) => within(S, null, '그 밖의 일', false, () => mo0(S));
+    const ev0 = E.sysEvents;
+    E.sysEvents = (S) => within(S, null, '사건', true, () => ev0(S));
+    const bd0 = E.birthday;
+    E.birthday = (S, ay) => within(S, null, '한 해를 보내며', false, () => bd0(S, ay));
+    const il0 = E.sysIllness;
+    E.sysIllness = (S) => {
+      const ill = S.ill;
+      const ko = ill && C.CAUSE && C.CAUSE[ill.id] ? C.CAUSE[ill.id].ko : '병';
+      // 투병 중 달마다 내려가는 몫은 '○○ 투병', 병이 끝나는 달(나음·떠남)은 그때의 기록 문장으로
+      const r = within(S, ill && ill.endM !== null && S.ageM < ill.endM ? `${ko} 투병` : null, '병', false, () => il0(S));
+      // 병을 이겨 냈으면 체력을 되찾는 시기(5번)
+      if (ill && !S.ill && S.alive && ill.surv) sw(S).rec = S.ageM;
+      return r;
+    };
+  }
+
+  /* ================================================================ 이유 모으기 */
+  /** 목표값의 몫: [[이름, 값, 보통 사람의 몫]] + 이번 달 다른 파일이 더한 몫 */
+  Sw.parts = (S, k) => {
+    const f = E.PARTS && E.PARTS[k];
+    if (!f) return null;
+    const P = f(S).map((x) => [x[0], x[1], typeof x[3] === 'number' ? x[3] : null]);
+    for (const [l, v] of E.pushedT(S, k)) P.push([l, v, null]);
+    return P;
+  };
+  /** 화면에 보일 몫: '기본'(보통 사람의 몫을 합침) + 차이가 0.5 넘는 몫(큰 것부터), 작은 것은 '그 밖' */
+  const showParts = (P, dig = 0) => {
+    let base = 0, rest = 0;
+    const out = [];
+    for (const [l, v, ref] of P) {
+      if (l === '기본') { base += v; continue; }
+      if (ref !== null && ref !== undefined) { base += ref; if (Math.abs(v - ref) >= 0.5) out.push([l, v - ref]); else rest += v - ref; continue; }
+      if (Math.abs(v) >= (dig ? 0.05 : 0.5)) out.push([l, v]); else rest += v;
+    }
+    out.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    if (Math.abs(rest) >= 0.5) out.push(['그 밖', rest]);
+    return { base, out };
+  };
+  /** 최근 1년 사이 직접 오르내린 일(같은 이름끼리 합침, 최근 것부터) */
+  Sw.recent = (S, keys, months = 12) => {
+    const W = S.why || [], g = new Map();
+    for (const [m, k, d, t] of W) {
+      if (m < S.ageM - months || !keys.includes(k)) continue;
+      const o = g.get(t) || { t, d: 0, n: 0, m };
+      o.d += d; o.n++; o.m = Math.max(o.m, m);
+      g.set(t, o);
+    }
+    return [...g.values()].filter((o) => Math.abs(o.d) >= 0.5).sort((a, b) => b.m - a.m);
+  };
+  const RATE_KO = (r) => `${Math.round(r * 1000) / 10}%`;
+  /** 능력치 k 의 이유: { k, ko, now, tgt, lines:[문장], parts, recent } */
+  Sw.why = (S, k) => {
+    if (!S || !S.st || S.mode === 'tribe') return null;
+    const st = S.st, ko = KO[k] || k, lines = [];
+    let tgt = null, sh = null;
+    if (k === 'health' || k === 'social' || k === 'happy' || k === 'looks' || k === 'pres') {
+      const P = Sw.parts(S, k);
+      if (!P) return null;
+      tgt = E.partSum(P);
+      sh = showParts(P);
+      const now = st[k], gap = tgt - now;
+      lines.push(`지금 ${R(now)} · 머무는 자리(목표) ${R(clamp(tgt, 0, 100))} — 달마다 그 차이의 ${RATE_KO(E.RATE[k])}씩 ${Math.abs(gap) < 1 ? '다가가 거의 그 자리에 있습니다' : gap > 0 ? '다가가며 오르는 중' : '다가가며 내려가는 중'}`);
+    } else if (k === 'charm') {
+      const L = Sw.parts(S, 'looks'), Pp = Sw.parts(S, 'pres');
+      if (!L || !Pp || st.looks === undefined) return null;
+      lines.push(`매력 ${R(st.charm)} = (외모 ${R(st.looks)} + 인품 ${R(st.pres)}) ÷ 2 · 외모는 목표 ${R(clamp(E.partSum(L), 0, 100))}, 인품은 목표 ${R(clamp(E.partSum(Pp), 0, 100))} 쪽으로 움직입니다`);
+      const a = showParts(L), b = showParts(Pp);
+      const top = (o) => o.out.slice(0, 4).map(([l, v]) => `${l} ${sg(v)}`).join(' · ');
+      if (a.out.length) lines.push(`외모: ${top(a)}`);
+      if (b.out.length) lines.push(`인품: ${top(b)}`);
+      lines.push('외모·인품 막대를 따로 누르면 몫을 모두 볼 수 있습니다.');
+    } else if (k === 'smarts') {
+      const P = E.PARTS.smarts(S), y = E.partSum(P) * 12, room = E.smRoom(S);
+      sh = showParts(P.map((x) => [x[0], x[1] * 12, null]), 1);
+      sh.base = null;
+      lines.push(`지금 ${R(st.smarts)} · 한 해에 저절로 ${y > 0 ? `약 ${sg(y * room, 1)}(높을수록 더디게 — 지금은 ${Math.round(room * 100) / 100}배)` : y < 0 ? `약 ${sg(y, 1)}` : '거의 그대로'}`);
+      lines.push('학교·대학, 일에서 배움, 독서 취미, 공부하기·온라인 강의·외국어로 오릅니다. 지식은 진학·채용·시험·승진에 쓰입니다.');
+    } else if (k === 'skill') {
+      const P = E.PARTS.skill(S), y = E.partSum(P) * 12;
+      sh = showParts(P.map((x) => [x[0], x[1] * 12, null]), 1);
+      sh.base = null;
+      lines.push(`지금 ${R(st.skill)} · 한 해에 ${y ? `약 ${sg(y, 1)}` : '그대로'} — 일하는 동안 쌓이고(요즘 집중이 '일에 몰두'면 더), 일을 쉬면 조금씩 녹습니다`);
+    } else if (k === 'luck') {
+      const c = st.luckC !== undefined ? st.luckC : 50, l = st.luck !== undefined ? st.luck : 50, lf = E.luckFlow(S);
+      lines.push(`지금 ${R(l)} = 타고난 운 ${R(c)} ${sg(l - c)}(요즘 흐름) · ${Sw.luckKo(S)}`);
+      const half = Math.round((1 / (1 + Math.exp(-(E.luckL ? E.luckL(S) : 0))) - 0.5) * 100);
+      lines.push(`지금 영향: 반반인 도전의 성공 가능성 운 ${sg(half)}%p · 좋은 일 ${(1 + 0.5 * lf).toFixed(2)}배 · 나쁜 일 ${(1 - 0.4 * lf).toFixed(2)}배 · 사고 ${(1 - 0.3 * lf).toFixed(2)}배 · 복권 ${(1 + 0.4 * lf).toFixed(2)}배`);
+      lines.push(`운은 타고난 운(${c >= 58 ? '좋은 편' : c <= 42 ? '박한 편' : '보통'}) 둘레 ±${E.LUCK_W} 안에서 한두 해씩 이어지는 흐름으로 오르내립니다.`);
+    } else return null;
+    const keys = k === 'charm' ? ['looks', 'pres'] : [k];
+    const recent = Sw.recent(S, keys);
+    return { k, ko, now: st[k], tgt, lines, sh, recent };
+  };
+  /** 막대 아래에 여는 칸(HTML) */
+  Sw.html = (S, k) => {
+    const w = Sw.why(S, k);
+    if (!w) return '';
+    const P = 'style="margin:2px 0"';
+    let h = w.lines.slice(0, 1).map((t) => `<div ${P}><b>${esc(t)}</b></div>`).join('');
+    if (w.sh && (w.sh.out.length || w.sh.base !== null)) {
+      const items = [];
+      if (w.sh.base !== null && w.sh.base !== undefined) items.push(`기본 ${R(w.sh.base)}`);
+      for (const [l, v] of w.sh.out) items.push(`${esc(l)} ${sg(v, k === 'smarts' || k === 'skill' ? 1 : 0)}`);
+      h += `<div ${P}>${k === 'smarts' || k === 'skill' ? '한 해에 오르내리는 몫: ' : '이루는 몫: '}${items.join(' · ')}</div>`;
+    }
+    h += w.lines.slice(1).map((t) => `<div ${P}>${esc(t)}</div>`).join('');
+    if (k !== 'luck') {
+      const r = w.recent.slice(0, 6).map((o) => `${esc(o.t)} ${sg(o.d)}${o.n > 1 ? `(${o.n}번)` : ''}`);
+      h += `<div ${P} style="margin:2px 0;color:var(--muted)">최근 1년 사이 오르내린 일: ${r.length ? r.join(' · ') : '없음 — 목표값 쪽으로 저절로 움직였습니다'}</div>`;
+    }
+    return `<div class="why" style="font-size:12px;line-height:1.5;padding:6px 9px;margin:0 0 4px;border-radius:8px;background:color-mix(in srgb, var(--line) 35%, transparent)">${h}</div>`;
+  };
+
+  /* ================================================================ 2. 운의 흐름 */
+  Sw.luckKo = (S) => {
+    const l = S.st.luck;
+    if (l === undefined) return '';
+    return l >= 72 ? '요즘 하는 일마다 술술 풀리는 흐름입니다' : l >= 60 ? '요즘 운이 좋은 흐름입니다' : l > 40 ? '요즘 운은 보통입니다' : l > 28 ? '요즘 운이 따르지 않는 흐름입니다' : '요즘 되는 일이 없는 흐름입니다';
+  };
+  /** 상태 줄에 붙일 짧은 말(눈에 띄는 흐름일 때만) */
+  Sw.luckTag = (S) => {
+    const l = S && S.st ? S.st.luck : undefined;
+    if (l === undefined || ageOf(S) < 6) return '';
+    return l >= 62 ? '운이 좋은 흐름' : l <= 38 ? '운이 따르지 않는 흐름' : '';
+  };
+  const LUCK_UP = ['요즘 이상하게 일이 술술 풀립니다. 운이 좋은 흐름입니다.', '작은 일에도 행운이 따릅니다. 요즘 운이 좋은 흐름입니다.', '하는 일마다 때가 잘 맞습니다. 운이 따르는 흐름입니다.'];
+  const LUCK_DN = ['요즘 하는 일마다 조금씩 꼬입니다. 운이 따르지 않는 흐름입니다.', '되는 일이 없다는 말이 절로 나옵니다. 요즘 운이 나쁜 흐름입니다.', '작은 일도 번번이 어긋납니다. 운이 따르지 않는 흐름입니다.'];
+  const luckMonth = (S) => {
+    const l = S.st.luck;
+    if (l === undefined || ageOf(S) < 10) return;
+    // 흐름이 바뀔 때만 한 줄: 66 넘게 오르거나 34 아래로 내려갈 때. 같은 쪽은 50을 건너 돌아왔다가 다시 들어서고 5년이 지나야 다시 적는다
+    // (타고난 운이 낮은 사람은 34 언저리를 자주 오가므로 — 점검에서 2~3년마다 같은 문장이 되풀이되었음)
+    const x = sw(S), dir = l >= 66 ? 1 : l <= 34 ? -1 : 0;
+    const since = x.lfM !== undefined ? S.ageM - x.lfM : 999;
+    if (dir && dir !== x.lf && since >= (dir === x.lf0 ? 60 : 18)) {
+      x.lf = dir; x.lf0 = dir; x.lfM = S.ageM;
+      const T = dir > 0 ? LUCK_UP : LUCK_DN;
+      E.log(S, T[S.ageM % T.length], dir > 0 ? 'good' : 'bad');
+    } else if (x.lf && (x.lf > 0 ? l <= 50 : l >= 50)) x.lf = 0;
+  };
+  // 사고: 흐름이 좋으면 덜, 나쁘면 더(평균 1 — 운의 중심이 평균 50)
+  if (typeof Ac !== 'undefined' && Ac && typeof Ac.rates === 'function') {
+    const r0 = Ac.rates;
+    Ac.rates = (S) => { const o = r0(S), m = 1 - 0.3 * E.luckFlow(S); for (const k in o) o[k] *= m; return o; };
+  }
+
+  /* ================================================================ 3. 외모의 오래가는 길 — '외모 오래 가꾸기' */
+  const dev = (S) => H.dev(S);
+  const LK = [
+    { k: 'teeth', ko: () => '치아 교정', m: (S) => (dev(S) >= 2 ? 5 : 8), yrs: () => 15, v: () => 3, ok: (S) => (dev(S) >= 1 || S.place.urban) && ageOf(S) >= 12 && ageOf(S) < 60,
+      t: ['치과에서 교정 장치를 달았습니다. 2년 가까이 불편했지만, 장치를 뗀 날 거울 앞에서 한참 웃었습니다.', '삐뚤던 이를 바로잡는 교정을 시작했습니다. 웃을 때 손으로 입을 가리던 버릇이 사라졌습니다.'] },
+    { k: 'skin', ko: () => '피부 관리', m: () => 1.5, yrs: () => 3, v: () => 2, ok: (S) => (dev(S) >= 1 || S.place.urban) && ageOf(S) >= 15,
+      t: ['피부과에서 관리를 받고, 아침저녁 손질하는 습관을 들였습니다. 얼굴빛이 한결 밝아졌습니다.', '햇볕을 가리고 잠을 챙기며 피부를 돌봤습니다. 피곤해 보인다는 말을 덜 듣습니다.'] },
+    { k: 'eyes', ko: (S) => (dev(S) >= 2 ? '시력 교정 수술' : '잘 맞는 안경 맞추기'), m: (S) => (dev(S) >= 2 ? 4 : 0.5), yrs: (S) => (dev(S) >= 2 ? 10 : 4), v: (S) => (dev(S) >= 2 ? 2 : 1),
+      ok: (S) => ageOf(S) >= (dev(S) >= 2 ? 20 : 8) && ageOf(S) < 70,
+      t: ['시력 교정을 받았습니다. 아침에 눈을 뜨자마자 세상이 또렷하게 보입니다.', '얼굴에 잘 맞는 안경을 새로 맞췄습니다. 인상이 한결 또렷해졌다는 말을 들었습니다.'] },
+    { k: 'style', ko: () => '옷차림 바꾸기', m: () => 1, yrs: () => 3, v: () => 2, ok: (S) => ageOf(S) >= 14,
+      t: ['옷장을 정리하고 나에게 어울리는 옷차림을 새로 찾았습니다. 사람들이 달라 보인다고 말합니다.', '머리 모양과 옷차림을 통째로 바꿨습니다. 거울 속 모습이 낯설지만 마음에 듭니다.'] },
+  ];
+  Sw.LK = LK;
+  const payable = (S, m) => {
+    const a = H.pay(S, m);
+    if (S.indep) return (hasEc() && Ec.liquid ? Ec.liquid(S) : S.money) >= a;
+    return S.money >= a || S.fam.famP >= 0.45 || a <= S.fam.cons * Wd.payLvl(E.iso(S)) * S.fam.size * 0.06;
+  };
+  const pay = (S, m) => {
+    const a = H.pay(S, m);
+    if (S.indep) { if (hasEc() && Ec.withdrawBank) Ec.withdrawBank(S, a); S.money -= a; }
+    else if (S.money >= a) S.money -= a;
+    else E.addMoney(S, -a); // 부모님이 내 주심(집안 살림에서)
+  };
+  const lkActive = (S, k) => ((S.ab && S.ab.lk) || []).some((x) => x.k === k && x.until > S.ageM);
+  const lkOpts = (S) => LK.filter((o) => o.ok(S) && !lkActive(S, o.k));
+  C.DEC.sw_look = {
+    title: () => '외모 오래 가꾸기',
+    text: (S) => C.t(S, `한 번 하면 몇 해 동안 남는 것들입니다. 가꾸기(꾸밈)는 몇 달이면 옅어지지만, 이것들은 오래갑니다.${S.indep ? '' : ' 비용은 부모님과 의논합니다.'}`),
+    choices: (S) => {
+      const out = lkOpts(S).map((o) => {
+        const m = o.m(S), ok = payable(S, m);
+        return { label: o.ko(S), sub: `외모 +${o.v(S)} · ${o.yrs(S)}년쯤 · 비용 약 ${H.amt(S, m)}${ok ? '' : ' · 돈이 모자랍니다'}`, disabled: !ok,
+          run: (S2) => {
+            pay(S2, m);
+            if (!S2.ab) S2.ab = {};
+            S2.ab.lk = (S2.ab.lk || []).filter((x) => x.k !== o.k && x.until > S2.ageM);
+            S2.ab.lk.push({ k: o.k, ko: o.ko(S2), v: o.v(S2), until: S2.ageM + o.yrs(S2) * 12 });
+            E.stat(S2, 'happy', 3);
+            return C.t(S2, o.t[S2.ageM % o.t.length]);
+          } };
+      });
+      out.push({ label: '다음에 한다', cancel: true, run: () => null });
+      return out;
+    },
+  };
+  C.ACTIONS.push({ id: 'lookcare', ko: '외모 오래 가꾸기', cat: 'body', age: [12, 90], cd: 6,
+    need: (S) => {
+      const o = lkOpts(S);
+      if (!o.length) return '지금 할 수 있는 것을 모두 하고 있습니다';
+      if (!o.some((x) => payable(S, x.m(S)))) { const m = Math.min(...o.map((x) => x.m(S))); return `돈이 모자랍니다(가장 싼 것 약 ${H.amt(S, m)})`; }
+      return true;
+    },
+    hint: (S) => (C.gh ? C.gh('외모 +1~3(몇 해 동안 — 치아 교정·시력 교정·피부 관리·옷차림)', '돈(고르는 것에 따라)') : ''),
+    moneyNote: () => '돈은 고르는 것에 따라(보통 월급 1~8달 치)',
+    run: (S) => { E.ask(S, 'sw_look', {}); return null; } });
+  C.ACTION.lookcare = C.ACTIONS[C.ACTIONS.length - 1];
+  if (C.ACT_W) C.ACT_W.lookcare = ['d', 2, 6]; // 상담·시술은 하루~며칠, 남는 크기는 보통(몇 해) → 큰일 기회 1번
+  // 식단 관리 → 몸 관리(외모 +2까지, stats2.js Ab.looksParts)
+  if (C.ACTION.diet && typeof C.ACTION.diet.run === 'function') {
+    const d0 = C.ACTION.diet.run;
+    C.ACTION.diet.run = (S, ...r) => { const t = d0(S, ...r); if (S.ab) S.ab.dm = Math.min(3, (S.ab.dm || 0) + 1); return t; };
+  }
+
+  /* ================================================================ 4. 인품이 오른 까닭 */
+  const PN = ['이끈 경험', '명성', '말솜씨', '평판'];
+  const presNote = (S) => {
+    if (!S.ab || S.st.pres === undefined || ageOf(S) < 16 || !E.PARTS.pres) return;
+    const x = sw(S), P = E.PARTS.pres(S), cur = {};
+    for (const [l, v] of P) if (PN.includes(l)) cur[l] = v;
+    for (const l of PN) if (cur[l] === undefined) cur[l] = 0;
+    if (!x.pn) { x.pn = cur; return; }
+    if (x.pnM !== undefined && S.ageM - x.pnM < 36) return;
+    let best = null;
+    for (const l of PN) { const g = cur[l] - (x.pn[l] || 0); if (g >= 2 && (!best || g > best[1])) best = [l, g]; }
+    if (!best) { for (const l of PN) if (cur[l] < (x.pn[l] || 0)) x.pn[l] = cur[l]; return; }
+    const j = S.work.job, l = best[0];
+    let t;
+    if (l === '이끈 경험') t = j && j.id === 'politician' ? '공직에서 사람들 앞에 서 온 경험으로 말에 무게가 생겼습니다.' : j && ['teacher', 'clergy', 'professor'].includes(j.id) ? '오래 사람들 앞에서 가르쳐 온 경험으로 말에 무게가 생겼습니다.' : j && ((j.lv || 0) >= 2 || ['manager', 'plantmgr'].includes(j.id)) ? '사람들을 이끌어 온 경험으로 말에 무게가 생겼습니다.' : '모임을 이끈 경험으로 말에 무게가 생겼습니다.';
+    else if (l === '명성') t = `이름이 알려지면서 사람들이 ${C.ctx(S).N}의 말에 귀를 기울입니다.`;
+    else if (l === '말솜씨') t = '말하기를 갈고닦은 덕에 사람들 앞에서도 차분히 이야기할 수 있게 되었습니다.';
+    else t = '믿을 만한 사람이라는 평이 쌓였습니다. 사람들이 {N을} 대하는 눈빛이 달라졌습니다.';
+    x.pn = cur; x.pnM = S.ageM;
+    E.log(S, C.t(S, t), 'good');
+  };
+
+  /* ================================================================ 5. 건강이 오르는 일 */
+  const smokeQuitM = (S) => (!S.habit.smoke && S.habit.everSmoke && S.habit.quitM !== undefined ? S.habit.quitM : null);
+  const yrsSince = (S, m) => (m === null || m === undefined ? -1 : (S.ageM - m) / 12);
+  C.addEvents([
+    { id: 'sw_recover', age: [3, 110], cd: 1, rate: (S) => { const r = S.sw && S.sw.rec; return r !== undefined && S.ageM - r >= 2 && S.ageM - r <= 18 && !S.ill && S.st.health < Wd.healthNorm(ageOf(S)) + 2 ? 2 : 0; },
+      text: ['병을 이겨 낸 뒤 몇 달 동안 잘 먹고 꾸준히 걸었습니다. 잃었던 체력이 조금씩 돌아왔습니다.', '퇴원하고 반년, 처음으로 숨이 차지 않고 동네 한 바퀴를 돌았습니다. 몸이 다시 제 것 같습니다.'],
+      fx: { health: 5, happy: 2 }, run: (S) => { delete S.sw.rec; } },
+    { id: 'sw_rehabdone', age: [3, 110], cd: 1, rate: (S) => { const r = S.sw && S.sw.reh; return r !== undefined && S.ageM - r >= 4 && S.ageM - r <= 18 ? 1.5 : 0; },
+      text: ['재활 치료를 마쳤습니다. 다친 곳이 예전만큼은 아니어도 일상으로 돌아올 만큼 나아졌습니다.', '몇 달 동안 이를 악물고 재활한 끝에 다시 혼자 계단을 오를 수 있게 되었습니다.'],
+      fx: { health: 3, happy: 3 }, run: (S) => { delete S.sw.reh; } },
+    { id: 'sw_quit1', age: [13, 110], cd: 1, rate: (S) => { const q = smokeQuitM(S), y = yrsSince(S, q); return q !== null && y >= 1 && y < 2.5 && (!S.sw || S.sw.q1 !== q) ? 1.2 : 0; },
+      text: ['담배를 끊은 지 한 해가 지났습니다. 아침 기침이 사라지고 숨이 한결 편해졌습니다.', '담배를 끊고 한 해, 밥맛이 돌아오고 계단을 오를 때 숨이 덜 찹니다.'],
+      fx: { health: 3 }, run: (S) => { sw(S).q1 = smokeQuitM(S); } },
+    { id: 'sw_quit5', age: [17, 110], cd: 1, rate: (S) => { const q = smokeQuitM(S), y = yrsSince(S, q); return q !== null && y >= 5 && y < 7 && (!S.sw || S.sw.q5 !== q) ? 1 : 0; },
+      text: ['담배를 끊은 지 다섯 해가 되었습니다. 검진에서 폐가 많이 깨끗해졌다는 말을 들었습니다.', '담배를 끊은 지 다섯 해, 이제는 담배 냄새가 낯설게 느껴집니다. 숨이 깊어졌습니다.'],
+      fx: { health: 2, happy: 1 }, run: (S) => { sw(S).q5 = smokeQuitM(S); } },
+    { id: 'sw_fitgood', age: [30, 90], cd: 3, rate: (S) => (S.ft && S.ft.hab >= 65 && !S.ill ? 0.3 : 0),
+      text: (S) => (ageOf(S) >= 45 ? '꾸준히 운동한 덕에 또래보다 몸이 가볍습니다. 오랜만에 만난 친구가 젊어 보인다고 했습니다.' : '꾸준히 운동한 덕에 감기 한 번 없이 한 해를 보냈습니다. 몸이 단단해졌습니다.'),
+      fx: { health: 3 }, run: (S) => { if (ageOf(S) >= 45) E.stat(S, 'looks', 1); } },
+    { id: 'sw_ctrl', age: [25, 110], cd: 2, rate: (S) => ((S.cond.hyper === 'managed' && !(S.sw && S.sw.ch)) || (S.cond.diabetes === 'managed' && !(S.sw && S.sw.cd)) ? 0.35 : 0),
+      text: (S) => (S.cond.hyper === 'managed' && !(S.sw && S.sw.ch) ? '꾸준히 약을 먹고 관리한 덕에 혈압이 안정되었습니다. 의사가 지금처럼만 하라고 했습니다.' : '식단과 약으로 꾸준히 관리한 덕에 혈당이 안정되었습니다. 몸이 한결 덜 무겁습니다.'),
+      fx: { health: 3, happy: 1 }, run: (S) => { const x = sw(S); if (S.cond.hyper === 'managed' && !x.ch) x.ch = 1; else x.cd = 1; } },
+  ]);
+  // 재활 치료를 받기로 했으면 재활을 마치는 때(위 sw_rehabdone)
+  if (C.DEC.acRehab && typeof C.DEC.acRehab.choices === 'function') {
+    const rc0 = C.DEC.acRehab.choices;
+    C.DEC.acRehab.choices = (S, ctx) => (rc0(S, ctx) || []).map((c) => (c && /재활 치료를|다닌다/.test(c.label || '') && typeof c.run === 'function' ? { ...c, run: (S2, c2) => { const r = c.run(S2, c2); sw(S2).reh = S2.ageM; return r; } } : c));
+  }
+
+  /* ================================================================ 연결 고리 */
+  E.hook('month', (S) => {
+    if (!S.alive || !S.st || S.mode === 'tribe') return;
+    luckMonth(S);
+    const x = S.sw;
+    if (x && x.rec !== undefined && S.ageM - x.rec > 18) delete x.rec;
+    if (x && x.reh !== undefined && S.ageM - x.reh > 18) delete x.reh;
+  });
+  E.hook('year', (S) => { if (S.alive && S.st && S.mode !== 'tribe') presNote(S); });
+})();
+
 /* 80억분의 1 — 업데이트 기록(게임 정보 → 업데이트 기록). 새 판을 낼 때 맨 위에 한 줄 더한다.
  * v: 판, d: 날짜(YY.MM.DD), t: 한 줄 제목, items: 바뀐 것(짧게)
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.6.10', d: '26.10.18', t: '능력치의 까닭·운의 흐름·실력이 결과로', items: ["능력치 막대를 누르면 오르내리는 까닭: 지금 값이 다가가는 자리와 그것을 이루는 몫(예: 외모 — 타고난 외모 +16 · 나이 −10 · 건강 −3 · 운동 습관 +2)과 최근 1년 사이 오르내린 일", "운은 사람마다 타고난 중심이 있고 그 둘레에서 한두 해씩 이어지는 흐름으로 오르내림 — 좋은 흐름이면 좋은 일이 잦고 나쁜 일·사고가 줄며 도전의 성공 가능성이 오름('가능성 약 62%(운 +5%p)'), 상태 줄에 '운이 좋은 흐름'", "외모를 오래 가꾸는 길: 꾸준한 운동은 체형과 나이 듦을 늦추고, 식단 관리, 할 일 '외모 오래 가꾸기'(치아 교정·피부 관리·시력 교정·옷차림 — 몇 해 감), 꾸밈 효과가 천천히 빠지고 꾸준히 가꾸면 더 천천히", "건강이 오르는 일: 병을 이겨 낸 뒤 체력 되찾기·재활을 마침·담배를 끊고 1년·5년·꾸준한 운동의 덕·혈압·혈당 안정", "지식이 20세에 거의 꽉 차던 것을 바로잡아 학교·일·공부로 오래 오름(진학·채용 눈금은 그대로), 언변은 팀장 이상의 일·팀 주장·모임 이끌기·발표·면접·강연으로도 오름, 은퇴 뒤 신용은 연금과 재산으로", "실력이 높을수록 실력의 몫이 커짐: 실력 0일 때 재능 45%·실력 40% → 실력 100일 때 재능 20%·실력 65%, 실력이 높을수록 운의 폭이 좁아짐 — 글솜씨 100이면 원고 완성도 중앙값 77 → 86", "첫 원고 계약은 완성도를 따름(완성도 60 약 8% · 75 약 20% · 85 약 40% · 95 약 60%), 신춘문예·공모전·오디션·입단 테스트·대회·경시대회도 발휘 실력을 따름 — 결정 창에 '이번 원고에 쓰인 실력: 글솜씨 100 · 재능 50 · 운 −7'", "선수 결승은 아무리 잘해도 가능성 75%까지"] },
   { v: '0.6.9', d: '26.10.18', t: '할 일마다의 득·쇼핑·익스트림 스포츠·나쁜 습관·직급 이름', items: ["할 일마다 그것만의 남는 득: 쉬기·목욕탕·상담은 스트레스·마음 건강, 공연·경기는 함께 간 사람과 가까움·교양, 전시는 교양·지식, 여행은 스트레스를 크게 덜고 '추억'(노년 행복·자서전), 데이트는 연인 사랑, 야간 강좌는 새 친구·취미, 연애 상대 찾기는 실패해도 새 친구·자신감, 영적인 길 찾기는 삶의 의미", "늦게 오는 득을 보이게: 금연·절주(앞으로 줄어드는 위험과 끊은 지 n달째), 건강검진(일찍 발견할 가능성), 보험(보장 내용·받은 보장), 야간 대학(졸업까지·졸업 뒤 연봉), 방송(이번 영상 조회수), 식단(몸무게 경향)", "모든 할 일 단추에 '얻음 · 위험'을 숫자로", "쇼핑은 고르기로: 옷(외모 몇 달)·선물(가족·연인·친구 — 명절·기념일이면 더)·살림살이·함께 구경·충동구매(자주 하면 쇼핑 중독·카드 빚)", "익스트림 스포츠는 종목 10개 가운데 고르고 종목마다 실제 근삿값의 위험(번지점프 사망 1/50만 … 베이스 점프 1/2,300·8,000m 원정 1%)과 부상, 자주 하면 익스트림 취미, 8,000m 등정은 명성", "이사는 집 크기와 동네(직장·학교·조용함·정다운 이웃)를 고름", "나쁜 습관에도 이어지는 득: 안전띠·헬멧 안 매기는 편함(행복 +1, 더운 나라 헬멧 +2), 과속은 출퇴근 시간 단축(스트레스 −2), 담배·술은 관계, 바람은 설렘, 연락 끊기는 스트레스↓, 문신은 행복·외모 — 위험은 그대로, '선 넘기' 단추마다 위험을 숫자로(사고 때 사망 1.6배·지금 나이 사망 위험 +9% 등)", "자녀마다 다른 쪽 부모 표시('아버지 벤저민(사실혼)')", "직업마다 고유한 직급 이름(의사 과장·병원장, 교사 교감·교장, 경찰 경위·총경 등), 개원의는 직급 없음('개원의 (팀장)'이던 것)", "이미 학교를 떠났는데 '졸업한다'를 고르면 'undefined 졸업'이 나오던 것, 0원 예금에서 돈이 숫자가 아니게 되던 것, 일부 할 일 설명에 'undefined'가 보이던 것"] },
   { v: '0.6.8', d: '26.10.18', t: '일상 기회·생활체육·젠더 표시', items: ["기회를 둘로 나눔: 몇 시간이면 하는 일상(운동·공부·친구·쉬기·데이트·가족·종교 모임·쇼핑 등)은 한 달에 2번 생기는 '일상 기회'(석 달 치 6번까지 모아 둠)를 쓰고, 큰일 기회(한 해 4번)는 큰일에만. 어린이·수감·복무·누워 지내는 동안은 한 달 1번", "모든 할 일의 기회 수와 쿨다운을 '드는 시간 × 남는 크기' 기준표로 다시 정함(청혼하기 큰일 2, 일 그만두기·은퇴 1, 차 사기·보험은 결정만, 가족 여행·연애 상대 찾기 1, 쿨다운도 대부분 짧아짐). 일상을 몰아서 해도 능력치가 쉽게 차지 않게 최근에 오른 몫이 클수록 덜 오름", "할 일 탭 맨 위에 '일상 기회 n/6 · 큰일 기회 n/8', 단추마다 '일상' 또는 '큰일 기회 n번'", "운동하기 → 생활체육 고르기: 걷기·달리기·등산·자전거·수영·헬스·요가·배드민턴·탁구·테니스·당구·볼링·골프·게이트볼·동네 축구·농구·크리켓·족구·광장무·태극권·공원 운동기구 등을 나라·나이·성별·계절에 맞게, 고른 운동은 '요즘 하는 운동'으로 이어짐. 종목마다 운동 습관·관계·스트레스·부상·이용료가 다름", "선수 길은 '선수로 뛸 종목 정하기'로 나누고, e스포츠는 운동에서 빼 '프로게임단 입단 테스트'(게임 실력)로. 취미에 걷기·요가·당구·볼링", "이름 옆에 젠더 표시(♂ 남성 · ♀ 여성 · ⚧ 논바이너리 — 스스로 깨달은 성별 정체성을 따름)"] },
   { v: '0.6.7', d: '26.10.18', t: '알려진 정도·종교 모임 지도자·떠난 사람·기회 돌려받기', items: ["작품과 책의 '알려진 정도': 그 분야 이름값에 다른 분야 명성의 일부(배우·운동선수·방송인 등)와 지위(정치인·고위 공무원·기업 대표)를 더해 그림 판매·전시 관객·무대 관객·음원·영상 재생·책 판매·보도에 반영. 유명인의 첫 작품은 관심이 크고, 완성도가 낮으면 혹평으로 이름값이 깎임. 지위로 팔리는 그림은 청탁 의혹 위험. 공모전 심사는 명성을 보지 않음", "원고 계약 가능성은 까닭을 더해서: 원고 완성도·작가 이력(베스트셀러·전작 판매·문학상)·알려진 정도·팬과 구독자·지위(회고록·에세이는 크게, 소설·시는 작게)·장르와 경력 — 창에 까닭을 모두 표시", "종교 모임을 이끄는 동안 개종하려 하면 먼저 모임을 해산·맡기기·모임과 함께 옮기기 가운데 고름. 따르는 사람 수에 따라 인도자 → 목자 → 지도자(사이비는 교주) 단계, 명성·권력·평판과 상태 줄에 반영, 모임 규칙·떠받드는 사람들·언론 취재·수사 결정", "사람 탭에서 세상을 떠난 가족·친척에게 '2053년, 62세에 떠나심 · 42년 전(내가 27세 때)'", "4살 기질 고르기에 '앞 목록으로 돌아간다'", "할 일이 연 결정에서 '거절한다·사양한다·생각을 접는다·마음만 받는다'를 골라도 기회를 돌려받고, 이어서 열린 결정에서 '하지 않기'를 골라도 돌려받음", "자서전이 책이 되는 기준을 명성 대신 '글 분야에서 알려진 정도'로"] },
@@ -59061,6 +59699,22 @@ UI.tick = () => {
   }
 };
 
+/** 능력치 막대 아래의 '오르내리는 이유' 칸(statwhy.js Sw.html, 피드백 224번): 누른 막대 바로 아래(매력은 펼친 외모·인품 아래)에 두고, 내용이 바뀔 때만 다시 그린다 */
+UI.whyBox = () => {
+  const S = UI.S, wrap = $('#p-stats');
+  if (!wrap) return;
+  let box = document.getElementById('why-box');
+  const k = UI._why;
+  if (!k || !S || typeof Sw === 'undefined' || !Sw.html) { if (box) box.remove(); return; }
+  let row = wrap.querySelector(`[data-why="${k}"]`);
+  if (!row || row.style.display === 'none') { UI._why = null; if (box) box.remove(); return; }
+  if (k === 'charm' && UI._chOpen) { const subs = wrap.querySelectorAll('[data-sub="charm"]'); if (subs.length) row = subs[subs.length - 1]; }
+  if (!box) { box = document.createElement('div'); box.id = 'why-box'; box.setAttribute('aria-live', 'polite'); }
+  if (row.nextElementSibling !== box) row.after(box);
+  const h = Sw.html(S, k);
+  if (UI._whyH !== h) { box.innerHTML = h; UI._whyH = h; }
+};
+
 /** 젠더 표시: ♂ 남성 · ♀ 여성 · ⚧ 논바이너리 */
 UI.genderMark = (S) => {
   const I = S.idn, g = I && I.known && I.gender !== 'cis' ? I.gid : S.sex;
@@ -59089,6 +59743,7 @@ UI.render = (full) => {
   if (S.stream && S.stream.fans >= 100) tl.push(`구독자 ${U.fmtKo(S.stream.fans)}`);
   if (typeof Ps !== 'undefined' && Ps.short && Ps.short(S)) tl.push(Ps.short(S)); // 성격(persona.js, 피드백 89번)
   if (typeof Ab !== 'undefined' && Ab.nickKo && Ab.nickKo(S)) tl.push(`'${Ab.nickKo(S)}'`); // 주변의 평가·별명(stats2.js, 피드백 150번)
+  if (typeof Sw !== 'undefined' && Sw.luckTag && Sw.luckTag(S)) tl.push(Sw.luckTag(S)); // 운의 흐름(statwhy.js, 피드백 224번)
   $('#p-talents').textContent = tl.join(' · ');
   const badge = $('#ap-badge');
   // 할 일을 고를 수 없는 나이에는 숫자를 띄우지 않는다. 숫자는 일상 기회와 큰일 기회를 더한 것(피드백 221번)
@@ -59099,28 +59754,43 @@ UI.render = (full) => {
   const st = S.st;
   const bars = [['건강', 'health'], ['지식', 'smarts'], ['행복', 'happy'], ['관계', 'social'], ['매력', 'charm'], ['운', 'luck'], ['경력', 'skill']];
   // 매력은 외모와 인품·카리스마·말솜씨의 평균: 매력 줄을 누르면 두 값을 따로 보여 준다(stats2.js, 피드백 203번)
-  const ch2 = st.looks !== undefined && st.pres !== undefined ? [['외모', 'looks', '외모: 타고난 외모·건강·꾸밈(가꾸기·성형·명품)·나이로 오르내립니다'], ['인품', 'pres', '인품·카리스마·말솜씨: 경험·명성·관계·말하기 연습으로 쌓이고 나이로는 거의 줄지 않습니다']] : [];
+  const ch2 = st.looks !== undefined && st.pres !== undefined ? [['외모', 'looks', '외모: 타고난 외모·건강·꾸밈(가꾸기·쇼핑 옷·성형·명품)·운동 습관(체형)·식단·오래가는 손질(치아 교정 등)·나이로 오르내립니다'], ['인품', 'pres', '인품·카리스마·말솜씨: 경험·명성·관계·말하기 연습으로 쌓이고 나이로는 거의 줄지 않습니다']] : [];
+  // 막대를 누르면 그 아래에 '오르내리는 이유'(지금 목표값을 이루는 몫·최근 1년 사이 오르내린 일)가 열린다(statwhy.js Sw.html, 피드백 224번)
+  const hasWhy = typeof Sw !== 'undefined' && !!Sw.html;
+  const wa = (k) => (hasWhy ? ` data-why="${k}" role="button" tabindex="0" title="눌러서 오르내리는 이유를 봅니다"` : '');
   if (full || !$('#p-stats').children.length || !!document.getElementById('sb-looks') !== ch2.length > 0) {
     $('#p-stats').innerHTML = bars.map(([ko, k]) => (k === 'charm' && ch2.length
-      ? `<div class="stat" data-stat="charm" role="button" tabindex="0" title="눌러서 외모와 인품·카리스마·말솜씨를 따로 봅니다" style="cursor:pointer"><span>${ko}▾</span><div class="bar"><i id="sb-${k}" style="background:var(--c-${k})"></i></div><span class="v" id="sv-${k}"></span></div>`
-        + ch2.map(([ko2, k2, tt]) => `<div class="stat" data-sub="charm" title="${esc(tt)}" style="display:${UI._chOpen ? 'grid' : 'none'};opacity:.85;font-size:12px"><span style="padding-left:.6em">${ko2}</span><div class="bar"><i id="sb-${k2}" style="background:var(--c-charm);opacity:.6"></i></div><span class="v" id="sv-${k2}"></span></div>`).join('')
-      : `<div class="stat"><span>${ko}</span><div class="bar"><i id="sb-${k}" style="background:var(--c-${k})"></i></div><span class="v" id="sv-${k}"></span></div>`)).join('');
+      ? `<div class="stat" data-stat="charm"${hasWhy ? ' data-why="charm"' : ''} role="button" tabindex="0" title="눌러서 외모와 인품·카리스마·말솜씨를 따로 보고${hasWhy ? ', 오르내리는 이유를 봅니다' : ' 봅니다'}" style="cursor:pointer"><span>${ko}▾</span><div class="bar"><i id="sb-${k}" style="background:var(--c-${k})"></i></div><span class="v" id="sv-${k}"></span></div>`
+        + ch2.map(([ko2, k2, tt]) => `<div class="stat" data-sub="charm"${hasWhy ? ` data-why="${k2}" role="button" tabindex="0"` : ''} title="${esc(tt)}" style="display:${UI._chOpen ? 'grid' : 'none'};opacity:.85;font-size:12px${hasWhy ? ';cursor:pointer' : ''}"><span style="padding-left:.6em">${ko2}</span><div class="bar"><i id="sb-${k2}" style="background:var(--c-charm);opacity:.6"></i></div><span class="v" id="sv-${k2}"></span></div>`).join('')
+      : `<div class="stat"${wa(k)}${hasWhy ? ' style="cursor:pointer"' : ''}><span>${ko}</span><div class="bar"><i id="sb-${k}" style="background:var(--c-${k})"></i></div><span class="v" id="sv-${k}"></span></div>`)).join('');
     if (!UI._chBound) {
       UI._chBound = true;
       const tog = (ev) => {
-        if (!ev.target.closest('[data-stat="charm"]') || (ev.type === 'keydown' && ev.key !== 'Enter' && ev.key !== ' ')) return;
-        UI._chOpen = !UI._chOpen;
-        for (const el of document.querySelectorAll('#p-stats [data-sub="charm"]')) el.style.display = UI._chOpen ? 'grid' : 'none';
+        if (ev.type === 'keydown' && ev.key !== 'Enter' && ev.key !== ' ') return;
+        if (ev.target.closest('.why')) return; // 열린 칸 안을 누르면 그대로
+        if (ev.target.closest('[data-stat="charm"]')) {
+          UI._chOpen = !UI._chOpen;
+          for (const el of document.querySelectorAll('#p-stats [data-sub="charm"]')) el.style.display = UI._chOpen ? 'grid' : 'none';
+        }
+        const row = ev.target.closest('[data-why]');
+        if (row && typeof Sw !== 'undefined') {
+          if (ev.type === 'keydown') ev.preventDefault();
+          UI._why = UI._why === row.dataset.why ? null : row.dataset.why;
+          UI._whyH = '';
+          UI.whyBox();
+        }
       };
       $('#p-stats').addEventListener('click', tog);
       $('#p-stats').addEventListener('keydown', tog);
     }
+    UI._whyH = '';
   }
   for (const [, k] of bars.concat(ch2)) {
     const v = st[k] === undefined ? 0 : st[k];
     $('#sb-' + k).style.width = v.toFixed(1) + '%';
     $('#sv-' + k).textContent = Math.round(v);
   }
+  if (hasWhy) UI.whyBox();
   // 사회적 지위: 명성·권력·명예(피드백 37번)
   const soc = $('#p-soc');
   if (soc) {
