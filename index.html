@@ -1564,14 +1564,16 @@ C.activeHobbies = (S) => S.hobbies.filter((h) => C.hobbyOK(S, h));
 // sec: 농업 agr / 공업 ind / 서비스 srv. edu: 최소 학력(0 없음 1 초등 2 중 3 고 4 대 5 대학원)
 // mult: 그 나라 일하는 사람 중위소득 대비 배수. dev: 저·중하·중상·고소득 나라에서의 흔함.
 // sex: [남, 여] 상대 빈도. urb/rur: 도시·농촌 상대 빈도. risk: 사고 위험 배수.
+// major: 이어진 전공(C.MAJOR id — 맞으면 제안이 더 자주 오고 채용에서 '전공 일치'). mjW: 전공이 맞을 때 제안 배수(기본 6, 여러 분야를 두루 받는 일은 2).
+// mjSoft: 대학 전공을 보지 않는 일 — 맞으면 가산만 하고, 다르다고 깎지 않는다(경찰·요리사 등, v0.6.14).
 C.JOBS = [
   { id: 'subsist', ko: '자급 농민', sec: 'agr', edu: 0, mult: 0.45, formal: 0, dev: [1, 0.8, 0.3, 0.02], urb: 0.05, rur: 1, sex: [1, 1], risk: { other: 1.3 }, manual: 1, self: 1 },
   { id: 'farmhand', ko: '농장 일꾼', sec: 'agr', edu: 0, mult: 0.55, formal: 0.1, dev: [0.6, 0.7, 0.6, 0.3], urb: 0.05, rur: 1, sex: [1, 0.8], risk: { other: 1.5 }, manual: 1 },
   { id: 'herder', ko: '목축업자', sec: 'agr', edu: 0, mult: 0.55, formal: 0, dev: [0.4, 0.3, 0.15, 0.05], urb: 0.02, rur: 1, sex: [1, 0.4], risk: { other: 1.3 }, manual: 1, self: 1 },
   { id: 'fisher', ko: '어부', sec: 'agr', edu: 0, mult: 0.7, formal: 0.1, dev: [0.2, 0.25, 0.2, 0.1], urb: 0.2, rur: 1, sex: [1, 0.1], risk: { other: 4 }, manual: 1, self: 1 },
   { id: 'cashcrop', ko: '상업 작물 농민', sec: 'agr', edu: 1, mult: 0.95, formal: 0.1, dev: [0.3, 0.5, 0.5, 0.3], urb: 0.05, rur: 1, sex: [1, 0.6], risk: { other: 1.3 }, manual: 1, self: 1 },
-  { id: 'farmowner', ko: '농장 경영인', sec: 'agr', edu: 3, mult: 1.6, formal: 0.6, dev: [0.05, 0.1, 0.3, 0.7], urb: 0.1, rur: 1, sex: [1, 0.4], risk: { other: 1.4 }, self: 1 },
-  { id: 'agritech', ko: '농업 기술자', sec: 'agr', edu: 4, mult: 1.5, formal: 0.9, dev: [0.05, 0.1, 0.2, 0.3], urb: 0.6, rur: 1, sex: [1, 0.7], major: ['agri'] },
+  { id: 'farmowner', ko: '농장 경영인', sec: 'agr', edu: 3, mult: 1.6, formal: 0.6, dev: [0.05, 0.1, 0.3, 0.7], urb: 0.1, rur: 1, sex: [1, 0.4], risk: { other: 1.4 }, self: 1, major: ['agri'], mjSoft: 1 },
+  { id: 'agritech', ko: '농업 기술자', sec: 'agr', edu: 4, mult: 1.5, formal: 0.9, dev: [0.05, 0.1, 0.2, 0.3], urb: 0.6, rur: 1, sex: [1, 0.7], major: ['agri', 'vet', 'bio'] },
 
   { id: 'construction', ko: '건설 노동자', sec: 'ind', edu: 0, mult: 0.8, formal: 0.25, dev: [1, 1, 1, 0.8], urb: 1, rur: 0.5, sex: [1, 0.08], risk: { other: 3 }, manual: 1 },
   { id: 'factory', ko: '공장 생산직', sec: 'ind', edu: 1, mult: 0.9, formal: 0.65, dev: [0.3, 0.8, 1, 0.8], urb: 1, rur: 0.3, sex: [1, 0.7], risk: { other: 1.6 }, manual: 1, stress: 0.5 },
@@ -1582,8 +1584,8 @@ C.JOBS = [
   { id: 'mechanic', ko: '자동차 정비공', sec: 'ind', edu: 2, mult: 1.0, formal: 0.4, dev: [0.4, 0.6, 0.6, 0.5], urb: 1, rur: 0.4, sex: [1, 0.05], risk: { other: 1.4 }, manual: 1 },
   { id: 'electrician', ko: '전기 기술자', sec: 'ind', edu: 2, mult: 1.2, formal: 0.5, dev: [0.2, 0.4, 0.6, 0.6], urb: 1, rur: 0.4, sex: [1, 0.05], risk: { other: 2 }, manual: 1 },
   { id: 'welder', ko: '용접공', sec: 'ind', edu: 2, mult: 1.1, formal: 0.5, dev: [0.2, 0.4, 0.5, 0.4], urb: 1, rur: 0.3, sex: [1, 0.05], risk: { other: 2 }, manual: 1 },
-  { id: 'engineer', ko: '엔지니어', sec: 'ind', edu: 4, mult: 2.0, formal: 0.95, dev: [0.1, 0.3, 0.6, 0.8], urb: 1, rur: 0.2, sex: [1, 0.4], major: ['eng', 'cs'], stress: 0.6 },
-  { id: 'plantmgr', ko: '생산 관리자', sec: 'ind', edu: 3, mult: 1.7, formal: 0.9, dev: [0.05, 0.2, 0.4, 0.5], urb: 1, rur: 0.3, sex: [1, 0.5], major: ['eng', 'biz'], stress: 0.8, minAge: 26 },
+  { id: 'engineer', ko: '엔지니어', sec: 'ind', edu: 4, mult: 2.0, formal: 0.95, dev: [0.1, 0.3, 0.6, 0.8], urb: 1, rur: 0.2, sex: [1, 0.4], major: ['eng', 'arch', 'cs', 'ai', 'phys', 'chem', 'avia'], stress: 0.6 },
+  { id: 'plantmgr', ko: '생산 관리자', sec: 'ind', edu: 3, mult: 1.7, formal: 0.9, dev: [0.05, 0.2, 0.4, 0.5], urb: 1, rur: 0.3, sex: [1, 0.5], major: ['eng', 'biz', 'chem', 'arch'], stress: 0.8, minAge: 26 },
 
   { id: 'vendor', ko: '노점상', sec: 'srv', edu: 0, mult: 0.6, formal: 0, dev: [1, 0.9, 0.4, 0.05], urb: 1, rur: 0.4, sex: [0.8, 1], manual: 1, self: 1 },
   { id: 'trader', ko: '시장 상인', sec: 'srv', edu: 0, mult: 0.85, formal: 0.05, dev: [1, 0.8, 0.4, 0.1], urb: 1, rur: 0.6, sex: [0.7, 1.2], self: 1 },
@@ -1591,31 +1593,31 @@ C.JOBS = [
   { id: 'domestic', ko: '가사 노동자', sec: 'srv', edu: 0, mult: 0.5, formal: 0.05, dev: [0.6, 0.7, 0.4, 0.1], urb: 1, rur: 0.3, sex: [0.1, 1.5], manual: 1 },
   { id: 'driver', ko: '운전기사', sec: 'srv', edu: 1, mult: 1.0, formal: 0.2, dev: [0.6, 0.8, 0.6, 0.4], urb: 1, rur: 0.4, sex: [1, 0.05], risk: { road: 3 }, manual: 1, minAge: 18 },
   { id: 'rider', ko: '배달 라이더', sec: 'srv', edu: 1, mult: 0.9, formal: 0.1, dev: [0.1, 0.4, 0.6, 0.5], urb: 1, rur: 0.05, sex: [1, 0.2], risk: { road: 3 }, manual: 1, minAge: 18 },
-  { id: 'cook', ko: '요리사·식당 종업원', sec: 'srv', edu: 1, mult: 0.85, formal: 0.3, dev: [0.5, 0.7, 0.8, 0.8], urb: 1, rur: 0.3, sex: [0.8, 1], manual: 1, stress: 0.4 },
-  { id: 'hair', ko: '미용사', sec: 'srv', edu: 2, mult: 0.85, formal: 0.2, dev: [0.4, 0.5, 0.5, 0.4], urb: 1, rur: 0.3, sex: [0.4, 1.2], self: 1 },
+  { id: 'cook', ko: '요리사·식당 종업원', sec: 'srv', edu: 1, mult: 0.85, formal: 0.3, dev: [0.5, 0.7, 0.8, 0.8], urb: 1, rur: 0.3, sex: [0.8, 1], manual: 1, stress: 0.4, major: ['cook'], mjSoft: 1 },
+  { id: 'hair', ko: '미용사', sec: 'srv', edu: 2, mult: 0.85, formal: 0.2, dev: [0.4, 0.5, 0.5, 0.4], urb: 1, rur: 0.3, sex: [0.4, 1.2], self: 1, major: ['beauty'], mjSoft: 1 },
   { id: 'guard', ko: '경비원', sec: 'srv', edu: 1, mult: 0.85, formal: 0.5, dev: [0.3, 0.5, 0.5, 0.4], urb: 1, rur: 0.2, sex: [1, 0.15], risk: { homic: 1.5 } },
   { id: 'cleaner', ko: '청소원', sec: 'srv', edu: 0, mult: 0.7, formal: 0.4, dev: [0.3, 0.4, 0.5, 0.6], urb: 1, rur: 0.2, sex: [0.6, 1.2], manual: 1 },
   { id: 'sales', ko: '판매원', sec: 'srv', edu: 2, mult: 0.9, formal: 0.5, dev: [0.3, 0.6, 0.8, 0.8], urb: 1, rur: 0.3, sex: [0.7, 1.1] },
   { id: 'callcenter', ko: '콜센터 상담원', sec: 'srv', edu: 3, mult: 1.15, formal: 0.8, dev: [0.05, 0.4, 0.4, 0.3], urb: 1, rur: 0, sex: [0.8, 1], stress: 0.8 },
-  { id: 'clerk', ko: '사무직 직원', sec: 'srv', edu: 3, mult: 1.3, formal: 0.9, dev: [0.2, 0.5, 0.8, 1], urb: 1, rur: 0.2, sex: [0.8, 1], stress: 0.5, major: ['biz', 'hum'] },
-  { id: 'teacher', ko: '교사', sec: 'srv', edu: 4, mult: 1.4, formal: 0.9, dev: [0.25, 0.3, 0.3, 0.3], urb: 1, rur: 0.6, sex: [0.6, 1.2], major: ['edu', 'hum'], stress: 0.4 },
+  { id: 'clerk', ko: '사무직 직원', sec: 'srv', edu: 3, mult: 1.3, formal: 0.9, dev: [0.2, 0.5, 0.8, 1], urb: 1, rur: 0.2, sex: [0.8, 1], stress: 0.5, major: ['biz', 'pub', 'hum', 'lang', 'soc', 'psy', 'media', 'math', 'socw', 'tour'] },
+  { id: 'teacher', ko: '교사', sec: 'srv', edu: 4, mult: 1.4, formal: 0.9, dev: [0.25, 0.3, 0.3, 0.3], urb: 1, rur: 0.6, sex: [0.6, 1.2], major: ['edu', 'ece', 'peed', 'hum', 'lang', 'soc', 'math', 'phys', 'chem', 'bio', 'art', 'music', 'sport'], stress: 0.4 },
   { id: 'nurse', ko: '간호사', sec: 'srv', edu: 4, mult: 1.4, formal: 0.9, dev: [0.2, 0.3, 0.4, 0.6], urb: 1, rur: 0.4, sex: [0.2, 1.2], major: ['nurse'], stress: 0.7 },
   { id: 'doctor', ko: '의사', sec: 'srv', edu: 4, mult: 3.4, formal: 0.95, dev: [0.05, 0.1, 0.15, 0.2], urb: 1, rur: 0.3, sex: [1, 0.9], major: ['med'], need: (S) => S.edu.major === 'med', stress: 1 },
-  { id: 'police', ko: '경찰관', sec: 'srv', edu: 3, mult: 1.3, formal: 0.95, dev: [0.1, 0.15, 0.15, 0.15], urb: 1, rur: 0.4, sex: [1, 0.3], risk: { homic: 2.5, road: 1.3 }, stress: 0.8, minAge: 19 },
+  { id: 'police', ko: '경찰관', sec: 'srv', edu: 3, mult: 1.3, formal: 0.95, dev: [0.1, 0.15, 0.15, 0.15], urb: 1, rur: 0.4, sex: [1, 0.3], risk: { homic: 2.5, road: 1.3 }, stress: 0.8, minAge: 19, major: ['secu'], mjSoft: 1 },
   // 소방관(피드백 98번): 미국 소방관 직무 사망률은 전체 노동자의 약 2배(NFPA·BLS 근삿값) — 기타 사고 위험 1.6배. 저소득국은 소방 인력이 아주 적다
-  { id: 'firefighter', ko: '소방관', sec: 'srv', edu: 3, mult: 1.15, formal: 0.95, dev: [0.015, 0.03, 0.045, 0.06], urb: 1, rur: 0.45, sex: [1, 0.08], risk: { other: 1.6 }, stress: 0.8, minAge: 19 },
-  { id: 'soldier', ko: '직업군인', sec: 'srv', edu: 2, mult: 1.2, formal: 0.95, dev: [0.3, 0.3, 0.2, 0.15], urb: 0.6, rur: 0.6, sex: [1, 0.15], risk: { conflict: 6, other: 1.5 }, stress: 0.7, minAge: 18 },
-  { id: 'civil', ko: '공무원', sec: 'srv', edu: 3, mult: 1.45, formal: 1, dev: [0.08, 0.16, 0.2, 0.25], urb: 1, rur: 0.4, sex: [1, 0.9], major: ['law', 'hum', 'biz'] },
-  { id: 'accountant', ko: '회계사·은행원', sec: 'srv', edu: 4, mult: 1.8, formal: 0.95, dev: [0.05, 0.2, 0.4, 0.5], urb: 1, rur: 0.1, sex: [0.9, 1], major: ['biz'], stress: 0.6 },
-  { id: 'programmer', ko: '소프트웨어 개발자', sec: 'srv', edu: 4, mult: 2.2, formal: 0.9, dev: [0.03, 0.15, 0.4, 0.7], urb: 1, rur: 0.05, sex: [1, 0.35], major: ['cs', 'eng'], stress: 0.7, need: (S) => Wd.c(E.iso(S)).internet > 25 },
+  { id: 'firefighter', ko: '소방관', sec: 'srv', edu: 3, mult: 1.15, formal: 0.95, dev: [0.015, 0.03, 0.045, 0.06], urb: 1, rur: 0.45, sex: [1, 0.08], risk: { other: 1.6 }, stress: 0.8, minAge: 19, major: ['secu'], mjSoft: 1 },
+  { id: 'soldier', ko: '직업군인', sec: 'srv', edu: 2, mult: 1.2, formal: 0.95, dev: [0.3, 0.3, 0.2, 0.15], urb: 0.6, rur: 0.6, sex: [1, 0.15], risk: { conflict: 6, other: 1.5 }, stress: 0.7, minAge: 18, major: ['secu'], mjSoft: 1 },
+  { id: 'civil', ko: '공무원', sec: 'srv', edu: 3, mult: 1.45, formal: 1, dev: [0.08, 0.16, 0.2, 0.25], urb: 1, rur: 0.4, sex: [1, 0.9], major: ['law', 'pub', 'hum', 'biz', 'soc', 'socw'], mjW: 2 },
+  { id: 'accountant', ko: '회계사·은행원', sec: 'srv', edu: 4, mult: 1.8, formal: 0.95, dev: [0.05, 0.2, 0.4, 0.5], urb: 1, rur: 0.1, sex: [0.9, 1], major: ['biz', 'math'], stress: 0.6 },
+  { id: 'programmer', ko: '소프트웨어 개발자', sec: 'srv', edu: 4, mult: 2.2, formal: 0.9, dev: [0.03, 0.15, 0.4, 0.7], urb: 1, rur: 0.05, sex: [1, 0.35], major: ['cs', 'ai', 'eng', 'math'], stress: 0.7, need: (S) => Wd.c(E.iso(S)).internet > 25 },
   { id: 'lawyer', ko: '변호사', sec: 'srv', edu: 4, mult: 2.8, formal: 0.9, dev: [0.03, 0.08, 0.15, 0.2], urb: 1, rur: 0.05, sex: [1, 0.8], major: ['law'], need: (S) => S.edu.major === 'law', stress: 1 },
-  { id: 'manager', ko: '기업 관리자', sec: 'srv', edu: 4, mult: 2.5, formal: 0.95, dev: [0.03, 0.1, 0.25, 0.4], urb: 1, rur: 0.05, sex: [1, 0.6], major: ['biz'], stress: 1, minAge: 30, need: (S) => S.st.skill >= 35 },
-  { id: 'artist', ko: '예술가·음악가', sec: 'srv', edu: 1, mult: 0.8, formal: 0.1, dev: [0.1, 0.1, 0.15, 0.2], urb: 1, rur: 0.2, sex: [1, 1], major: ['art'], self: 1 },
-  { id: 'clergy', ko: '성직자', sec: 'srv', edu: 3, mult: 0.9, formal: 0.3, dev: [0.1, 0.1, 0.05, 0.03], urb: 0.8, rur: 0.6, sex: [1, 0.2], need: (S) => S.rel !== 'none' },
-  { id: 'guide', ko: '관광 가이드', sec: 'srv', edu: 2, mult: 1.0, formal: 0.3, dev: [0.05, 0.15, 0.2, 0.15], urb: 1, rur: 0.3, sex: [1, 0.9], self: 1 },
-  { id: 'journalist', ko: '기자', sec: 'srv', edu: 4, mult: 1.4, formal: 0.8, dev: [0.03, 0.05, 0.1, 0.12], urb: 1, rur: 0.05, sex: [1, 1], major: ['hum'], stress: 0.8 },
-  { id: 'researcher', ko: '연구원·교수', sec: 'srv', edu: 5, mult: 2.0, formal: 0.95, dev: [0.03, 0.05, 0.12, 0.25], urb: 1, rur: 0.05, sex: [1, 0.7], major: ['eng', 'cs', 'med', 'hum', 'agri', 'biz'], stress: 0.6 },
-  { id: 'care', ko: '요양보호사', sec: 'srv', edu: 2, mult: 0.85, formal: 0.6, dev: [0, 0.05, 0.2, 0.6], urb: 1, rur: 0.5, sex: [0.2, 1.4], manual: 1, stress: 0.5 },
+  { id: 'manager', ko: '기업 관리자', sec: 'srv', edu: 4, mult: 2.5, formal: 0.95, dev: [0.03, 0.1, 0.25, 0.4], urb: 1, rur: 0.05, sex: [1, 0.6], major: ['biz', 'pub'], stress: 1, minAge: 30, need: (S) => S.st.skill >= 35 },
+  { id: 'artist', ko: '예술가·음악가', sec: 'srv', edu: 1, mult: 0.8, formal: 0.1, dev: [0.1, 0.1, 0.15, 0.2], urb: 1, rur: 0.2, sex: [1, 1], major: ['art', 'design', 'music', 'film'], self: 1 },
+  { id: 'clergy', ko: '성직자', sec: 'srv', edu: 3, mult: 0.9, formal: 0.3, dev: [0.1, 0.1, 0.05, 0.03], urb: 0.8, rur: 0.6, sex: [1, 0.2], need: (S) => S.rel !== 'none', major: ['theo'], mjSoft: 1 },
+  { id: 'guide', ko: '관광 가이드', sec: 'srv', edu: 2, mult: 1.0, formal: 0.3, dev: [0.05, 0.15, 0.2, 0.15], urb: 1, rur: 0.3, sex: [1, 0.9], self: 1, major: ['tour', 'lang', 'avia'], mjSoft: 1 },
+  { id: 'journalist', ko: '기자', sec: 'srv', edu: 4, mult: 1.4, formal: 0.8, dev: [0.03, 0.05, 0.1, 0.12], urb: 1, rur: 0.05, sex: [1, 1], major: ['media', 'hum', 'soc', 'lang'], stress: 0.8 },
+  { id: 'researcher', ko: '연구원·교수', sec: 'srv', edu: 5, mult: 2.0, formal: 0.95, dev: [0.03, 0.05, 0.12, 0.25], urb: 1, rur: 0.05, sex: [1, 0.7], major: ['math', 'phys', 'chem', 'bio', 'eng', 'arch', 'cs', 'ai', 'med', 'dent', 'pharm', 'vet', 'agri', 'hum', 'lang', 'soc', 'psy', 'biz'], mjW: 2, stress: 0.6 },
+  { id: 'care', ko: '요양보호사', sec: 'srv', edu: 2, mult: 0.85, formal: 0.6, dev: [0, 0.05, 0.2, 0.6], urb: 1, rur: 0.5, sex: [0.2, 1.4], manual: 1, stress: 0.5, major: ['socw'], mjSoft: 1 },
   { id: 'entrepreneur', ko: '사업가', sec: 'srv', edu: 0, mult: 1.6, formal: 0.3, dev: [0, 0, 0, 0], urb: 1, rur: 0.5, sex: [1, 1], self: 1, stress: 1, offerOnly: false },
 ];
 C.JOB = {};
@@ -1681,8 +1683,9 @@ C.makeOffers = (S, n) => {
   const wRaw = (j) => {
     let w = j.dev[dev] * (urban ? j.urb : j.rur) * j.sex[si] * Wd.nationalJobW(S, j);
     if (edu > j.edu + 1) w *= Math.pow(0.45, edu - j.edu - 1);
-    // 전공이 맞으면 더 자주. 여러 전공을 받는 일(공무원·사무직 등)은 덜(점검: 인문·경영 전공이 공무원·교사로 몰림)
-    if (j.major && S.edu.major && j.major.includes(S.edu.major)) w *= j.major.length <= 2 ? 6 : 2;
+    // 전공이 맞으면 더 자주(×6). 여러 분야 전공을 두루 받는 일(공무원·연구원)은 덜(mjW 2 — 점검: 인문·경영 전공이 공무원·교사로 몰림).
+    // v0.6.14: 전공을 37개로 나누며 목록 길이 대신 직업마다 mjW 를 둔다(옛 '목록 2개 이하 ×6, 넘으면 ×2'와 같은 값)
+    if (j.major && S.edu.major && j.major.includes(S.edu.major)) w *= j.mjW || 6;
     if (S.dream && C.DREAM[S.dream] && C.DREAM[S.dream].jobs.includes(j.id)) w *= 2.5;
     if (S.work.job && S.work.job.id === j.id) w *= 0.2;
     return w;
@@ -1715,21 +1718,84 @@ C.makeJob = (S, j, payMult = 1) => {
 };
 
 /* ================================================================ 전공·꿈 */
-C.MAJOR = {
-  med: { ko: '의학', hard: 3.0 }, eng: { ko: '공학', hard: 0.4 }, cs: { ko: '컴퓨터공학', hard: 0.5 },
-  biz: { ko: '경영·경제', hard: 0.2 }, edu: { ko: '교육학', hard: 0.3 }, nurse: { ko: '간호·보건', hard: 0.4 },
-  law: { ko: '법학', hard: 1.6 }, hum: { ko: '인문·사회과학', hard: -0.2 }, art: { ko: '예술', hard: 0 }, agri: { ko: '농학', hard: -0.3 },
+/** 전공의 큰 분야(피드백 240번): 국제 표준 교육 분류 ISCED-F 2013의 큰 분야 10개. 전공은 분야 → 세부 전공 두 단계로 고른다 */
+C.MAJOR_FIELD = {
+  educ: { ko: '교육' }, arts: { ko: '예술·인문' }, socj: { ko: '사회과학·언론' }, busl: { ko: '경영·행정·법' }, nsci: { ko: '자연과학' },
+  ict: { ko: '정보통신' }, engc: { ko: '공학·제조·건축' }, agrv: { ko: '농림수산·수의' }, hlth: { ko: '보건·복지' }, serv: { ko: '서비스' },
 };
-/** 대학생 전공 구성(보통의 선택을 정할 때 쓰는 대략값: OECD·UNESCO 졸업생 분야 비율 근삿값) — 점검: 의사·교사·공무원이 너무 많았음(의대 합격이 지식 50에서 50%) */
-C.MAJOR_SHARE = { biz: 0.24, hum: 0.24, eng: 0.15, cs: 0.07, edu: 0.08, nurse: 0.08, art: 0.06, law: 0.03, agri: 0.03, med: 0.02 };
+/**
+ * 세부 전공(v0.6.14, 10개 → 37개). ko 이름, hard 입시 문턱(0.3을 넘으면 합격 가능성을 보이고 떨어질 수 있음), field 큰 분야, d 짧은 설명,
+ * near 떨어졌을 때 가까운 전공(college.js), yrs 과정 햇수가 보통 대학과 다를 때(의학·치의학·약학·수의학 6년 — 한국 학제 기준 근삿값).
+ * 옛 저장의 전공 id(med·eng·cs·biz·edu·nurse·law·hum·art·agri)는 그대로 쓴다. hum 은 '인문·사회과학'에서 '인문학'으로, art 는 '예술'에서 '미술'로 좁혔다.
+ */
+C.MAJOR = {
+  edu: { ko: '교육학', hard: 0.3, field: 'educ', d: '초·중등 교과 교육' },
+  ece: { ko: '유아교육', hard: -0.1, field: 'educ', d: '유치원·보육' },
+  peed: { ko: '체육교육', hard: 0.3, field: 'educ', d: '체육 교사·스포츠 지도' },
+  art: { ko: '미술', hard: 0, field: 'arts', d: '회화·조소·공예' },
+  design: { ko: '디자인', hard: 0.1, field: 'arts', d: '시각·산업·패션 디자인' },
+  music: { ko: '음악', hard: 0.2, field: 'arts', d: '성악·기악·작곡·실용음악' },
+  film: { ko: '연극·영화', hard: 0.2, field: 'arts', d: '연기·연출·영상' },
+  hum: { ko: '인문학', hard: -0.2, field: 'arts', d: '어문·역사·철학' },
+  lang: { ko: '외국어·통번역', hard: 0, field: 'arts', d: '영어·중국어 같은 외국어, 통역·번역' },
+  theo: { ko: '신학·종교학', hard: -0.5, field: 'arts', d: '성직자·종교 지도자 과정' },
+  soc: { ko: '사회과학', hard: 0, field: 'socj', d: '정치·사회·인류·지리' },
+  psy: { ko: '심리학', hard: 0.2, field: 'socj', d: '심리·상담' },
+  media: { ko: '언론·미디어', hard: 0.2, field: 'socj', d: '신문방송·광고홍보·영상 콘텐츠' },
+  biz: { ko: '경영·경제', hard: 0.2, field: 'busl', d: '경영·회계·금융·경제' },
+  pub: { ko: '행정학', hard: 0.1, field: 'busl', d: '행정·정책' },
+  law: { ko: '법학', hard: 1.6, field: 'busl', near: ['pub', 'biz'] },
+  math: { ko: '수학·통계', hard: 0.3, field: 'nsci' },
+  phys: { ko: '물리·지구과학', hard: 0.3, field: 'nsci', d: '물리·천문·지질' },
+  chem: { ko: '화학', hard: 0.2, field: 'nsci' },
+  bio: { ko: '생명과학', hard: 0.3, field: 'nsci', d: '생물·생화학·환경' },
+  cs: { ko: '컴퓨터공학', hard: 0.5, field: 'ict', d: '소프트웨어·정보통신', near: ['math', 'eng'] },
+  ai: { ko: '인공지능·데이터', hard: 0.6, field: 'ict', d: '인공지능·데이터 과학', near: ['math', 'cs'] },
+  eng: { ko: '공학', hard: 0.4, field: 'engc', d: '기계·전기전자·화공·재료', near: ['phys', 'cs'] },
+  arch: { ko: '건축·토목', hard: 0.4, field: 'engc', d: '건축 설계·도시·토목', near: ['design', 'eng'] },
+  agri: { ko: '농학', hard: -0.3, field: 'agrv', d: '농업·임업·수산·식품' },
+  vet: { ko: '수의학', hard: 1.9, field: 'agrv', near: ['agri', 'bio'], yrs: 6 },
+  med: { ko: '의학', hard: 3.0, field: 'hlth', near: ['nurse', 'bio'], yrs: 6 },
+  dent: { ko: '치의학', hard: 2.6, field: 'hlth', near: ['bio', 'nurse'], yrs: 6 },
+  pharm: { ko: '약학', hard: 1.9, field: 'hlth', near: ['chem', 'bio'], yrs: 6 },
+  nurse: { ko: '간호·보건', hard: 0.4, field: 'hlth', d: '간호·임상병리·물리치료', near: ['socw', 'edu'] },
+  socw: { ko: '사회복지', hard: -0.2, field: 'hlth', d: '사회복지·돌봄' },
+  sport: { ko: '체육·스포츠과학', hard: 0, field: 'serv', d: '경기 지도·운동 과학·레저' },
+  tour: { ko: '관광·호텔', hard: -0.3, field: 'serv', d: '관광·호텔 경영·여행 안내' },
+  cook: { ko: '조리·외식', hard: -0.3, field: 'serv', d: '조리·제과·외식 경영' },
+  avia: { ko: '항공·운항', hard: 0.5, field: 'serv', d: '조종·항공 정비·객실 승무', near: ['tour', 'eng'] },
+  beauty: { ko: '미용', hard: -0.4, field: 'serv', d: '헤어·피부·메이크업' },
+  secu: { ko: '경찰·소방·군사', hard: 0.3, field: 'serv', d: '경찰행정·소방·경호·군사학' },
+};
+/**
+ * 대학 졸업생 전공 구성(보통의 선택을 정할 때 쓰는 대략값) — 점검: 의사·교사·공무원이 너무 많았음(의대 합격이 지식 50에서 50%).
+ * 큰 분야 몫은 OECD 「Education at a Glance」·UNESCO UIS 분야별 졸업생 비율(OECD 평균 근삿값: 경영·행정·법 약 23%, 공학·제조·건축 약 15%,
+ * 보건·복지 약 14%, 예술·인문 약 10%, 사회과학·언론 약 10%, 교육 약 9%, 자연과학 약 6%, 정보통신 약 5%, 서비스 약 4%, 농림수산·수의 약 2%).
+ * 세부 전공 몫은 한국 교육통계·미국 NCES 학과별 졸업생 근삿값으로 나눴다(예: 미국 학사의 약 2.6%가 경찰·소방·안보, 약 2.7%가 체육·여가·운동과학 — 다른 나라는 더 적어 1~2%로).
+ * v0.6.13까지의 10개 몫(경영 0.24·인문사회 0.24·공학 0.15·컴퓨터 0.07·교육 0.08·
+ * 간호보건 0.08·예술 0.06·법 0.03·농학 0.03·의학 0.02) 안에서 나눠 일자리 구성이 크게 바뀌지 않게 했다
+ * (예: 자연과학·사회과학·심리·언론·외국어·신학·사회복지·체육·경찰은 옛 '인문·사회과학' 몫에서, 행정·관광·조리·항공·미용은 옛 '경영·경제' 몫에서).
+ */
+C.MAJOR_SHARE = {
+  edu: 0.045, ece: 0.025, peed: 0.01,
+  art: 0.015, design: 0.025, music: 0.012, film: 0.008, hum: 0.03, lang: 0.025, theo: 0.005,
+  soc: 0.04, psy: 0.02, media: 0.02,
+  biz: 0.19, pub: 0.02, law: 0.03,
+  math: 0.012, phys: 0.008, chem: 0.01, bio: 0.02,
+  cs: 0.055, ai: 0.015,
+  eng: 0.125, arch: 0.025,
+  agri: 0.025, vet: 0.005,
+  med: 0.017, dent: 0.003, pharm: 0.007, nurse: 0.073, socw: 0.02,
+  sport: 0.02, tour: 0.012, cook: 0.008, avia: 0.005, beauty: 0.005, secu: 0.01,
+};
 C.DREAM = {
   doctor: { ko: '의사', jobs: ['doctor', 'nurse'], major: 'med' },
   engineer: { ko: '엔지니어', jobs: ['engineer', 'programmer', 'electrician'], major: 'eng' },
   teacher: { ko: '선생님', jobs: ['teacher'], major: 'edu' },
   boss: { ko: '사업가', jobs: ['shop', 'manager', 'trader'], major: 'biz' },
   artist: { ko: '예술가', jobs: ['artist'], major: 'art' },
-  athlete: { ko: '운동선수', jobs: [], major: null },
-  official: { ko: '공무원', jobs: ['civil', 'police'], major: 'law' },
+  athlete: { ko: '운동선수', jobs: [], major: 'sport' },
+  official: { ko: '공무원', jobs: ['civil', 'police'], major: 'pub' },
   farmer: { ko: '가업을 잇는 사람', jobs: ['cashcrop', 'farmowner', 'shop'], major: 'agri' },
 };
 
@@ -1995,39 +2061,73 @@ C.studyAbroadDest = (S) => {
   return DATA.c.USA ? 'USA' : null;
 };
 
+/** 전공 고르기에 보일 전공 id(C.MAJOR 순서). ctx.excl: 뺄 전공, ctx.only: 이 전공만(야간·원격 과정처럼 개설 학과가 적은 길) */
+C.majorIds = (S, ctx) => Object.keys(C.MAJOR).filter((k) => !(ctx && ctx.excl && ctx.excl.includes(k)) && !(ctx && ctx.only && !ctx.only.includes(k)));
+/** 큰 분야 안의 전공 id */
+C.majorsIn = (f, ids) => (ids || Object.keys(C.MAJOR)).filter((k) => C.MAJOR[k] && C.MAJOR[k].field === f);
+/** 보통의 선택: 전공 구성 비율대로(꿈과 이어진 전공은 ×3). 같은 사람은 늘 같은 답이 나오게 id 로 정한다. ids 가운데서 고른다(dream.js 가 감싼다) */
+C.majorTyp = (S, ids) => {
+  if (!ids || !ids.length) return null;
+  const dm = S.dream && C.DREAM[S.dream] ? C.DREAM[S.dream].major : null;
+  const w = ids.map((k) => [k, (C.MAJOR_SHARE[k] || 0.005) * (dm === k ? 3 : 1)]);
+  const tot = w.reduce((t, [, x]) => t + x, 0);
+  let hsh = 0;
+  for (const ch of `${S.id}:major`) hsh = (hsh * 31 + ch.charCodeAt(0)) % 100003;
+  let r = (hsh / 100003) * tot, pick = w[0][0];
+  for (const [k, x] of w) { if (r < x) { pick = k; break; } r -= x; }
+  return pick;
+};
+/** 어려운 전공 합격 가능성 */
+C.majorP = (S, id) => U.clamp(U.sigmoid(0.08 * (E.smEq(S) - 50) - ((C.MAJOR[id] || {}).hard || 0) + 1.2), 0.02, 0.98);
+/*
+ * 전공 고르기(피드백 240번): 두 단계 — 큰 분야(ctx.fld 없음) → 그 분야의 세부 전공(ctx.fld). 앞 목록으로 돌아갈 수 있다.
+ * 다음 단계로 넘어갈 때 ctx 의 다른 값(야간 대학 night, 뺄 전공 excl, 고를 수 있는 전공 only 등)은 그대로 넘긴다.
+ * 세부 전공 선택지의 label 은 C.MAJOR[id].ko 그대로다(college.js·dream.js 가 이름으로 전공을 찾는다). 분야 선택지에는 fld, 전공 선택지에는 mj 를 단다.
+ */
 C.DEC.major = {
-  title: () => '전공 선택',
-  text: (S) => C.t(S, '무엇을 공부할까요? 전공에 따라 들어갈 수 있는 일자리가 달라집니다.'),
-  choices: (S) => {
-    const keys = Object.keys(C.MAJOR);
-    return keys.map((id) => {
-      const m = C.MAJOR[id];
-      const p = U.clamp(U.sigmoid(0.08 * (E.smEq(S) - 50) - m.hard + 1.2), 0.02, 0.98);
-      // 보통의 선택: 전공 구성 비율대로(꿈과 맞는 전공은 더 자주). 같은 사람은 같은 답이 나오게 id 로 정한다
-      let typ = false;
-      {
-        const w = keys.map((k) => [k, (C.MAJOR_SHARE[k] || 0.02) * (S.dream && C.DREAM[S.dream] && C.DREAM[S.dream].major === k ? 3 : 1)]);
-        const tot = w.reduce((t, [, x]) => t + x, 0);
-        let hsh = 0;
-        for (const ch of `${S.id}:major`) hsh = (hsh * 31 + ch.charCodeAt(0)) % 100003;
-        let r = (hsh / 100003) * tot, pick = w[0][0];
-        for (const [k, x] of w) { if (r < x) { pick = k; break; } r -= x; }
-        typ = pick === id;
-      }
+  title: (S, ctx) => (ctx && ctx.fld && C.MAJOR_FIELD[ctx.fld] ? `전공 선택 · ${C.MAJOR_FIELD[ctx.fld].ko}` : '전공 선택'),
+  text: (S, ctx) => C.t(S, ctx && ctx.fld && C.MAJOR_FIELD[ctx.fld]
+    ? `${C.MAJOR_FIELD[ctx.fld].ko} 분야에서 어떤 전공을 공부할까요? 전공에 따라 들어갈 수 있는 일자리가 달라집니다.`
+    : '무엇을 공부할까요? 먼저 큰 분야를 고르고, 그 안에서 전공을 고릅니다. 전공에 따라 들어갈 수 있는 일자리가 달라집니다.'),
+  choices: (S, ctx) => {
+    ctx = ctx || {};
+    const ids = C.majorIds(S, ctx), typ = C.majorTyp(S, ids);
+    const fl = ctx.fld && C.MAJOR_FIELD[ctx.fld] ? ctx.fld : null;
+    if (!fl) {
+      // 1단계: 큰 분야(고를 수 있는 전공이 없는 분야는 숨긴다)
+      return Object.keys(C.MAJOR_FIELD).map((f) => {
+        const inF = C.majorsIn(f, ids);
+        return {
+          label: C.MAJOR_FIELD[f].ko, fld: f, sub: inF.map((k) => C.MAJOR[k].ko).join(', '), typ: !!typ && C.MAJOR[typ].field === f, hidden: !inF.length,
+          run: (S2) => { E.ask(S2, 'major', { ...ctx, fld: f }); return null; },
+        };
+      });
+    }
+    // 2단계: 세부 전공. 보통의 선택이 다른 분야에 있으면 이 분야 안에서 같은 방법으로 고른다
+    const inF = C.majorsIn(fl, ids);
+    const tp = inF.includes(typ) ? typ : C.majorTyp(S, inF);
+    const out = inF.map((id) => {
+      const m = C.MAJOR[id], p = C.majorP(S, id);
       return {
-        label: m.ko, sub: m.hard > 0.3 ? `합격 가능성 약 ${pct0(p)}%` : null, typ,
-        run: (S) => {
+        label: m.ko, mj: id, sub: [m.d, m.hard > 0.3 ? `합격 가능성 약 ${pct0(p)}%` : null].filter(Boolean).join(' · ') || null, typ: id === tp,
+        run: (S2) => {
+          // college.js 가 없을 때의 길: 떨어지면 가까운 전공으로
           if (m.hard > 0.3 && !U.chance(p)) {
-            S.edu.major = 'hum';
-            E.startStage(S, 3);
-            return C.t(S, `${m.ko} 전공에는 떨어져 인문·사회과학을 공부하게 되었습니다.`);
+            const alt = (m.near || []).find((k) => C.MAJOR[k] && C.MAJOR[k].hard <= 0.3) || 'hum';
+            S2.edu.major = alt;
+            E.startStage(S2, 3);
+            return C.t(S2, `${m.ko} 전공에는 떨어져 ${U.j(C.MAJOR[alt].ko, '을')} 공부하게 되었습니다.`);
           }
-          S.edu.major = id;
-          E.startStage(S, 3);
-          return C.t(S, `{N은} ${U.j(m.ko, '을')} 전공으로 골랐습니다.`);
+          S2.edu.major = id;
+          E.startStage(S2, 3);
+          return C.t(S2, `{N은} ${U.j(m.ko, '을')} 전공으로 골랐습니다.`);
         },
       };
     });
+    const back = { ...ctx };
+    delete back.fld;
+    out.push({ label: '앞 목록으로 돌아간다', sub: '다른 분야의 전공을 봅니다', run: (S2) => { E.ask(S2, 'major', back); return null; } });
+    return out;
   },
 };
 
@@ -3552,13 +3652,14 @@ C.hooksYear = (S, ay) => {
 };
 
 /* ================================================================ 특별 직업 정의 */
+// major: 이어진 전공(학력과 자격 카드의 전공 줄에 '이어진 일'로 보인다 — v0.6.14, 피드백 240번)
 C.JOBS.push(
-  { id: 'athlete', ko: '프로 운동선수', sec: 'srv', edu: 0, mult: 2, formal: 1, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, risk: { other: 1.5 }, stress: 0.6 },
-  { id: 'entertainer', ko: '연예인', sec: 'srv', edu: 0, mult: 2, formal: 0.5, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, stress: 1 },
-  { id: 'writer', ko: '작가', sec: 'srv', edu: 0, mult: 1, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1 },
-  { id: 'streamer', ko: '크리에이터', sec: 'srv', edu: 0, mult: 1, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1 },
-  { id: 'politician', ko: '정치인', sec: 'srv', edu: 0, mult: 2, formal: 1, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, stress: 1, risk: { homic: 1.3 } },
-  { id: 'chef', ko: '셰프', sec: 'srv', edu: 0, mult: 1.6, formal: 0.5, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, stress: 0.7 },
+  { id: 'athlete', ko: '프로 운동선수', sec: 'srv', edu: 0, mult: 2, formal: 1, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, risk: { other: 1.5 }, stress: 0.6, major: ['sport', 'peed'] },
+  { id: 'entertainer', ko: '연예인', sec: 'srv', edu: 0, mult: 2, formal: 0.5, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, stress: 1, major: ['film', 'music'] },
+  { id: 'writer', ko: '작가', sec: 'srv', edu: 0, mult: 1, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1, major: ['hum', 'lang', 'media'] },
+  { id: 'streamer', ko: '크리에이터', sec: 'srv', edu: 0, mult: 1, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1, major: ['media', 'film'] },
+  { id: 'politician', ko: '정치인', sec: 'srv', edu: 0, mult: 2, formal: 1, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, stress: 1, risk: { homic: 1.3 }, major: ['law', 'pub', 'soc'] },
+  { id: 'chef', ko: '셰프', sec: 'srv', edu: 0, mult: 1.6, formal: 0.5, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, stress: 0.7, major: ['cook'] },
 );
 for (const j of C.JOBS) C.JOB[j.id] = j;
 
@@ -5194,7 +5295,15 @@ C.ACTIONS = [
 
   /* ---------------- 배우기 */
   { id: 'study', ko: '공부하기', cat: 'learn', age: [7, 120], cd: 2,
-    run: (S) => { E.stat(S, 'smarts', 2); if (S.edu.stage !== null) S.edu.dropRisk *= 0.85; return H.student(S) ? '도서관에서 늦게까지 공부했습니다.' : '책을 펴고 새로운 것을 공부했습니다.'; } },
+    run: (S) => {
+      E.stat(S, 'smarts', 2);
+      if (S.edu.stage !== null) S.edu.dropRisk *= 0.85;
+      // 재수 중이면 시험을 잘 볼 가능성이, 야간·원격 대학에 다니면 학점이 오른다(college.js — 피드백 238·240번)
+      const cg = S.cg;
+      if (cg && cg.rt && !cg.rt.half && S.edu.stage === null) { cg.rt.st = (cg.rt.st || 0) + 1; return '시험 문제집을 펴 놓고 밤늦게까지 공부했습니다.'; }
+      if (cg && cg.nt) { cg.nt.st = (cg.nt.st || 0) + 1; return '저녁에 강의를 듣고 밀린 과제를 마쳤습니다.'; }
+      return H.student(S) ? '도서관에서 늦게까지 공부했습니다.' : '책을 펴고 새로운 것을 공부했습니다.';
+    } },
   { id: 'license', ko: '자격증 따기', cat: 'learn', age: [16, 70], cd: 12, cost: 1, need: (S) => reason(!H.student(S), '학교를 마친 뒤에 할 수 있습니다'),
     run: (S) => {
       const p = U.clamp(0.35 + (E.smEq(S) - 50) / 150, 0.1, 0.9);
@@ -5206,9 +5315,14 @@ C.ACTIONS = [
   { id: 'online', ko: '온라인 강의 듣기', cat: 'learn', age: [12, 120], cd: 3,
     need: (S) => reason(H.internet(S) > 0.35 && (S.flags.phone || H.rich(S)), '인터넷을 쓰기 어렵습니다'),
     run: (S) => { E.stat(S, 'smarts', 2); E.stat(S, 'skill', 2); return '밤마다 온라인 강의를 들었습니다.'; } },
-  { id: 'nightschool', ko: '야간 대학 다니기', cat: 'learn', age: [21, 60], cd: 60, cost: 6,
-    need: (S) => reason(S.edu.level === 3 && S.edu.stage === null && !S.flags.nightUntil, '고등학교를 마친 일하는 어른만 다닐 수 있습니다'),
-    run: (S) => { S.flags.nightUntil = S.ageM + 48; E.stat(S, 'happy', -2); return '낮에는 일하고 밤에는 대학에 다니기 시작했습니다. 4년 과정입니다.'; } },
+  // 야간·원격 대학(피드백 238·240번): 고등학교를 마치고 학교에 다니지 않으면 18세부터(예전 21세 제한을 없앰). 학교 종류·전공을 고르고
+  // 학년·학점·정해진 달 졸업이 있는 학교 단계로 다닌다(college.js Cg.ntWhy·Cg.ntAsk — 학비는 해마다 college.js 가 받는다)
+  { id: 'nightschool', ko: '야간·원격 대학 다니기', cat: 'learn', age: [18, 70], cd: 12,
+    need: (S) => (typeof Cg !== 'undefined' && Cg.ntWhy ? Cg.ntWhy(S) : reason(S.edu.level === 3 && S.edu.stage === null && !S.flags.nightUntil, '고등학교를 마치고 학교에 다니지 않는 사람만 다닐 수 있습니다')),
+    run: (S) => {
+      if (typeof Cg !== 'undefined' && Cg.ntAsk) return Cg.ntAsk(S);
+      S.flags.nightUntil = S.ageM + 48; E.stat(S, 'happy', -2); return '낮에는 일하고 밤에는 대학에 다니기 시작했습니다. 4년 과정입니다.';
+    } },
   { id: 'ged', ko: '검정고시 보기', cat: 'learn', age: [14, 80], cd: 12, cost: 0.3,
     need: (S) => reason(S.edu.level < 3 && S.edu.stage === null, '이미 고등학교 학력이 있거나 학교에 다니는 중입니다'),
     run: (S) => {
@@ -5467,7 +5581,10 @@ C.ACT_W = {
   study: ['h', 1, 1], online: ['h', 1, 1], scripture: ['h', 1, 1],
   language: ['h', 1, 3], locallang: ['h', 1, 3], nightclass: ['h', 1, 3], // 저녁마다 한 철(석 달) 듣는 강좌 — 쿨다운이 곧 한 철
   license: ['w', 2, 6], relicense: ['w', 2, 6], ged: ['w', 2, 6], // 시험은 한 해 두 번쯤
-  cg_abroad: ['m', 3, 12], cg_wh: ['m', 3, 12], nightschool: ['m', 3, 60],
+  cg_abroad: ['m', 3, 12], cg_wh: ['m', 3, 12],
+  // 야간·원격 대학은 낮의 삶(일)을 비우지 않고 저녁·주말 몇 시간씩 다니는 학위(몇 시간 × 큼 → 2번, 예전 3번 · 쿨다운 60달 → 12달: 그만둔 뒤 한 해면 다시 등록)
+  nightschool: ['h', 3, 12],
+  cg_exam: ['d', 3, 12], // 대학 입시 다시 보기(college.js): 하루~며칠의 시험이 학교·진로(삶의 줄기)를 가름 → 2번, 한 해 한 번(시험 철)
   /* 사람 */
   meetfriend: ['h', 1, 1], newfriend: ['h', 1, 2], parents: ['h', 1, 1], sibs: ['h', 1, 1], adultkids: ['h', 1, 1],
   date: ['h', 1, 1], spouse: ['h', 1, 1], kids: ['h', 1, 1], grandkids: ['h', 1, 1], volunteer: ['h', 1, 2], worship: ['h', 1, 1],
@@ -13996,15 +14113,18 @@ const Cr = {};
   const FIELD_KO = {};
   for (const [f, ko, ids] of Cr.FIELDS) { FIELD_KO[f] = ko; for (const id of ids) FIELD_OF[id] = f; }
   Cr.fieldOf = (id) => FIELD_OF[id] || 'other';
+  /** 내 전공이 그 일과 이어지는가(C.JOB[id].major) */
+  Cr.mjOf = (S, id) => !!(S.edu && S.edu.major && C.JOB[id] && C.JOB[id].major && C.JOB[id].major.includes(S.edu.major));
   Cr.fieldKo = (f) => FIELD_KO[f] || '그 밖의 일';
   Cr.expY = (S, kind, key) => ((S.work.exp && S.work.exp[kind] && S.work.exp[kind][key]) || 0) / 12;
 
   /* ================================================================ 스스로 하는 일의 직업 정의 */
+  // major: 이어진 전공(맞으면 '내 일 시작하기'의 자리 잡을 가능성 fit 가산 — Cr.makeSelf, v0.6.14)
   const NEWJ = [
-    { id: 'translator', ko: '프리랜서 번역가', sec: 'srv', edu: 3, mult: 1.0, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1 },
-    { id: 'designer', ko: '프리랜서 디자이너', sec: 'srv', edu: 0, mult: 1.0, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1 },
-    { id: 'freedev', ko: '프리랜서 개발자', sec: 'srv', edu: 0, mult: 1.5, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1, stress: 0.5 },
-    { id: 'tutor', ko: '과외 선생님', sec: 'srv', edu: 3, mult: 0.7, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1 },
+    { id: 'translator', ko: '프리랜서 번역가', sec: 'srv', edu: 3, mult: 1.0, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1, major: ['lang'] },
+    { id: 'designer', ko: '프리랜서 디자이너', sec: 'srv', edu: 0, mult: 1.0, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1, major: ['design', 'art'] },
+    { id: 'freedev', ko: '프리랜서 개발자', sec: 'srv', edu: 0, mult: 1.5, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1, stress: 0.5, major: ['cs', 'ai', 'eng'] },
+    { id: 'tutor', ko: '과외 선생님', sec: 'srv', edu: 3, mult: 0.7, formal: 0, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, self: 1, major: ['edu', 'math'] },
   ];
   for (const j of NEWJ) if (!C.JOB[j.id]) { C.JOBS.push(j); C.JOB[j.id] = j; }
   /** 어디서든 할 수 있는 일(나라를 옮겨도 이어진다) */
@@ -14649,11 +14769,11 @@ const Cr = {};
       fit: (S) => U.clamp((Cr.bestForeign(S)[1] - 2.5) / 1.5 * 0.5 + E.smEq(S) / 200, 0.1, 1),
       hint: (S) => `${Cr.langKo(Cr.bestForeign(S)[0])} 번역 일감을 받습니다` },
     { k: 'designer', ko: '프리랜서 디자인', id: 'designer', mult: 1.0, lvl0: 0.3,
-      need: (S) => (H.internet(S) < 0.3 ? '인터넷을 쓰기 어렵습니다' : S.edu.major === 'art' || H.talent(S, 'art') >= 62 || H.hobby(S, 'drawing') ? true : '미술 전공이거나 그림 재능·취미가 있어야 합니다'),
-      fit: (S) => talentFit(artAb(S, 'art')) * 0.8 + (S.edu.major === 'art' ? 0.2 : 0) },
+      need: (S) => (H.internet(S) < 0.3 ? '인터넷을 쓰기 어렵습니다' : Cr.mjOf(S, 'designer') || H.talent(S, 'art') >= 62 || H.hobby(S, 'drawing') ? true : '디자인·미술 전공이거나 그림 재능·취미가 있어야 합니다'),
+      fit: (S) => talentFit(artAb(S, 'art')) * 0.8 }, // 전공 가산은 Cr.makeSelf
     { k: 'freedev', ko: '프리랜서 개발', id: 'freedev', mult: 1.45, lvl0: 0.3,
-      need: (S) => (H.internet(S) < 0.35 ? '인터넷을 쓰기 어렵습니다' : ['cs', 'eng'].includes(S.edu.major) || Cr.expY(S, 'f', 'it') >= 2 || ((S.prac && S.prac.code) || 0) >= 50 ? true : '컴퓨터·공학 전공이거나 개발 경력 2년, 또는 코딩 실력 50이 있어야 합니다'),
-      fit: (S) => U.clamp((E.smEq(S) + S.st.skill) / 200 + (['cs', 'eng'].includes(S.edu.major) ? 0.2 : 0), 0.1, 1) },
+      need: (S) => (H.internet(S) < 0.35 ? '인터넷을 쓰기 어렵습니다' : Cr.mjOf(S, 'freedev') || Cr.expY(S, 'f', 'it') >= 2 || ((S.prac && S.prac.code) || 0) >= 50 ? true : '컴퓨터·인공지능·공학 전공이거나 개발 경력 2년, 또는 코딩 실력 50이 있어야 합니다'),
+      fit: (S) => U.clamp((E.smEq(S) + S.st.skill) / 200, 0.1, 1) }, // 전공 가산은 Cr.makeSelf
     { k: 'tutor', ko: '과외', id: 'tutor', mult: 0.65, lvl0: 0.4,
       need: (S) => (S.edu.level < 3 ? '고등학교 졸업 이상 학력이 필요합니다' : S.st.smarts < 50 ? '가르칠 만큼 공부가 되어 있어야 합니다(지식 50)' : true),
       fit: (S) => U.clamp(E.smEq(S) / 110 + (S.edu.level >= 4 ? 0.2 : 0), 0.1, 1) },
@@ -14685,7 +14805,9 @@ const Cr = {};
     }
     if (o.k === 'drive') { id = S.flags.car ? 'driver' : 'rider'; mult = C.JOB[id].mult; title = S.flags.car ? (Wd.dev(iso) <= 1 ? null : '개인 택시·운전 기사') : Wd.dev(iso) <= 1 ? '오토바이 택시 기사' : '배달 라이더'; }
     if (o.k === 'artist') title = artAb(S, 'music') > artAb(S, 'art') ? '음악가' : '화가';
-    const fit = o.fit ? o.fit(S) : 0.5;
+    let fit = o.fit ? o.fit(S) : 0.5;
+    // 그 일과 이어진 전공이면 자리 잡기 쉽다(번역 ↔ 외국어·통번역, 디자인 ↔ 디자인·미술, 코치 ↔ 체육 등 — v0.6.14). 농사는 o.fit 에서 따로 본다
+    if (o.k !== 'farm' && Cr.mjOf(S, id)) fit = Math.min(1, fit + 0.2);
     let tf = 1;
     if (o.k === 'artist') tf = Math.exp((Math.max(artAb(S, 'art'), artAb(S, 'music')) - 65) / 12);
     if (o.k === 'designer') tf = Math.exp((artAb(S, 'art') - 60) / 25);
@@ -14918,7 +15040,8 @@ const Cr = {};
     if (j.edu <= 1 && edu >= 4) x += add('학력이 지나치게 높음', -0.3);
     if (j.major && edu >= 4) {
       const m = !!S.edu.major && j.major.includes(S.edu.major);
-      x += add(m ? '전공 일치' : '전공이 다름', m ? 0.9 : -0.5);
+      // mjSoft: 대학 전공을 보지 않는 일(경찰·요리사·요양보호사 등) — 맞으면 가산만(v0.6.14, 피드백 240번)
+      if (m || !j.mjSoft) x += add(m ? '전공 일치' : '전공이 다름', m ? 0.9 : -0.5);
     }
     x += add('지식', ((E.smEq(S) - 50) / 25) * (j.edu >= 4 ? 0.6 : j.edu >= 3 ? 0.4 : 0.15));
     x += add('경력 능력치', ((S.st.skill - 30) / 50) * 0.4);
@@ -19604,7 +19727,7 @@ const Dr = {};
   const IDOL_C = ['KOR', 'JPN', 'CHN', 'TWN', 'THA', 'PHL', 'IDN', 'VNM'];
   /*
    * 어릴 적 꿈 목록(피드백 90번: 꿈이 8가지뿐이라 요리 연습은 되는데 요리사 꿈이 없었음).
-   * ko 이름, jobs 이루었다고 치는 직업(특별 직업 포함), major 이어진 전공, hobby 꿈과 이어진 취미,
+   * ko 이름, jobs 이루었다고 치는 직업(특별 직업 포함), major 이어진 전공(content.js C.MAJOR — v0.6.14에 세부 전공으로 고침), hobby 꿈과 이어진 취미,
    * tal 끌리게 하는 재능, w 아이들이 흔히 꾸는 정도(여러 나라 장래 희망 조사의 대략적인 순서), ok 그 나라·집에서 떠올릴 수 있는 꿈인지.
    * 기존 저장의 꿈 id(doctor·engineer·teacher·boss·artist·athlete·official·farmer)는 그대로 둔다.
    */
@@ -19614,33 +19737,33 @@ const Dr = {};
     nurse: { ko: '간호사', jobs: ['nurse', 'care'], major: 'nurse', hobby: 'volunteer', tal: 'study', w: 4 },
     engineer: { ko: '엔지니어', jobs: ['engineer', 'electrician', 'plantmgr', 'agritech'], major: 'eng', hobby: 'chess', tal: 'study', w: 5 },
     programmer: { ko: '프로그래머·게임 개발자', jobs: ['programmer', 'freedev'], major: 'cs', hobby: 'games', tal: 'study', w: 4, ok: (S) => net(S) >= 30 },
-    scientist: { ko: '과학자', jobs: ['researcher', 'agritech'], major: 'eng', hobby: 'reading', tal: 'study', w: 4 },
+    scientist: { ko: '과학자', jobs: ['researcher', 'agritech'], major: 'bio', hobby: 'reading', tal: 'study', w: 4 },
     teacher: { ko: '선생님', jobs: ['teacher', 'tutor'], major: 'edu', hobby: 'reading', tal: 'study', w: 8 },
     professor: { ko: '교수', jobs: ['researcher'], major: 'hum', hobby: 'reading', tal: 'study', w: 1.5 },
     lawyer: { ko: '변호사·판사', jobs: ['lawyer'], major: 'law', hobby: 'reading', tal: 'study', w: 3 },
-    official: { ko: '공무원', jobs: ['civil'], major: 'law', hobby: 'reading', tal: 'study', w: 4 },
-    police: { ko: '경찰관', jobs: ['police'], major: 'law', hobby: 'running', tal: 'sport', w: 5 },
-    soldier: { ko: '군인', jobs: ['soldier'], major: null, hobby: 'running', tal: 'sport', w: 3 },
-    firefighter: { ko: '소방관', jobs: ['firefighter'], major: null, hobby: 'running', tal: 'sport', w: 4 },
+    official: { ko: '공무원', jobs: ['civil'], major: 'pub', hobby: 'reading', tal: 'study', w: 4 },
+    police: { ko: '경찰관', jobs: ['police'], major: 'secu', hobby: 'running', tal: 'sport', w: 5 },
+    soldier: { ko: '군인', jobs: ['soldier'], major: 'secu', hobby: 'running', tal: 'sport', w: 3 },
+    firefighter: { ko: '소방관', jobs: ['firefighter'], major: 'secu', hobby: 'running', tal: 'sport', w: 4 },
     boss: { ko: '사업가', jobs: ['entrepreneur', 'shop', 'manager', 'trader'], major: 'biz', hobby: 'chess', tal: 'biz', w: 5 },
     accountant: { ko: '은행원·회계사', jobs: ['accountant'], major: 'biz', hobby: 'chess', tal: 'biz', w: 2 },
-    chef: { ko: '요리사', jobs: ['chef', 'cook'], major: null, hobby: 'cooking', tal: 'art', w: 4 },
-    hair: { ko: '미용사', jobs: ['hair'], major: null, hobby: 'crafts', tal: 'art', w: 2 },
-    designer: { ko: '디자이너', jobs: ['designer', 'artist'], major: 'art', hobby: 'drawing', tal: 'art', w: 3 },
+    chef: { ko: '요리사', jobs: ['chef', 'cook'], major: 'cook', hobby: 'cooking', tal: 'art', w: 4 },
+    hair: { ko: '미용사', jobs: ['hair'], major: 'beauty', hobby: 'crafts', tal: 'art', w: 2 },
+    designer: { ko: '디자이너', jobs: ['designer', 'artist'], major: 'design', hobby: 'drawing', tal: 'art', w: 3 },
     artist: { ko: '화가·예술가', jobs: ['artist'], major: 'art', hobby: 'drawing', tal: 'art', w: 3 },
-    musician: { ko: '가수·음악가', jobs: ['artist', 'entertainer'], major: 'art', hobby: 'music', tal: 'music', w: 5 },
-    actor: { ko: '배우', jobs: ['entertainer'], major: 'art', hobby: 'drama', tal: 'charm', w: 4 },
+    musician: { ko: '가수·음악가', jobs: ['artist', 'entertainer'], major: 'music', hobby: 'music', tal: 'music', w: 5 },
+    actor: { ko: '배우', jobs: ['entertainer'], major: 'film', hobby: 'drama', tal: 'charm', w: 4 },
     // 피드백 212번: 아이돌 오디션(practice.js)은 따로 있는데 꿈 목록에는 없었음 — 오디션을 볼 수 있는 나라에서만
-    idol: { ko: '아이돌', jobs: ['entertainer'], major: 'art', hobby: 'dance', tal: 'music', w: 2, ok: (S) => IDOL_C.includes(E.iso(S)) || Wd.dev(E.iso(S)) >= 2 },
+    idol: { ko: '아이돌', jobs: ['entertainer'], major: 'music', hobby: 'dance', tal: 'music', w: 2, ok: (S) => IDOL_C.includes(E.iso(S)) || Wd.dev(E.iso(S)) >= 2 },
     writer: { ko: '작가', jobs: ['writer', 'journalist'], major: 'hum', hobby: 'reading', tal: 'study', w: 2 },
-    journalist: { ko: '기자', jobs: ['journalist'], major: 'hum', hobby: 'reading', tal: 'study', w: 1.5 },
-    streamer: { ko: '크리에이터(영상·방송)', jobs: ['streamer'], major: null, hobby: 'sns', tal: 'charm', w: 4, ok: (S) => net(S) >= 50 },
-    athlete: { ko: '운동선수', jobs: ['athlete', 'coach'], major: null, hobby: 'sport', tal: 'sport', w: 8 },
+    journalist: { ko: '기자', jobs: ['journalist'], major: 'media', hobby: 'reading', tal: 'study', w: 1.5 },
+    streamer: { ko: '크리에이터(영상·방송)', jobs: ['streamer'], major: 'media', hobby: 'sns', tal: 'charm', w: 4, ok: (S) => net(S) >= 50 },
+    athlete: { ko: '운동선수', jobs: ['athlete', 'coach'], major: 'sport', hobby: 'sport', tal: 'sport', w: 8 },
     farmer: { ko: '가업을 잇는 사람', jobs: ['cashcrop', 'farmowner', 'shop'], major: 'agri', hobby: 'garden', tal: 'biz', w: 2 },
     mechanic: { ko: '정비사·기술자', jobs: ['mechanic', 'electrician', 'welder', 'craft'], major: null, hobby: 'crafts', tal: null, w: 2 },
     driver: { ko: '운전기사', jobs: ['driver'], major: null, hobby: 'travel', tal: null, w: 1.5 },
-    clergy: { ko: '성직자', jobs: ['clergy'], major: 'hum', hobby: 'faith', tal: null, w: 1, ok: (S) => S.rel !== 'none' },
-    guide: { ko: '여행 가이드', jobs: ['guide'], major: 'hum', hobby: 'travel', tal: 'charm', w: 1.5 },
+    clergy: { ko: '성직자', jobs: ['clergy'], major: 'theo', hobby: 'faith', tal: null, w: 1, ok: (S) => S.rel !== 'none' },
+    guide: { ko: '여행 가이드', jobs: ['guide'], major: 'tour', hobby: 'travel', tal: 'charm', w: 1.5 },
     politician: { ko: '정치인', jobs: ['politician'], major: 'law', hobby: 'volunteer', tal: 'charm', w: 1.5 },
   };
   // C.DREAM(content.js)을 넓힌 목록으로 바꾼다. jobs 는 일자리 제안에서 가중치를 받는 일반 직업만(특별 직업은 Dr.JOBS 로 '이룸'만 판정)
@@ -19752,12 +19875,44 @@ const Dr = {};
     }
   });
 
-  // 전공 고를 때 꿈과 이어진 전공을 알려 준다
+  // 전공 고를 때 꿈과 이어진 전공(과 그 전공이 있는 큰 분야)을 알려 준다
   if (C.DEC.major) {
     const ch0 = C.DEC.major.choices;
     C.DEC.major.choices = (S, ctx) => {
       const dm = S.dream && C.DREAM[S.dream] ? C.DREAM[S.dream].major : null;
-      return ch0(S, ctx).map((c) => (dm && C.MAJOR[dm] && c.label === C.MAJOR[dm].ko ? { ...c, sub: [c.sub, `${Dr.ko(S)}의 꿈과 이어진 전공`].filter(Boolean).join(' · '), typ: true } : c));
+      const m = dm && C.MAJOR[dm];
+      if (!m) return ch0(S, ctx);
+      return ch0(S, ctx).map((c) => {
+        if (c.fld && c.fld === m.field) return { ...c, sub: [c.sub, `${Dr.ko(S)}의 꿈과 이어진 ${U.j(m.ko, '이')} 있는 분야`].filter(Boolean).join(' · ') };
+        if (!c.fld && c.label === m.ko) return { ...c, sub: [c.sub, `${Dr.ko(S)}의 꿈과 이어진 전공`].filter(Boolean).join(' · ') };
+        return c;
+      });
+    };
+  }
+  /*
+   * 보통의 선택: 대학에 가면 꿈과 이어진 전공을 고르는 비율(근삿값). 그 일에 전공 학위가 꼭 필요할수록 높다.
+   * v0.6.13까지는 꿈의 전공을 늘 '보통'으로 두었는데 목록 앞쪽 전공만 이겨서 실제로는 의학 약 100%·공학 약 98%·경영 약 84%·교육 약 60%·간호 약 50%·
+   * 법학 약 40%·예술 약 20%였다 — 그 값에 가깝게 두고, 이번에 새로 이은 꿈(운동선수·군인·소방관·요리사·미용사·크리에이터)은 낮게 두어
+   * 아이들 꿈의 분포가 졸업생 전공 구성(C.MAJOR_SHARE)을 덮지 않게 한다. 나머지는 전공 구성 비율대로(꿈의 전공 ×3 — content.js C.majorTyp).
+   * 같은 사람은 늘 같은 답(id 로 정함). 한 사람에 '보통'은 하나다.
+   */
+  Dr.MJ_FOLLOW = {
+    doctor: 0.9, nurse: 0.55, engineer: 0.9, programmer: 0.7, scientist: 0.5, teacher: 0.6, professor: 0.4, lawyer: 0.6, official: 0.25,
+    police: 0.25, soldier: 0.15, firefighter: 0.15, boss: 0.7, accountant: 0.7, chef: 0.2, hair: 0.15, designer: 0.35, artist: 0.25,
+    musician: 0.2, actor: 0.2, idol: 0.1, writer: 0.4, journalist: 0.45, streamer: 0.1, athlete: 0.15, farmer: 0.2, clergy: 0.35, guide: 0.25, politician: 0.35,
+  };
+  if (C.majorTyp) {
+    const mt0 = C.majorTyp;
+    C.majorTyp = (S, ids) => {
+      const dm = S.dream && C.DREAM[S.dream] ? C.DREAM[S.dream].major : null;
+      if (dm && ids && ids.includes(dm)) {
+        // 전공 고르기의 해시(C.majorTyp)와 겹치지 않게 다른 방식(FNV)으로
+        const str = `${S.id}|dreamMj`;
+        let h = 2166136261;
+        for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+        if (((h >>> 0) % 1000003) / 1000003 < (Dr.MJ_FOLLOW[S.dream] !== undefined ? Dr.MJ_FOLLOW[S.dream] : 0.3)) return dm;
+      }
+      return mt0(S, ids);
     };
   }
   // 일자리 제안: 꿈꾸던 일이면 표시, 다시 도전하기로 했으면 꿈의 일이 하나 섞여 온다
@@ -28767,14 +28922,15 @@ const Sp = {};
 
   /* ================================================================ 직업: 운동 지도자(코치) */
   if (!C.JOB.coach) {
-    const cj = { id: 'coach', ko: '운동 지도자', sec: 'srv', edu: 0, mult: 1.1, formal: 0.6, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, stress: 0.5 };
+    // major: 체육·스포츠과학·체육교육 전공이면 '내 일 시작하기'의 코치 일이 자리 잡기 쉽다(career.js Cr.makeSelf, v0.6.14 피드백 240번)
+    const cj = { id: 'coach', ko: '운동 지도자', sec: 'srv', edu: 0, mult: 1.1, formal: 0.6, dev: [0, 0, 0, 0], urb: 1, rur: 1, sex: [1, 1], special: 1, stress: 0.5, major: ['sport', 'peed'] };
     C.JOBS.push(cj);
     C.JOB.coach = cj;
   }
   // 내 일 시작하기: 운동 강사·코치(운동 실력이 있거나 선수 출신)
   if (typeof Cr !== 'undefined' && Cr.SELF && !Cr.SELF.some((o) => o.k === 'coach')) {
     Cr.SELF.push({ k: 'coach', ko: '운동 강사·코치', id: 'coach', mult: 0.75, lvl0: 0.4,
-      need: (S) => (E.age(S) < 18 ? '18세부터 할 수 있습니다' : (Cr.expY(S, 'j', 'athlete') >= 1 || (hasPr() && Pr.lvl(S, 'sport') >= 45) || Sp.lvl(S, Sp.mainOrNat(S)) >= 45) ? true : '운동 실력(45)이 있거나 선수 출신이어야 합니다'),
+      need: (S) => (E.age(S) < 18 ? '18세부터 할 수 있습니다' : (Cr.expY(S, 'j', 'athlete') >= 1 || (hasPr() && Pr.lvl(S, 'sport') >= 45) || Sp.lvl(S, Sp.mainOrNat(S)) >= 45 || (S.edu.level >= 4 && ['sport', 'peed'].includes(S.edu.major) && ((hasPr() && Pr.lvl(S, 'sport') >= 30) || Sp.lvl(S, Sp.mainOrNat(S)) >= 30))) ? true : '운동 실력(45 — 체육 전공이면 30)이 있거나 선수 출신이어야 합니다'),
       fit: (S) => U.clamp(0.3 + Sp.eff(S, Sp.mainOrNat(S)) / 150 + (Cr.expY(S, 'j', 'athlete') >= 1 ? 0.25 : 0), 0.1, 1),
       hint: (S) => `${U.j(Sp.ko(S, Sp.mainOrNat(S)), '을')} 가르칩니다` });
     const ms0 = Cr.makeSelf;
@@ -29632,7 +29788,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.6.13';
+E.VERSION = '0.6.14';
 E.BUILD_DATE = '26.10.16';
 
 /* ================================================================ 기본 도구 */
@@ -30469,8 +30625,9 @@ E.birthday = (S, ay) => {
   Ec.year(S);
   E.fire('year', S, ay);
   E.snap(S, ay);
-  // 야간 대학 졸업
-  if (S.flags.nightUntil && S.ageM >= S.flags.nightUntil) {
+  // 야간 대학 졸업: v0.6.14부터 야간·원격 대학은 학교 단계(college.js S.cg.nt — 학년·전공·학교·정해진 달에 졸업)이고,
+  // 예전 저장의 표시(flags.nightUntil)도 college.js 가 그쪽으로 옮긴다. 아래는 college.js 가 없을 때만 쓰는 옛 방식(생일에 졸업)
+  if (S.flags.nightUntil && S.ageM >= S.flags.nightUntil && typeof Cg === 'undefined') {
     delete S.flags.nightUntil;
     S.flags.nightDone = true;
     S.edu.level = Math.max(S.edu.level, 4);
@@ -30631,6 +30788,9 @@ E.sysSchoolYear = (S, ay) => {
 E.stageDur = (S, k) => {
   const sch = Wd.schooling(E.iso(S), S.sex);
   if (k === 3 && S.edu.major === 'med') return 6;
+  // 과정 햇수가 따로 있는 전공(content.js C.MAJOR[id].yrs — 치의학·약학·수의학 6년 등, v0.6.14)
+  const mj = k === 3 && S.edu.major && C.MAJOR && C.MAJOR[S.edu.major];
+  if (mj && mj.yrs) return mj.yrs;
   return sch.durs[k];
 };
 
@@ -30681,24 +30841,50 @@ E.finishStage = (S) => {
   E.ask(S, 'nextStage', { done: k, ok: E.admission(S, k + 1) });
 };
 
-/** 다음 단계 입학 가능 여부(무작위 + 개인 요인) */
-E.admission = (S, k) => {
-  if (k > 4) return false;
+/** 대학 입학시험 결과 꼬리표: 'good' 잘 봄 · 'bad' 못 봄 · 'skip' 보지 않음 · 'none' 시험 이야기가 없었음 */
+E.examTag = (S) => (S.flags.examSkip ? 'skip' : S.flags.examGood ? 'good' : S.flags.examBad ? 'bad' : 'none');
+/** 다음 단계 입학 가능성(무작위 없이). tag 는 대학 입학시험 결과(비우면 지금 꼬리표), lb 는 기울기에 더하는 몫(재수 가산·늦깎이 전형 등 — college.js) */
+E.admP = (S, k, tag, lb = 0) => {
+  if (k > 4) return 0;
   const sch = Wd.schooling(E.iso(S), S.sex);
-  let p = U.shiftP(Math.sqrt(sch.cond[k]), E.indivShift(S) * 0.7 + (S.dream ? 0.1 : 0));
-  if (k === 3 && S.edu.voc) p *= 0.5;
-  // 대학 입학시험 결과를 반영한다(점검: 시험을 잘 봤는데 '점수가 모자랐습니다'가 나왔음)
-  if (k === 3 && S.flags.examSkip) return false;
+  let p = U.shiftP(Math.sqrt(sch.cond[k]), E.indivShift(S) * 0.7 + (S.dream ? 0.1 : 0) + lb);
+  if (k !== 3) return p;
+  if (S.edu.voc) p *= 0.5;
+  const t = tag || E.examTag(S);
+  // 대학 입학시험 결과를 반영한다(점검: 시험을 잘 봤는데 '점수가 모자랐습니다'가 나왔음). 시험을 보지 않았으면 그해에는 들어갈 수 없다
+  if (t === 'skip') return 0;
   // 잘 본 사람은 올리고 못 본 사람은 내려, 나라 전체 대학 진학률(자료 맞춤)은 그대로 둔다(잘 봄 약 60%)
-  if (k === 3 && S.flags.examGood) p = U.shiftP(p, 0.25);
-  else if (k === 3 && S.flags.examBad) p = U.shiftP(p, -1.2);
-  return U.chance(p);
+  if (t === 'good') p = U.shiftP(p, 0.25);
+  else if (t === 'bad') p = U.shiftP(p, -1.2);
+  return p;
+};
+/** 다음 단계 입학 가능 여부(무작위 + 개인 요인). E.admAdj(S, k, p) 가 있으면 가능성을 고쳐 쓴다(college.js — 첫 입시: 낙방 뒤 재수·전문대·야간 대학으로
+ *  다시 들어가는 몫만큼 덜어 나라 대학 졸업률을 그대로 둠) */
+E.admission = (S, k) => { const p = E.admP(S, k); return U.chance(E.admAdj ? E.admAdj(S, k, p) : p); };
+/** 다시 보는 대학 입학시험(피드백 238번): 지난해 꼬리표를 지우고 해마다 새로 본다.
+ *  잘 볼 가능성은 고교 때 시험(ev_teen.js t_natexam 의 '차분히 복습')과 같은 식에 bonus(학원·공부·재수 경험)를 더한 값 */
+E.examGoodP = (S, bonus = 0) => U.clamp(0.2 + E.smEq(S) / 130 + bonus, 0.1, 0.95);
+E.freshExam = (S, bonus = 0) => {
+  delete S.flags.examSkip;
+  delete S.flags.examGood;
+  delete S.flags.examBad;
+  if (U.chance(E.examGoodP(S, bonus))) S.flags.examGood = true;
+  else S.flags.examBad = true;
+  return E.examTag(S);
+};
+/** 새 시험을 보고 붙을 가능성(기댓값 — 결정 창의 '가능성 약 n%') */
+E.retryP = (S, k, bonus = 0, lb = 0) => {
+  if (k !== 3) return E.admP(S, k, null, lb);
+  const g = E.examGoodP(S, bonus);
+  return g * E.admP(S, 3, 'good', lb) + (1 - g) * E.admP(S, 3, 'bad', lb);
 };
 
 E.retryAdmission = (S) => {
   const k = S.edu.retryFor;
   S.edu.retryAt = null;
   S.edu.retries = (S.edu.retries || 0) + 1;
+  // 대학은 다시 도전할 때마다 새 시험을 본다(피드백 238번 — 예전에는 지난해 결과가 따라다녀, 시험을 보지 않은 사람은 몇 번을 다시 도전해도 떨어졌음)
+  if (k === 3) E.freshExam(S, 0.05);
   const ok = E.admission(S, k);
   E.ask(S, 'retryResult', { k, ok });
 };
@@ -43014,7 +43200,7 @@ const Ml = {};
     const out = [], ml = Ml.ensure(S), leave = !!ctx.leave;
     const ath = H.jobIs(S, 'athlete') || (hasSp() && !!Sp.main(S) && H.talent(S, 'sport') >= 80);
     const vocOk = (!!S.edu.voc && S.edu.level >= 3) || ['factory', 'mechanic', 'welder', 'electrician', 'engineer', 'construction', 'plantmgr'].includes(H.job(S));
-    const resOk = S.edu.level >= 5 && ['eng', 'cs', 'med', 'agri'].includes(S.edu.major);
+    const resOk = S.edu.level >= 5 && ['eng', 'cs', 'med', 'agri', 'ai', 'math', 'phys', 'chem', 'bio', 'pharm', 'vet', 'arch', 'dent'].includes(S.edu.major); // 전문연구요원: 이공계 석사 이상(v0.6.14 전공 넓히기)
     const docOk = S.edu.major === 'med' && typeof Ct !== 'undefined' && !!Ct.licensed && Ct.licensed(S, 'med');
     const engOk = ((S.langs && S.langs.en) || 0) >= 2 || E.smEq(S) >= 78;
     if (ctx.alt === 'social') {
@@ -43824,7 +44010,11 @@ const Ml = {};
  *      몸은 실제로 옮기지 않고(이주 통계에 잡히지 않음) 여권 도장·방문국·말·돈·경험으로 남긴다. 후원 비자로 남을 때만 실제로 이주한다.
  *  (마) 효과: 채용(Cr.fit '출신 대학'·'전문대 졸업'·'복수전공 일치'·'학점'·'해외 학위'), 임금(C.makeJob: 서열별 배수를 나라 평균이
  *      그대로 되게 나눠 씀 — 학력별 임금 총량은 그대로), 상위권 졸업 인맥(관계 +), 이력 카드(resume.js 의 Cg.rsRows), 상태 줄.
+ *  (바) v0.6.14(피드백 238·240번) — 대학의 모든 길이 같은 학교 단계를 쓰게:
+ *      낙방 뒤 갈래(재수 학원·혼자·일하며 준비 → 해마다 새 시험, 문턱이 낮은 학교, 야간·원격 대학, 군 복무, 일) · 할 일 '대학 입시 다시 보기'(늦깎이 —
+ *      붙으면 일을 그만두거나 휴직하거나 야간·원격 과정으로) · 야간·원격 대학을 학교 단계로(S.cg.nt — 학교 종류·전공·학년·학점·정해진 달 졸업, 예전 전공 이어 다니기).
  * 보통 선택(typ)은 나라의 대학 졸업률(Wd.schooling)을 바꾸지 않게 짰다: 재수·휴학·편입은 늦출 뿐 입학·완주 확률은 그대로이고, 구성만 바뀐다.
+ * (낙방 뒤 재수·전문대·야간·원격 대학으로 다시 들어가는 몫은 첫 입시 가능성에서 덜어 낸다 — Cg.admAdj.)
  * 사망 원인은 더하지 않는다.
  * 출처(모두 근삿값): data/hand/college.json 의 _src.
  */
@@ -43917,6 +44107,15 @@ const Cg = {};
   /** 떨어졌을 때 가까운 전공 */
   const NEAR = { med: ['nurse', 'eng'], law: ['hum', 'biz'], cs: ['eng', 'biz'], eng: ['cs', 'agri'], nurse: ['hum', 'edu'] };
   const NEAR_SUB = { med: ['의학과 가까운 보건 분야', '생명·화학 쪽 공학'], law: ['정치·행정 같은 사회과학', '경제·경영'], cs: ['가까운 공학', '경영 정보 쪽'], eng: ['컴퓨터 쪽', '생명·환경 쪽 농학'], nurse: ['사회복지 같은 사회과학', '보건 교육 쪽'] };
+  // v0.6.14(피드백 240번 — 세부 전공 약 35개): 위 표에 없는 전공은 content.js C.MAJOR[id].near(가까운 전공 id)를 쓰고, 설명은 '○○과 가까운 분야'
+  const nearOf = (mj) => {
+    const ok2 = (L) => (Array.isArray(L) ? L.filter((x) => x !== mj && C.MAJOR[x]) : []);
+    let L = ok2(NEAR[mj]);
+    if (!L.length) L = ok2(C.MAJOR[mj] && C.MAJOR[mj].near).slice(0, 3);
+    if (!L.length) L = ok2(['hum', 'biz']);
+    return L;
+  };
+  const nearSub = (mj, x, i) => (NEAR[mj] && NEAR[mj][i] === x && NEAR_SUB[mj] ? NEAR_SUB[mj][i] || '' : `${U.j(mjKo(mj), '과')} 가까운 분야`);
   const dreamMj = (S) => (S.dream && C.DREAM[S.dream] ? C.DREAM[S.dream].major : null);
   const rtKo = (n) => (n <= 1 ? '재수' : n === 2 ? '삼수' : n === 3 ? '사수' : 'N수');
 
@@ -43933,9 +44132,10 @@ const Cg = {};
     const cg = Cg.ens(S), iso = isoOf(S), P = Cg.P(iso);
     const pl = Cg.place(S, iso);
     let tier = pl.tier;
-    if ((mj === 'med' || mj === 'law') && tier === 'jc') tier = 'reg'; // 의학·법학 합격은 4년제 이상
+    // 의학·법학처럼 문턱이 아주 높은 전공(치의학·약학·수의학 — 문턱 1.5 이상)과 6년제 과정은 전문대에 없다: 합격하면 4년제 이상
+    if ((mj === 'med' || mj === 'law' || (C.MAJOR[mj] && (C.MAJOR[mj].hard >= 1.5 || (C.MAJOR[mj].yrs || 0) >= 6))) && tier === 'jc') tier = 'reg';
     const abroad = cg.ab && !cg.ab.done && cg.ab.iso === iso;
-    const offer = !abroad && tier !== 'top' && !(S.edu.retries > 0) && !cg.rtN && P.rt > 0 && ageOf(S) < 25 && (P.rt >= 0.03 || pl.pUp >= 0.7);
+    const offer = !abroad && tier !== 'top' && !(S.edu.retries > 0) && !cg.rtN && !cg.adult && P.rt > 0 && ageOf(S) < 25 && (P.rt >= 0.03 || pl.pUp >= 0.7);
     if (offer) {
       E.ask(S, 'cg_admit', { mj, tier, pUp: Math.round(pl.pUp * 100) / 100 });
       return null;
@@ -44033,12 +44233,12 @@ const Cg = {};
     },
     choices: (S, ctx) => {
       const P = Cg.P(isoOf(S)), t = Cg.mfTyp(S, ctx), mj = ctx.mj;
-      const near = NEAR[mj] || ['hum', 'biz'], ns = NEAR_SUB[mj] || ['', ''];
+      const near = nearOf(mj);
       const n = ((S.cg && S.cg.rtN) || 0) + 1;
       const out = [];
       if (n <= 3) out.push({ label: `1년 더 준비해 다시 ${mjKo(mj)} 전공에 도전한다(${rtKo(n)})`, sub: `${rtCostTxt(S, P)} · 다시 붙을 가능성 약 ${pct(Cg.mjP(S, mj, n))}%`, typ: t === 'rt', run: (S2) => Cg.retakeStart(S2, { goal: 'mj', mj }) });
       if (P.half > 0 && n <= 3) out.push({ label: `${mjKo(near[0])} 전공에 다니며 다시 준비한다(반수)`, sub: '일단 등록하고 1학년을 다니며 다시 시험을 봅니다', typ: t === 'half', run: (S2) => Cg.enrollNear(S2, near[0], { half: { goal: 'mj', mj } }) });
-      near.forEach((x, i) => out.push({ label: `${mjKo(x)} 전공으로 간다`, sub: ns[i] || '', typ: (t === 'near' || n > 3) && i === 0, run: (S2) => Cg.enrollNear(S2, x) }));
+      near.forEach((x, i) => out.push({ label: `${mjKo(x)} 전공으로 간다`, sub: nearSub(mj, x, i), typ: (t === 'near' || n > 3) && i === 0, run: (S2) => Cg.enrollNear(S2, x) }));
       out.push({ label: '다른 전공을 고른다', sub: '전공 목록에서 다시 고릅니다', run: (S2) => { E.ask(S2, 'major', { excl: [mj] }); return null; } });
       out.push({ label: '대학 진학을 미루고 일을 시작한다', run: (S2) => { E.afterSchool(S2); return T(S2, '{N은} 대학 진학을 미루고 일자리를 알아보기로 했습니다.'); } });
       return out;
@@ -44051,17 +44251,28 @@ const Cg = {};
   };
 
   /* ---------------------------------------------------------------- 재수 */
+  /** 재수 시작. o.goal: 'tier' 더 높은 대학 · 'mj' 어려운 전공 · 'adm' 대학 낙방 뒤 다시(피드백 238번 — o.mode 'aca' 재수 학원 · 'self' 혼자 · 'work' 일하면서, o.adult 늦깎이) */
   Cg.retakeStart = (S, o) => {
     const cg = Cg.ens(S), P = Cg.P(isoOf(S));
     const n = (cg.rtN || 0) + 1;
-    const aca = S.fam.famP >= 0.3 || S.money > H.pay(S, P.rtCost);
+    const adm = o.goal === 'adm';
+    const mode = adm ? (o.mode || 'self') : (S.fam.famP >= 0.3 || S.money > H.pay(S, P.rtCost) ? 'aca' : 'self');
+    const aca = mode === 'aca';
     cg.rt = { goal: o.goal, mj: o.mj, prev: o.prev || null, n, iso: isoOf(S), due: nextDue(S), aca: aca ? 1 : 0 };
+    if (adm) { cg.rt.mode = mode; cg.rt.st = 0; if (o.adult) cg.rt.adult = 1; }
     S.edu.retryAt = cg.rt.due;
     S.edu.retryFor = 3;
-    S.work.seeking = false;
+    // 일하면서 준비하면 일자리를 구한다(이미 일하고 있으면 그대로)
+    S.work.seeking = mode === 'work' && !S.work.job && !S.work.retired && ageOf(S) >= 15;
     S.work.helping = false;
-    pay(S, H.pay(S, aca ? P.rtCost : P.rtCost * 0.2));
+    let quit = '';
+    if (mode !== 'work' && S.work.job) quit = Cg.quitFor(S);
+    pay(S, H.pay(S, P.rtCost * (RT_MODE[mode] || RT_MODE.self).cost));
     E.stat(S, 'happy', -4);
+    if (adm) {
+      const t = { aca: o.adult ? '입시 학원에 등록해 아침부터 밤까지 시험 준비에 매달립니다.' : '재수 학원에 등록해 아침부터 밤까지 학원과 독서실을 오갑니다.', self: '학원 대신 집과 도서관에서 혼자 공부합니다.', work: S.work.job ? '낮에는 일하고 밤에는 시험 공부를 합니다.' : '일자리를 구해 벌면서 저녁마다 시험 공부를 하기로 했습니다.' }[mode];
+      return T(S, `${quit}{N은} 1년 더 준비해 다시 대학 입시에 도전하기로 했습니다(${rtKo(n)}). ${t}`);
+    }
     const goal = o.goal === 'mj' ? `${mjKo(o.mj)} 전공` : '더 높은 대학';
     return T(S, aca ? `{N은} 1년 더 준비해 다시 ${goal}에 도전하기로 했습니다(${rtKo(n)}). 재수 학원에 등록해 아침부터 밤까지 학원과 독서실을 오갑니다.` : `{N은} 1년 더 준비해 다시 ${goal}에 도전하기로 했습니다(${rtKo(n)}). 학원비를 감당하기 어려워 혼자 공부합니다.`);
   };
@@ -44070,17 +44281,19 @@ const Cg = {};
     const cg = S.cg, rt = cg.rt, half = !!rt.half;
     delete cg.rt;
     if (!half) S.edu.retryAt = null;
-    const valid = half ? S.edu.stage === 3 : S.edu.stage === null && !S.mil && !S.prison && isoOf(S) === rt.iso && ageOf(S) < 32;
+    const adm = rt.goal === 'adm';
+    const valid = half ? S.edu.stage === 3 : S.edu.stage === null && !S.mil && !S.prison && isoOf(S) === rt.iso && (rt.adult || ageOf(S) < (adm ? 40 : 32));
     if (!valid) {
-      // 재수 중에 군에 갔으면 복무를 마친 뒤 대학으로(military.js 의 uniAfter)
-      if (!half && S.mil && typeof Ml !== 'undefined' && Ml && Ml.ensure) Ml.ensure(S).uniAfter = 1;
+      // 재수 중에 군에 갔으면 복무를 마친 뒤 대학으로(military.js 의 uniAfter) — 합격한 적이 없는 낙방 재수(adm)는 복무 뒤 일자리로
+      if (!half && !adm && S.mil && typeof Ml !== 'undefined' && Ml && Ml.ensure) Ml.ensure(S).uniAfter = 1;
       else if (!half && S.edu.stage === null && !S.mil && !S.prison) E.afterSchool(S);
       return;
     }
     cg.rtN = rt.n;
     if (half) cg.halfY = (cg.halfY || 0) + 1; else cg.rtY = (cg.rtY || 0) + 1;
-    cg.zb = (cg.zb || 0) + ([0.45, 0.2, 0.08][Math.min(3, rt.n) - 1] || 0.05) * (half ? 0.6 : rt.aca ? 1.1 : 0.85);
-    E.stat(S, 'smarts', half ? 1 : 3);
+    cg.zb = (cg.zb || 0) + ([0.45, 0.2, 0.08][Math.min(3, rt.n) - 1] || 0.05) * (half ? 0.6 : rt.aca ? 1.1 : rt.mode === 'work' ? 0.6 : 0.85);
+    E.stat(S, 'smarts', half || rt.mode === 'work' ? 1 : 3);
+    if (adm) { Cg.admDue(S, rt); return; }
     if (half && cg.gpa !== undefined) cg.gpa = clamp(cg.gpa - 0.12, 0.02, 0.99);
     const pl = Cg.place(S, isoOf(S), { fresh: true });
     let tier = pl.tier, mjOk = true;
@@ -44101,6 +44314,7 @@ const Cg = {};
   C.DEC.cg_retake = {
     title: (S, ctx) => (ctx.half ? '반수 결과' : `${rtKo(ctx.n)} 결과`),
     text: (S, ctx) => {
+      if (ctx.goal === 'adm') return Cg.admRtText(S, ctx);
       const tk = Cg.tierKo(S, ctx.tier);
       let t;
       if (ctx.goal === 'mj') t = ctx.mjOk ? `한 해를 더 준비한 끝에 ${tk} ${mjKo(ctx.mj)} 전공에 합격했습니다!` : `이번에도 ${mjKo(ctx.mj)} 전공에는 합격하지 못했습니다. ${tk}의 다른 학과에는 들어갈 수 있습니다.`;
@@ -44111,6 +44325,7 @@ const Cg = {};
       return T(S, t);
     },
     choices: (S, ctx) => {
+      if (ctx.goal === 'adm') return Cg.admRtChoices(S, ctx);
       const t = Cg.rtTyp(S, ctx), out = [], P = Cg.P(isoOf(S));
       const tk = Cg.tierKo(S, ctx.tier);
       if (ctx.half) {
@@ -44119,7 +44334,7 @@ const Cg = {};
         return out;
       }
       if (ctx.goal === 'mj' && !ctx.mjOk) {
-        const near = NEAR[ctx.mj] || ['hum', 'biz'];
+        const near = nearOf(ctx.mj);
         near.forEach((x, i) => out.push({ label: `${mjKo(x)} 전공으로 입학한다`, sub: `${tk}`, typ: t === 'near' && i === 0, run: (S2) => Cg.start(S2, x, ctx.tier, { zs: ctx.zs, fallback: true }) }));
       } else {
         out.push({ label: ctx.goal === 'mj' ? `${tk} ${mjKo(ctx.mj)} 전공에 입학한다` : `${tk}에 입학한다`, typ: t === 'go', run: (S2) => Cg.start(S2, ctx.goal === 'mj' ? ctx.mj : ctx.mj || 'hum', ctx.tier, { zs: ctx.zs }) });
@@ -44131,6 +44346,492 @@ const Cg = {};
       if (!out.some((c) => c.typ)) out[0].typ = true;
       return out;
     },
+  };
+
+  /* ================================================================ 낙방 뒤 길(피드백 238번)
+   * 대학에 떨어지면(고교 졸업 결정 nextStage · 재수 결과 cg_retake · 예전 '1년 뒤 다시 도전'의 결과 retryResult · 늦깎이 입시) 같은 갈래를 고른다:
+   *   재수 학원 · 혼자 공부 · 일하면서 준비(한 해 뒤 새 시험) · 문턱이 낮은 학교(전문대·커뮤니티 칼리지 등 나라 이름) · 야간·원격 대학(일과 함께) · 군 복무 · 일.
+   * 다시 보는 시험은 해마다 새로 본다(engine.js E.freshExam — 예전에는 지난해 결과가 따라다녀 시험을 보지 않은 사람은 늘 떨어졌음).
+   *   잘 볼 가능성 = 고교 때 시험과 같은 식 + 준비 방법(학원 +10%p·혼자 +4%p·일하며 −4%p) + 재수 경험 + 공부하기 횟수(4번에 약 +7%p, 많아도 +12%p 안쪽),
+   *   붙을 가능성의 기울기에 재수 가산(재수 +0.35·삼수 +0.18·사수 +0.08)·준비 방법(학원 +0.15·일하며 −0.3)·늦깎이 전형(25세 이상 +0.5)을 더한다(모두 근삿값).
+   * 보통 선택은 나라별 재수 비율(P.rt — 한국은 수능 응시자의 약 35%가 N수생, 일본 로닌 약 12~15% 근삿값)과 전문대 비율(P.jc)에 맞춘다.
+   * 이 길로 다시 들어가는 몫만큼 첫 입시 가능성을 덜어(Cg.admAdj) 나라 대학 졸업률(Wd.schooling)은 그대로 둔다. */
+  // b: 잘 볼 가능성에 더함 · lb: 붙을 가능성의 기울기에 더함(학원은 체계적인 준비, 일하면서는 공부 시간이 모자람 — 근삿값) · cost: 학원비·생활비(P.rtCost 달 치)의 몇 배
+  const RT_MODE = { aca: { b: 0.1, lb: 0.15, cost: 1 }, self: { b: 0.04, lb: 0, cost: 0.2 }, work: { b: -0.04, lb: -0.3, cost: 0 } };
+  const RT_LB = [0, 0.35, 0.18, 0.08];
+  Cg.rtLb = (n) => (n >= 4 ? 0.05 : RT_LB[n] || 0);
+  /** 공부하기 횟수가 잘 볼 가능성에 더하는 몫 */
+  Cg.stB = (st) => 0.12 * (1 - Math.exp(-(st || 0) / 4));
+  Cg.rtExB = (mode, n, st) => (RT_MODE[mode] || RT_MODE.self).b + (n <= 1 ? 0.04 : 0.02) + Cg.stB(st);
+  /** 늦깎이(성인 학습자·만학도) 전형: 일하는 어른을 따로 뽑는 몫(근삿값) */
+  Cg.adultLb = (S) => (ageOf(S) >= 25 ? 0.5 : ageOf(S) >= 21 ? 0.2 : 0);
+  /** 다시 준비해 대학에 붙을 가능성(새 시험의 기댓값) */
+  Cg.rtLbM = (mode, n) => Cg.rtLb(n) + ((RT_MODE[mode] || RT_MODE.self).lb || 0);
+  Cg.rtAdmP = (S, mode, n, st = 0, adult = 0) => E.retryP(S, 3, Cg.rtExB(mode, n, st), Cg.rtLbM(mode, n) + (adult ? Cg.adultLb(S) : 0));
+  /** 재수 중이면 '재수 중 · 시험까지 n달 · 지금 가능성 약 n%'(상태 줄·이력 카드·공부하기 설명) */
+  Cg.rtNow = (S) => {
+    const rt = S && S.cg && S.cg.rt;
+    if (!rt || rt.half || S.edu.stage !== null) return '';
+    const left = rt.due - S.ageM;
+    const m = `${rtKo(rt.n)} 중 · ${left > 0 ? `시험까지 ${left}달` : '이번 달 시험'}`;
+    if (rt.goal === 'adm') return `${m} · 지금 가능성 약 ${pct(Cg.rtAdmP(S, rt.mode, rt.n, rt.st, rt.adult))}%`;
+    if (rt.goal === 'mj' && C.MAJOR[rt.mj]) return `${m} · ${mjKo(rt.mj)} 전공 가능성 약 ${pct(Cg.mjP(S, rt.mj, rt.n))}%`;
+    return m;
+  };
+  // 나라별 대학 입학시험 이름·시험 철(달력의 달 — 지원·시험이 몰리는 때, 근삿값)·원격 대학 이름
+  const EXAM_KO = { KOR: '수능', JPN: '대학입학공통테스트', CHN: '가오카오(高考)', TWN: '대학 학력 시험', USA: 'SAT·대학 지원', CAN: '대학 지원', GBR: 'A레벨·대학 지원', FRA: '바칼로레아', DEU: '아비투어', IND: '대학 입학시험(JEE·NEET·CUET)', IRN: '콩쿠르(대학 입학시험)', TUR: '대학 입학시험(YKS)', BRA: '대학 입학시험(ENEM)', RUS: '통합 국가시험(EGE)', VNM: '고교 졸업·대학 입학시험', IDN: '대학 입학시험(UTBK)', NGA: '대학 입학시험(UTME)', EGY: '고교 졸업시험(사나위야 암마)' };
+  Cg.examKo = (iso) => EXAM_KO[iso] || '대학 입학시험';
+  const EX_MON = { KOR: [10, 11, 12], JPN: [12, 1, 2], CHN: [5, 6], TWN: [12, 1, 2], USA: [10, 11, 12, 1], CAN: [11, 12, 1, 2], GBR: [10, 11, 12, 1], IND: [4, 5, 6], IRN: [5, 6, 7], TUR: [5, 6], BRA: [10, 11], RUS: [5, 6], VNM: [6, 7], IDN: [4, 5], NGA: [3, 4, 5], AUS: [9, 10, 11], NZL: [10, 11], ZAF: [9, 10, 11] };
+  Cg.exSeason = (iso) => EX_MON[iso] || [5, 6, 7];
+  const REM_KO = { KOR: '방송통신대·사이버대', JPN: '방송대학·통신제 대학', CHN: '개방대학(성인 대상 원격 과정)', TWN: '공중대학(원격 대학)', USA: '온라인 학위 과정', CAN: '온라인 학위 과정', AUS: '온라인 학위 과정', GBR: '오픈 유니버시티', IND: 'IGNOU 같은 개방 대학', PAK: '알라마 이크발 개방 대학', BGD: '방글라데시 개방 대학', IDN: '테르부카 개방 대학', THA: '수코타이 개방 대학', TUR: '아나돌루 대학 원격 과정', DEU: '하겐 원격 대학', ESP: 'UNED 원격 대학', FRA: '원격 학위 과정(CNED 등)', NGA: '나이지리아 국립 개방 대학', ZAF: 'UNISA 원격 과정', IRN: '파얌 누르 대학' };
+  Cg.remKo = (iso) => REM_KO[iso] || '원격 대학(개방 대학)';
+  const yrsKo = (d) => (d % 1 ? `${Math.floor(d)}~${Math.ceil(d)}` : `${Math.round(d)}`);
+  /** '전문대나' · '커뮤니티 칼리지나'(괄호 앞 낱말로 받침을 본다) */
+  const jn = (w) => { const core = String(w).replace(/\s*\([^)]*\)$/, ''); return w + (U.hasBatchim(core) ? '이나' : '나'); };
+  const eduUp = () => (C.EDU_PAY ? Math.round(100 * (C.EDU_PAY[4] / C.EDU_PAY[3] - 1)) : 18);
+  /** 학교에 가려고 일을 그만둔다(그만둔 줄은 E.loseJob 이 남긴다 — 아쉬움(행복 −10)은 새 출발로 덜어 −2) */
+  Cg.quitFor = (S) => { if (!S.work.job) return ''; E.loseJob(S, 'quit'); E.stat(S, 'happy', 8); S.work.seeking = false; return ''; };
+  /** 낙방 뒤 갈래를 보여도 되는가: 북한(추천제)·아프가니스탄 여성 금지·출신 성분/호적으로 막힌 해는 regime.js 의 길 그대로(adult: 늦깎이 입시는 성분·호적 표시를 보지 않음) */
+  Cg.afOK = (S, adult) => ok(S) && S.born.iso !== 'PRK' && isoOf(S) !== 'PRK' && (adult || !(S.rg && (S.rg.uniVeto || S.rg.hkVeto))) && !(typeof Rg !== 'undefined' && Rg && typeof Rg.afgBan === 'function' && Rg.afgBan(S, 3));
+  // 보통 선택의 몫(근삿값): 재수 = 재수 비율(P.rt) × 1.0(한국 약 20%·일본 12%·중국 8%·인도 6%·미국 1% 안쪽) × 형편(0.6~1.4) × 나이·횟수,
+  //   (재수생의 나머지 몫은 붙고도 더 높은 대학을 노리는 재수 — cg_admit 이 맡는다. 둘을 합해 신입생 가운데 재수생 몫이 P.rt 에 가깝게)
+  // 문턱이 낮은 학교 = 전문대 비율(P.jc) × 0.3, 야간·원격 대학 = 저·중하·중상·고소득국 1%·1.5%·3%·4%
+  Cg.AF_RT = 1.0; Cg.AF_JC = 0.3; Cg.AF_NT = [0.01, 0.015, 0.03, 0.04];
+  const afRt = (P, fp, a, n) => (n > 4 ? 0 : clamp(P.rt * Cg.AF_RT, 0, 0.6) * (0.6 + 0.8 * fp) * (a >= 21 ? 0.5 : 1) * (n >= 2 ? 0.55 : 1) * (n >= 3 ? 0.5 : 1));
+  const afJc = (P, o = {}) => (P.jc > 0.005 && !o.noJc ? clamp(P.jc * Cg.AF_JC, 0, 0.3) : 0);
+  /** 보통 선택: 'aca'·'self'·'work'(다시 준비) · 'jc'(문턱이 낮은 학교) · 'nt'(야간·원격 대학) · null(원래 보통 선택 — 일·군 복무 등) */
+  Cg.afTyp = (S, o = {}) => {
+    const n = o.n || 1;
+    if (o.adult) return S.work.job && h01(S, 'afA' + n) < 0.35 ? 'work' : null;
+    const P = Cg.P(isoOf(S)), fp = S.fam.famP;
+    const rt = afRt(P, fp, ageOf(S), n), jc = afJc(P, o), nt = Cg.AF_NT[Wd.dev(isoOf(S))] || 0;
+    const h = h01(S, 'af' + n);
+    if (h < rt) {
+      const m = h01(S, 'afm' + n);
+      if (fp < 0.3 && !(S.money > H.pay(S, P.rtCost))) return m < 0.5 ? 'work' : 'self';
+      return m < 0.6 ? 'aca' : m < 0.85 ? 'self' : 'work';
+    }
+    if (h < rt + jc) return 'jc';
+    if (h < rt + jc + nt) return 'nt';
+    return null;
+  };
+  /** 첫 입시에서 덜어 낼 몫(입학 가능성의 기울기): 낙방한 사람 가운데 보통 선택으로 재수·문턱이 낮은 학교·야간·원격 대학에 가는 몫 × K_AF.
+   *  다시 들어가는 몫 ÷ 첫 입학 가능성이 기울기로 덜 몫이 되므로(재수해 붙는 몫 약 85~95% 등을 모두 넣어 맞춘 값 — 점검 v0614a_comp2: 한국·일본·미국·인도·나이지리아
+   *  35세 대학 졸업 비율이 바꾸기 전과 오차 안) */
+  Cg.K_AF = 1.2;
+  Cg.afX = (iso) => { const P = Cg.P(iso), dv = DATA.c[iso] ? Wd.dev(iso) : 2; return clamp(Cg.K_AF * (afRt(P, 0.45, 18, 1) + afJc(P) + (Cg.AF_NT[dv] || 0)), 0, 1); };
+  /** 첫 입시인가(재수·예전 재도전·늦깎이 입시가 아님) */
+  Cg.first = (S) => !(S.edu.retries > 0) && !(S.cg && (S.cg.rtN || S.cg.rt || S.cg.adult || S.cg.exN));
+  Cg.admAdj = (S, k, p) => (k !== 3 || !Cg.afOK(S) || !Cg.first(S) ? p : U.shiftP(p, -Cg.afX(isoOf(S))));
+  // 커뮤니티 칼리지는 고교 졸업이면 거의 누구나 들어간다(open admission). 다른 나라 전문대는 4년제보다 문턱이 크게 낮다(근삿값)
+  const OPEN_JC = new Set(['USA', 'CAN']);
+  Cg.jcAdmP = (S) => (OPEN_JC.has(isoOf(S)) ? 0.97 : clamp(U.shiftP(E.admP(S, 3, 'none'), 1.6), 0.4, 0.97));
+  /** 낙방 뒤 갈래(o.n 몇 번째 준비 · o.t 보통 선택 · o.adult 늦깎이 · o.noJc 전문대에도 떨어짐) */
+  Cg.afChoices = (S, o = {}) => {
+    const P = Cg.P(isoOf(S)), n = o.n || 1, t = o.t, out = [];
+    const quitTxt = S.work.job ? ' · 지금 하는 일은 그만둡니다' : '';
+    if (n <= 4) {
+      const cost = H.pay(S, P.rtCost);
+      const canAca = S.fam.famP >= 0.3 || S.money > cost || (S.indep && Ec.liquid(S) > cost);
+      out.push({ _af: 'aca', label: n > 1 ? `학원에 다니며 한 번 더 준비한다(${rtKo(n)})` : o.adult ? '입시 학원에 다니며 다시 준비한다' : '재수 학원에 다니며 다시 준비한다', disabled: !canAca,
+        sub: canAca ? `1년 · ${rtCostTxt(S, P)} · 다시 붙을 가능성 약 ${pct(Cg.rtAdmP(S, 'aca', n, 0, o.adult))}%${quitTxt}` : `학원비를 마련하기 어렵습니다(약 ${H.amt(S, P.rtCost)})`,
+        typ: t === 'aca' && canAca, run: (S2) => Cg.retakeStart(S2, { goal: 'adm', mode: 'aca', adult: o.adult ? 1 : 0 }) });
+      out.push({ _af: 'self', label: n <= 1 ? '혼자 공부하며 다시 준비한다' : `혼자 공부하며 한 번 더 준비한다(${rtKo(n)})`,
+        sub: `1년 · 책·인터넷 강의 약 ${H.amt(S, P.rtCost * RT_MODE.self.cost)} · 가능성 약 ${pct(Cg.rtAdmP(S, 'self', n, 0, o.adult))}%${quitTxt}`,
+        typ: t === 'self' || (t === 'aca' && !canAca), run: (S2) => Cg.retakeStart(S2, { goal: 'adm', mode: 'self', adult: o.adult ? 1 : 0 }) });
+      out.push({ _af: 'work', label: n <= 1 ? '일하면서 다시 준비한다' : `일하면서 한 번 더 준비한다(${rtKo(n)})`,
+        sub: `1년 · 벌면서 저녁에 공부 · 가능성 약 ${pct(Cg.rtAdmP(S, 'work', n, 0, o.adult))}%`,
+        typ: t === 'work', run: (S2) => Cg.retakeStart(S2, { goal: 'adm', mode: 'work', adult: o.adult ? 1 : 0 }) });
+    }
+    if (afJc(P, o) > 0) {
+      out.push({ _af: 'jc', label: `${Cg.jcShort(S)}에 들어간다`, sub: `문턱이 낮은 ${yrsKo(P.jcDur)}년 과정 · 붙을 가능성 약 ${pct(Cg.jcAdmP(S))}% · 졸업 뒤 4년제 편입 길${P.xfer >= 0.05 ? `(약 ${pct(P.xfer)}%)` : ''}${quitTxt}`,
+        typ: t === 'jc', run: (S2) => Cg.jcGo(S2, o) });
+    }
+    out.push({ _af: 'nt', label: '일하면서 야간·원격 대학에 다닌다', sub: `${Cg.remKo(isoOf(S))}·야간 과정 등 · 졸업하면 대학 학력`, typ: t === 'nt',
+      run: (S2) => { E.ask(S2, 'cg_night', { from: 'af', adult: o.adult ? 1 : 0 }); return null; } });
+    return out;
+  };
+  /** 낙방 뒤 갈래 + 군 복무 + 그만두기(재수 결과·예전 재도전 결과·늦깎이 입시·전문대 낙방) */
+  Cg.afFull = (S, o = {}) => {
+    const t = o.t !== undefined ? o.t : Cg.afTyp(S, o);
+    const out = Cg.afChoices(S, { ...o, t });
+    if (!o.adult && !S.mil && E.needsService(S) && !S.flags.served) out.push({ label: '먼저 군 복무를 한다', sub: '복무 뒤 진로를 정합니다', run: (S2) => { C.callUp(S2); return null; } });
+    out.push(o.adult || S.work.job
+      ? { label: '대학은 접어 두고 지금처럼 지낸다', run: (S2) => T(S2, '{N은} 대학은 접어 두고 하던 대로 지내기로 했습니다.') }
+      : { label: '대학을 포기하고 일을 시작한다', run: (S2) => { E.afterSchool(S2); return T(S2, '{N은} 대학을 접고 일자리를 알아보기로 했습니다.'); } });
+    if (!out.some((c) => c.typ && !c.disabled)) out[out.length - 1].typ = true;
+    return out;
+  };
+  C.DEC.cg_af = {
+    title: (S, ctx) => (ctx.adult ? `${Cg.examKo(isoOf(S))} 불합격` : '대학 불합격'),
+    text: (S, ctx) => {
+      const P = Cg.P(isoOf(S));
+      const lead = ctx.why === 'jc' ? `${Cg.jcShort(S)}에도 자리가 나지 않았습니다.` : ctx.adult ? '이번 입시에서는 대학에 들어가지 못했습니다.' : '이번에도 대학에 들어가지 못했습니다.';
+      const alt = afJc(P, ctx) > 0 ? `${jn(Cg.jcShort(S))} ` : '';
+      const share = !ctx.adult && P.rt >= 0.03 ? ` {country}에서는 대학 신입생의 약 ${pct(P.rt)}%가 재수를 거쳐 들어갑니다(근삿값).` : '';
+      return T(S, `${lead} 한 해 더 준비해 새 시험을 보거나, ${alt}야간·원격 대학으로 길을 바꿀 수 있습니다.${share}`);
+    },
+    choices: (S, ctx) => Cg.afFull(S, ctx),
+  };
+  /** 문턱이 낮은 학교(전문대·커뮤니티 칼리지)에 지원한다 */
+  Cg.jcGo = (S, o = {}) => {
+    if (!U.chance(Cg.jcAdmP(S))) {
+      E.stat(S, 'happy', -3);
+      E.ask(S, 'cg_af', { n: o.n || 1, noJc: 1, adult: o.adult ? 1 : 0, why: 'jc' });
+      return T(S, `${Cg.jcShort(S)} 입학 전형에도 떨어졌습니다.`);
+    }
+    Cg.quitFor(S);
+    S.work.seeking = false;
+    S.work.helping = false;
+    E.ask(S, 'major', { jc: 1, only: Cg.mjOnly(S, { jc: 1 }) });
+    return T(S, `{N은} ${Cg.jcShort(S)} 입학 허가를 받았습니다. 이제 전공을 고릅니다.`);
+  };
+  /** 낙방 재수의 결과: 새 시험을 보고 붙었는지 정한다 */
+  Cg.admDue = (S, rt) => {
+    const tag = E.freshExam(S, Cg.rtExB(rt.mode, rt.n, rt.st));
+    const pass = U.chance(E.admP(S, 3, tag, Cg.rtLbM(rt.mode, rt.n) + (rt.adult ? Cg.adultLb(S) : 0)));
+    E.ask(S, 'cg_retake', { n: rt.n, goal: 'adm', ok: pass ? 1 : 0, tag, mode: rt.mode, adult: rt.adult ? 1 : 0 });
+  };
+  Cg.admRtText = (S, ctx) => {
+    const ex = Cg.examKo(isoOf(S));
+    if (ctx.ok) return T(S, ctx.tag === 'good' ? `${jo(ex, '을')} 잘 봤습니다. 한 해를 더 준비한 끝에 대학 입학 허가를 받았습니다!` : `${jo(ex, '은')} 기대만큼 나오지 않았지만, 한 해를 더 준비한 끝에 대학 입학 허가를 받았습니다!`);
+    const t = ctx.tag === 'good' ? `${ex} 점수는 올랐지만 조금 모자라 이번에도 대학에 들어가지 못했습니다.` : `${ex} 날 긴장한 탓에 실력을 다 보여 주지 못했습니다. 이번에도 대학에 들어가지 못했습니다.`;
+    return T(S, `${t}${ctx.n >= 2 ? ' 해가 갈수록 다시 준비하기가 힘에 부칩니다.' : ''}`);
+  };
+  Cg.admRtChoices = (S, ctx) => {
+    if (!ctx.ok) return Cg.afFull(S, { n: ctx.n + 1, adult: ctx.adult });
+    const j = S.work.job;
+    return [
+      { label: '대학에 진학한다', sub: j ? (ctx.adult ? '일을 어떻게 할지 정합니다' : `전공을 고릅니다 · 지금 하는 ${j.title} 일은 그만둡니다`) : '전공을 고릅니다', typ: true,
+        run: (S2) => {
+          if (ctx.adult && S2.work.job) { E.ask(S2, 'cg_adultIn', {}); return null; }
+          if (ctx.adult) Cg.ens(S2).adult = Math.floor(ageOf(S2));
+          Cg.quitFor(S2);
+          S2.work.seeking = false;
+          S2.work.helping = false;
+          E.ask(S2, 'major', {});
+          return null;
+        } },
+      { label: '대학에 가지 않고 일을 시작한다', run: (S2) => { if (!S2.work.job) E.afterSchool(S2); return T(S2, '{N은} 합격했지만 대학 대신 일을 하기로 했습니다.'); } },
+    ];
+  };
+
+  /* ================================================================ 야간·원격 대학(피드백 240번)
+   * 학교 단계 S.cg.nt = { k: 'reg' 4년제 야간·주말 과정 · 'jc' 전문대 야간 과정 · 'rem' 원격 대학, mj 전공, y0 시작 학년, yr 처리한 학년, dur 햇수,
+   *   m0 1학년이 시작된 달(쉬어 간 만큼 늦춤), due 졸업 달, s 등록한 달, iso, st 이번 학년의 공부하기 횟수, cont 예전 학년을 이어서, tier 이어 다닐 때의 서열 }.
+   * 낮에는 일하므로 학교 단계(S.edu.stage)는 비워 두고(일·구직이 그대로 돌아감), 해가 바뀔 때마다(등록한 달 기준) 학비·학점(일과 함께라 조금 낮음)·
+   * 힘든 해의 고민(보통 선택은 과정별 중도 포기 몫 근삿값)을 처리한다. 졸업은 정해진 달에 바로(달마다 확인) — 학력·전공·서열을 다른 졸업생과 똑같이 쓴다.
+   * 군 복무·수감 중에는 쉬어 가고(졸업이 그만큼 늦어짐), 나라를 옮기면 원격 대학만 이어진다. 다니는 동안 스트레스 목표 +4.
+   * 예전 저장의 S.flags.nightUntil(4년 뒤 생일에 졸업하던 표시)은 Cg.ntConv 가 4년제 야간 과정으로 옮긴다. */
+  const NT_FEE = { reg: 1.5, jc: 1.0, rem: 0.5 }; // 한 해 학비(그 나라 보통 일꾼 몇 달 치 — 한국 사이버대 한 해 약 300만 원대·방송대 약 80만 원 등 근삿값). 저·중하소득국 ×1.5
+  const NT_HARD = { reg: [0.25, 0.35], jc: [0.25, 0.3], rem: [0.4, 0.5] }; // [해마다 힘든 해 고민이 나올 몫, 그때 그만두는 보통 선택 몫] → 마치는 사람 약 75%·85%·50%(근삿값)
+  const jcYOf = (S) => { const P = Cg.P(isoOf(S)); return P.jcDur % 1 > 0 ? Math.floor(P.jcDur) + (h01(S, 'jcY') < P.jcDur % 1 ? 1 : 0) : Math.round(P.jcDur); };
+  Cg.ntDur = (S, k) => (k === 'jc' ? jcYOf(S) : Wd.schooling(isoOf(S), S.sex).durs[3] || 4);
+  Cg.ntKo = (S, k) => (k === 'rem' ? Cg.remKo(isoOf(S)) : k === 'jc' ? `${Cg.jcShort(S)} 야간 과정` : `${Cg.tierKo(S, 'reg')} 야간·주말 과정`);
+  const ntShort = (S, k) => (k === 'rem' ? '원격 대학' : k === 'jc' ? `${Cg.jcShort(S)} 야간 과정` : '야간 대학');
+  Cg.ntY = (S) => { const nt = S.cg && S.cg.nt; return nt ? clamp(Math.floor((S.ageM - nt.m0) / 12) + 1, 1, nt.dur) : 0; };
+  Cg.ntFee = (S, k) => NT_FEE[k] * (Wd.dev(isoOf(S)) <= 1 ? 1.5 : 1);
+  /** 입학 가능성: 원격 대학은 누구나, 전문대 야간은 대개, 4년제 야간·주말은 늦깎이 몫을 더해(근삿값) */
+  Cg.ntAdmP = (S, k) => (k === 'rem' ? 1 : k === 'jc' ? clamp(0.6 + E.smEq(S) / 250, 0.6, 0.97) : clamp(0.35 + E.smEq(S) / 200 + (ageOf(S) >= 25 ? 0.1 : 0), 0.3, 0.92));
+  Cg.ntKinds = (S) => ['reg', Cg.P(isoOf(S)).jc > 0.005 ? 'jc' : null, 'rem'].filter(Boolean);
+  /** 보통 선택: 중상·고소득국은 원격 대학이 가장 흔하고, 그 밖은 야간 과정 */
+  Cg.ntTyp = (S) => {
+    const h = h01(S, 'ntk'), jc = Cg.P(isoOf(S)).jc > 0.005;
+    if (Wd.dev(isoOf(S)) >= 2) return h < 0.5 ? 'rem' : h < 0.78 || !jc ? 'reg' : 'jc';
+    return h < 0.55 ? 'reg' : h < 0.8 || !jc ? 'rem' : 'jc';
+  };
+  // 야간·원격 과정·전문대에 없는 전공: 6년제(의학·치의학·약학·수의학)와 정원이 엄격한 전공, 전문대는 법학과 학문 계열도
+  const JC_ACAD = ['math', 'phys', 'chem', 'bio', 'hum', 'soc', 'psy', 'law', 'pub', 'theo', 'edu', 'peed'];
+  Cg.mjNo = (S, id, ctx = {}) => {
+    const m = C.MAJOR[id];
+    if (!m) return null;
+    const long = id === 'med' || (m.yrs || 0) >= 6 || (m.hard || 0) >= 2;
+    if (ctx.night && ctx.night !== 'jc' && long) return '야간·원격 과정에는 없는 전공입니다';
+    if ((ctx.night === 'jc' || ctx.jc) && (long || (m.hard || 0) >= 1.5 || JC_ACAD.includes(id))) return `${Cg.jcShort(S)}에는 없는 전공입니다`;
+    return null;
+  };
+  Cg.mjOnly = (S, ctx) => Object.keys(C.MAJOR).filter((id) => !Cg.mjNo(S, id, ctx));
+  /** 할 일 '야간·원격 대학 다니기'를 할 수 있나(actions.js 가 부른다) */
+  Cg.ntWhy = (S) => {
+    if (!ok(S)) return '지금은 다닐 수 없습니다';
+    const cg = S.cg || {};
+    if (cg.nt) return T(S, `${ntShort(S, cg.nt.k)} ${Cg.ntY(S)}학년 재학 중(${mjKo(cg.nt.mj)}) · 졸업까지 ${Math.max(0, cg.nt.due - S.ageM)}달`);
+    if (S.edu.level >= 4) return '이미 대학을 졸업했습니다';
+    if (S.edu.level < 3) return '고등학교를 마친 뒤(검정고시 포함) 다닐 수 있습니다';
+    if (S.edu.stage !== null) return '지금 다니는 학교를 마친 뒤에 다닐 수 있습니다';
+    if (cg.rt && !cg.rt.half) return '재수 중입니다';
+    if (cg.wh || cg.lv || cg.prep || (cg.ab && !cg.ab.done)) return '지금은 다닐 수 없습니다';
+    return true;
+  };
+  Cg.ntAsk = (S) => { E.ask(S, 'cg_night', {}); return null; };
+  C.DEC.cg_night = {
+    title: () => '야간·원격 대학',
+    text: (S) => T(S, '낮에는 일하고 저녁과 주말에 공부해 학위를 받는 길입니다. 졸업하면 다른 대학 졸업생과 똑같이 대학 학력과 전공으로 일자리를 찾을 수 있습니다. 일과 함께 하느라 학점은 조금 낮게 나오기 쉽고, 스트레스가 쌓입니다.'),
+    choices: (S, ctx) => {
+      const t = Cg.ntTyp(S), out = [];
+      for (const k of Cg.ntKinds(S)) {
+        const dur = Cg.ntDur(S, k), p = Cg.ntAdmP(S, k);
+        const bits = [`${dur}년`, `학비 한 해 약 ${H.amt(S, Cg.ntFee(S, k))}`, k === 'rem' ? '누구나 입학 · 혼자 공부하는 시간이 길어 마치는 사람은 절반쯤(근삿값)' : `입학 가능성 약 ${pct(p)}%`];
+        out.push({ label: Cg.ntKo(S, k), sub: bits.join(' · '), typ: t === k, run: (S2) => Cg.ntPick(S2, k, ctx) });
+      }
+      if (!out.some((c) => c.typ)) out[0].typ = true;
+      out.push(ctx.from === 'af'
+        ? { label: '그만두고 일자리를 알아본다', run: (S2) => { E.afterSchool(S2); return T(S2, '{N은} 일자리를 먼저 알아보기로 했습니다.'); } }
+        : { label: '다음에 한다', cancel: true, run: (S2) => T(S2, '{N은} 야간·원격 대학은 다음에 다시 생각해 보기로 했습니다.') });
+      return out;
+    },
+  };
+  /** 학교 종류를 골랐다: 입학 전형 → (예전 전공이 있으면 이어서 다닐지) → 전공 */
+  Cg.ntPick = (S, k, ctx = {}) => {
+    const p = Cg.ntAdmP(S, k);
+    if (p < 1 && !U.chance(p)) {
+      E.stat(S, 'happy', -3);
+      if (ctx.from === 'af') E.afterSchool(S);
+      return T(S, `${Cg.ntKo(S, k)} 입학 전형에 떨어졌습니다. 다음 해에 다시 지원할 수 있습니다.`);
+    }
+    if (Cg.dropInfo(S)) { E.ask(S, 'cg_ntCont', { k }); return null; }
+    E.ask(S, 'major', { night: k, only: Cg.mjOnly(S, { night: k }) });
+    return null;
+  };
+  /** 예전에 다니다 그만둔 대학(전공·학년) */
+  Cg.dropInfo = (S) => {
+    const cg = S.cg || {};
+    if (S.edu.level !== 3) return null;
+    const d = cg.ntDrop && C.MAJOR[cg.ntDrop.mj] ? cg.ntDrop : null;
+    if (d) return { mj: d.mj, y: d.y || 1, tier: d.tier || (d.k === 'jc' ? 'jc' : 'reg'), where: Cg.ntKo(S, d.k) };
+    if (cg.drop && C.MAJOR[cg.drop.mj]) return { mj: cg.drop.mj, y: cg.drop.y || 1, tier: cg.drop.tier || 'reg', where: Cg.tierKo(S, cg.drop.tier || 'reg', true) };
+    if (S.edu.major && C.MAJOR[S.edu.major] && cg.entM !== undefined) {
+      // 기록이 없는 예전 저장: 학교에 다닌 햇수로 어림한다
+      const sch = Wd.schooling(isoOf(S), S.sex), pre = sch.durs[0] + sch.durs[1] + sch.durs[2];
+      return { mj: S.edu.major, y: clamp((S.edu.yrs || 0) - pre + 1, 1, 6), tier: S.edu.tier || 'reg', where: Cg.tierKo(S, S.edu.tier || 'reg', true) };
+    }
+    return null;
+  };
+  C.DEC.cg_ntCont = {
+    title: () => '예전 전공을 이어서 다닐까요?',
+    text: (S) => {
+      const d = Cg.dropInfo(S) || { mj: 'biz', y: 1, where: '대학' };
+      const done = Math.max(0, d.y - 1);
+      return T(S, `예전에 ${d.where}에서 ${U.j(mjKo(d.mj), '을')} ${done > 0 ? `${done}학년까지 마치고` : '1학년 때'} 그만두었습니다. 들었던 과목을 인정받으면 남은 학년만 다니면 됩니다.`);
+    },
+    choices: (S, ctx) => {
+      const d = Cg.dropInfo(S) || { mj: 'biz', y: 1 }, dur = Cg.ntDur(S, ctx.k);
+      const y0 = clamp(d.y, 1, dur), no = Cg.mjNo(S, d.mj, { night: ctx.k });
+      return [
+        { label: `이어서 다닌다(남은 ${dur - y0 + 1}년)`, sub: no || `${mjKo(d.mj)} 전공 · ${y0}학년부터`, disabled: !!no, typ: !no,
+          run: (S2) => Cg.ntStart(S2, d.mj, ctx.k, { y0, cont: 1, tier: d.tier }) },
+        { label: '새 전공으로 처음부터 다닌다', sub: '전공을 다시 고릅니다', typ: !!no, run: (S2) => { E.ask(S2, 'major', { night: ctx.k, only: Cg.mjOnly(S2, { night: ctx.k }) }); return null; } },
+      ];
+    },
+  };
+  /** 야간·원격 대학에 등록한다 */
+  Cg.ntStart = (S, mj, k, o = {}) => {
+    const cg = Cg.ens(S), dur = Cg.ntDur(S, k), y0 = clamp(o.y0 || 1, 1, dur);
+    cg.nt = { k, mj, y0, yr: y0, dur, m0: S.ageM - (y0 - 1) * 12, due: S.ageM + (dur - y0 + 1) * 12, s: S.ageM, iso: isoOf(S), st: 0 };
+    if (o.cont) { cg.nt.cont = 1; if (o.tier) cg.nt.tier = o.tier; }
+    delete cg.ntDrop;
+    delete cg.drop;
+    if (!o.cont || cg.gpa === undefined) cg.gpa = clamp(U.phi(0.45 * Cg.zOf(S) - 0.3 + 0.9 * U.gauss()), 0.02, 0.99);
+    cg.ntN = (cg.ntN || 0) + 1;
+    pay(S, H.pay(S, Cg.ntFee(S, k)));
+    if (!S.work.job && !S.work.retired && !S.mil && ageOf(S) >= 15) { S.work.seeking = true; S.work.helping = false; }
+    E.stat(S, 'happy', -2);
+    return T(S, `{N은} ${Cg.ntKo(S, k)}에 ${y0 > 1 ? `${y0}학년으로 ` : ''}등록했습니다(${mjKo(mj)} 전공 · ${dur - y0 + 1}년). ${S.work.job ? '낮에는 일하고 저녁과 주말에 강의를 듣습니다.' : '일자리를 알아보면서 저녁과 주말에 강의를 듣습니다.'}`);
+  };
+  /** 해가 바뀔 때(등록한 달 기준): 학비·학점·힘든 해 */
+  Cg.ntYear = (S) => {
+    const cg = S.cg, nt = cg.nt;
+    const f = C.focusEffect ? C.focusEffect(S) : {};
+    const tgt = U.phi(0.45 * Cg.zOf(S) - 0.3 + Math.min(0.45, 0.08 * (nt.st || 0)) + ((f.smarts || 0) > 0 ? 0.2 : 0) + 0.9 * U.gauss());
+    cg.gpa = clamp(0.75 * (cg.gpa !== undefined ? cg.gpa : 0.4) + 0.25 * tgt, 0.02, 0.99);
+    nt.st = 0;
+    pay(S, H.pay(S, Cg.ntFee(S, nt.k)));
+    E.stat(S, 'smarts', 1);
+    if (!S.queue.length && U.chance((NT_HARD[nt.k] || NT_HARD.reg)[0])) E.ask(S, 'cg_ntHard', { y: nt.yr });
+  };
+  C.DEC.cg_ntHard = {
+    title: () => '일과 공부 사이',
+    text: (S, ctx) => {
+      const nt = (S.cg && S.cg.nt) || { k: 'reg', due: S.ageM };
+      const day = S.work.job ? '낮에는 일하고' : '낮에는 일자리를 알아보고';
+      return T(S, `${ntShort(S, nt.k)} ${ctx.y}학년입니다. ${day} 밤에는 강의와 과제에 매달리는 생활이 이어져 몸도 마음도 지쳤습니다.${nt.k === 'rem' ? ' 원격 대학은 혼자 공부하는 시간이 길어 중간에 그만두는 사람이 많습니다(마치는 사람 절반쯤 — 근삿값).' : ''} 졸업까지 ${Math.max(0, nt.due - S.ageM)}달 남았습니다.`);
+    },
+    choices: (S, ctx) => {
+      const nt = (S.cg && S.cg.nt) || { k: 'reg' };
+      const q = (NT_HARD[nt.k] || NT_HARD.reg)[1], h = h01(S, `ntq${ctx.y}${nt.k}${(S.cg && S.cg.ntN) || 1}`);
+      const t = h < q ? 'quit' : h < q + 0.12 ? 'rest' : 'stay';
+      return [
+        { label: '끝까지 다닌다', sub: '피곤해도 졸업을 향해 갑니다', typ: t === 'stay', run: (S2) => { E.stat(S2, 'happy', -2); return T(S2, '{N은} 이를 악물고 다시 강의를 듣기 시작했습니다.'); } },
+        { label: '한 학기 쉬어 간다', sub: '졸업이 여섯 달 늦어집니다', typ: t === 'rest', run: (S2) => { const n2 = S2.cg && S2.cg.nt; if (n2) { n2.due += 6; n2.m0 += 6; } E.stat(S2, 'happy', 3); return T(S2, '{N은} 한 학기 쉬며 숨을 돌리기로 했습니다.'); } },
+        { label: '학업을 그만둔다', sub: '다닌 학년은 나중에 다시 등록하면 이어서 다닐 수 있습니다', typ: t === 'quit', run: (S2) => { Cg.ntStop(S2, 'quit'); E.stat(S2, 'happy', -3); return T(S2, '{N은} 일과 공부를 함께 하기가 너무 힘들어 학업을 그만두었습니다.'); } },
+      ];
+    },
+  };
+  /** 그만둔다(그만둔 학년은 cg.ntDrop 에 남겨 다음에 이어 다닐 수 있게) */
+  Cg.ntStop = (S, why) => {
+    const cg = S.cg, nt = cg && cg.nt;
+    if (!nt) return;
+    const y = Cg.ntY(S);
+    delete cg.nt;
+    cg.ntDrop = { k: nt.k, mj: nt.mj, y, m: S.ageM };
+    if (nt.tier) cg.ntDrop.tier = nt.tier;
+    if (why === 'move') log(S, `나라를 옮기며 ${U.j(ntShort(S, nt.k), '을')} 그만두었습니다. 다닌 학년은 나중에 이어서 다닐 수 있습니다.`);
+  };
+  /** 졸업: 학력·전공·서열을 다른 졸업생과 똑같이(채용·연봉·대학원·해외 비자가 그대로 쓴다) */
+  Cg.ntGrad = (S) => {
+    const cg = S.cg, nt = cg.nt, ed = S.edu;
+    delete cg.nt;
+    const tier = nt.k === 'jc' ? 'jc' : nt.tier && nt.tier !== 'jc' ? nt.tier : 'reg';
+    ed.level = Math.max(ed.level, 4);
+    ed.major = nt.mj;
+    ed.tier = tier;
+    cg.uIso = nt.iso;
+    cg.gradM = S.ageM;
+    if (cg.tier0 === undefined) cg.tier0 = tier;
+    const yrs = Math.max(1, Math.round((S.ageM - (nt.s !== undefined ? nt.s : nt.m0)) / 12));
+    cg.ntDone = { k: nt.k, m: S.ageM, mj: nt.mj, yrs };
+    delete cg.ntDrop;
+    S.flags.nightDone = true;
+    S.stamps.push({ iso: isoOf(S), m: S.ageM, k: 'grad' });
+    H.ach(S, 'late_learner');
+    E.stat(S, 'happy', 8);
+    log(S, `{N은} ${yrs}년 동안 낮에는 일하고 밤에는 공부한 끝에 ${jo(Cg.ntKo(S, nt.k), '을')} 졸업했습니다! ${mjKo(nt.mj)} 학위를 받았습니다.`, 'milestone');
+    if (!S.queue.length) E.ask(S, 'nextStage', { done: 3, ok: E.admission(S, 4), night: 1 });
+  };
+  /** 예전 저장(v0.6.13까지): flags.nightUntil → 4년제 야간 과정(전공은 남아 있던 전공·꿈의 전공·경영 순) */
+  Cg.ntConv = (S) => {
+    if (!S || !S.flags || !S.flags.nightUntil || !S.edu || S.mode === 'tribe') return;
+    const due = S.flags.nightUntil;
+    delete S.flags.nightUntil;
+    const cg = Cg.ens(S);
+    if (cg.nt || S.edu.level >= 4) return;
+    const dm = dreamMj(S);
+    const mj = S.edu.major && C.MAJOR[S.edu.major] && !Cg.mjNo(S, S.edu.major, { night: 'reg' }) ? S.edu.major : dm && C.MAJOR[dm] && !Cg.mjNo(S, dm, { night: 'reg' }) ? dm : 'biz';
+    cg.nt = { k: 'reg', mj, y0: 1, dur: 4, m0: due - 48, due, s: due - 48, iso: isoOf(S), st: 0, old: 1 };
+    cg.nt.yr = Cg.ntY(S);
+    if (cg.gpa === undefined) cg.gpa = 0.4;
+  };
+  /** 달마다: 예전 표시 옮기기, 쉬어 가기, 졸업, 해 바뀜 */
+  Cg.month = (S) => {
+    if (!ok(S)) return;
+    if (S.flags.nightUntil) Cg.ntConv(S);
+    const nt = S.cg && S.cg.nt;
+    if (!nt) return;
+    if (S.mil || S.prison) { nt.due++; nt.m0++; return; }
+    if (S.edu.stage !== null) { Cg.ntStop(S, 'stage'); return; }
+    if (isoOf(S) !== nt.iso && nt.k !== 'rem') { Cg.ntStop(S, 'move'); return; }
+    if (S.ageM >= nt.due) { Cg.ntGrad(S); return; }
+    const y = Cg.ntY(S);
+    if (y > (nt.yr || 1)) { nt.yr = y; Cg.ntYear(S); }
+  };
+
+  /* ================================================================ 늦깎이 입시(피드백 238번)
+   * 할 일 '대학 입시 다시 보기'(큰일 기회 2번 · 한 해 한 번, 나라별 시험 철에만 · 나이 제한 없음): 고등학교 학력이 있고 학교에 다니지 않는 사람.
+   * 준비 방법을 고르면 바로 새 시험을 보고(늦깎이·성인 학습자 전형 가산), 붙으면 일을 그만두거나·휴직하거나(정식 일자리, 중상·고소득국 — 졸업하면 같은 일터로)·
+   * 야간·원격 과정으로 다닐지 고른다. 학자금 대출이 있는 나라는 대출로 다닌다. 떨어지면 낙방 뒤 갈래(일하면서 준비가 흔함). */
+  Cg.exWhy = (S) => {
+    if (!ok(S)) return '지금은 볼 수 없습니다';
+    const cg = S.cg || {}, iso = isoOf(S);
+    if (S.edu.level >= 4) return '이미 대학을 졸업했습니다';
+    if (S.edu.level < 3) return '고등학교를 마친 뒤(검정고시 포함) 볼 수 있습니다';
+    if (S.edu.stage !== null) return '학교에 다니는 중입니다';
+    if (cg.rt && !cg.rt.half) return `재수 중입니다 · 시험까지 ${Math.max(0, cg.rt.due - S.ageM)}달`;
+    if (cg.nt) return '야간·원격 대학에 다니는 중입니다';
+    if (cg.wh || cg.lv || cg.prep || (cg.ab && !cg.ab.done)) return '지금은 볼 수 없습니다';
+    if (iso === 'PRK' || S.born.iso === 'PRK') return '북한에서 대학은 학교와 당 조직의 추천으로 갑니다';
+    if (!Cg.afOK(S, true)) return '아프가니스탄에서는 여성의 대학 교육이 금지되어 있습니다(2022~)';
+    const L = Cg.exSeason(iso), m = H.mon(S);
+    if (!L.includes(m)) {
+      let d = 1;
+      while (d < 12 && !L.includes(((m - 1 + d) % 12) + 1)) d++;
+      return `${Cg.examKo(iso)} 철(${L[0]}~${L[L.length - 1]}월)에만 볼 수 있습니다 · ${d}달 뒤`;
+    }
+    return true;
+  };
+  const EX_B = { aca: 0.08, self: 0.02 };
+  Cg.exP = (S, mode) => E.retryP(S, 3, EX_B[mode] || 0, Cg.adultLb(S));
+  C.DEC.cg_exAdult = {
+    title: (S) => `${Cg.examKo(isoOf(S))} 응시`,
+    text: (S) => {
+      const P = Cg.P(isoOf(S)), a = Math.floor(ageOf(S));
+      return T(S, `${a}세에 다시 대학 입시를 봅니다.${a >= 25 ? ' {country}의 많은 대학이 일하는 어른을 따로 뽑는 늦깎이(성인 학습자) 전형을 둡니다.' : ''} 붙으면 일을 어떻게 할지 정하고 입학합니다.${P.loan ? ' 학비는 학자금 대출로 낼 수 있습니다.' : ''}`);
+    },
+    choices: (S) => {
+      const c1 = H.pay(S, 1), can = S.indep ? Ec.liquid(S) >= c1 : S.money >= c1 || S.fam.famP >= 0.4;
+      const ta = can && h01(S, 'exA' + ((S.cg && S.cg.exN) || 0)) < 0.5;
+      return [
+        { label: '학원·인터넷 강의로 준비해 응시한다', sub: can ? `준비 비용 약 ${H.amt(S, 1)} · 붙을 가능성 약 ${pct(Cg.exP(S, 'aca'))}%` : `준비 비용(약 ${H.amt(S, 1)})을 마련하기 어렵습니다`, disabled: !can, typ: ta,
+          run: (S2) => { pay(S2, H.pay(S2, 1)); return Cg.exGo(S2, 'aca'); } },
+        { label: '혼자 준비해 응시한다', sub: `붙을 가능성 약 ${pct(Cg.exP(S, 'self'))}%`, typ: !ta, run: (S2) => Cg.exGo(S2, 'self') },
+        { label: '다음에 한다', cancel: true, run: (S2) => T(S2, '{N은} 이번 입시는 건너뛰기로 했습니다.') },
+      ];
+    },
+  };
+  Cg.exGo = (S, mode) => {
+    const cg = Cg.ens(S), ex = Cg.examKo(isoOf(S));
+    cg.exN = (cg.exN || 0) + 1;
+    const tag = E.freshExam(S, EX_B[mode] || 0);
+    const pass = U.chance(E.admP(S, 3, tag, Cg.adultLb(S)));
+    if (!pass) {
+      E.stat(S, 'happy', -4);
+      E.ask(S, 'cg_af', { n: (cg.rtN || 0) + 1, adult: 1 });
+      return T(S, tag === 'good' ? `${ex} 점수는 괜찮았지만 이번 입시에서는 대학에 들어가지 못했습니다.` : `${jo(ex, '을')} 기대만큼 보지 못해 이번 입시에서는 대학에 들어가지 못했습니다.`);
+    }
+    E.stat(S, 'happy', 8);
+    E.ask(S, 'cg_adultIn', {});
+    return T(S, `{N은} ${Math.floor(ageOf(S))}세에 다시 본 대학 입시에 합격했습니다!`);
+  };
+  /** 휴직할 수 있는 일(정식 일자리 · 자영업·특별한 일 아님 · 중상·고소득국) */
+  Cg.canHold = (S) => {
+    const j = S.work.job, d = j && C.JOB[j.id];
+    return !!(d && (d.formal || 0) >= 0.5 && !d.self && !d.special && j.id !== 'politician' && Wd.dev(isoOf(S)) >= 2);
+  };
+  C.DEC.cg_adultIn = {
+    title: () => '대학 합격',
+    text: (S) => {
+      const j = S.work.job, P = Cg.P(isoOf(S));
+      const loan = P.loan ? ' 학비는 학자금 대출로 내고, 졸업한 뒤 일하면서 갚습니다.' : '';
+      return T(S, j ? `대학에 합격했습니다! 낮 과정에 다니려면 ${j.title} 일을 그만두거나 쉬어야 합니다. 일을 계속하며 야간·원격 과정으로 다닐 수도 있습니다.${loan}` : `대학에 합격했습니다! 이제 전공을 고르고 입학합니다.${loan}`);
+    },
+    choices: (S) => {
+      const j = S.work.job, out = [], dur = Wd.schooling(isoOf(S), S.sex).durs[3] || 4;
+      const t = !j ? 'go' : ageOf(S) < 30 && !S.fam.married ? 'quit' : 'night';
+      if (j) out.push({ label: '일을 그만두고 입학한다', sub: `${dur}년쯤 · 다니는 동안 월급이 없습니다`, typ: t === 'quit', run: (S2) => Cg.adultGo(S2, 'quit') });
+      if (j && Cg.canHold(S)) out.push({ label: '휴직하고 입학한다', sub: '졸업하면 같은 일터로 돌아갑니다 · 다니는 동안 월급은 없습니다', run: (S2) => Cg.adultGo(S2, 'hold') });
+      if (!j) out.push({ label: '입학한다', sub: `${dur}년쯤`, typ: true, run: (S2) => Cg.adultGo(S2, 'go') });
+      out.push({ label: '일하면서 야간·원격 과정으로 다닌다', sub: '저녁·주말 과정이나 원격 대학을 고릅니다', typ: t === 'night', run: (S2) => { E.ask(S2, 'cg_night', { from: 'adult' }); return null; } });
+      out.push({ label: '입학을 포기한다', run: (S2) => T(S2, '{N은} 고민 끝에 입학을 포기했습니다.') });
+      return out;
+    },
+  };
+  Cg.adultGo = (S, how) => {
+    const cg = Cg.ens(S), j = S.work.job;
+    if (j && how === 'hold') {
+      cg.held = { ...j, heldM: S.ageM, heldIso: isoOf(S) };
+      S.work.job = null;
+      E.fire('loseJob', S, 'leave', j);
+      log(S, `{N은} ${j.title} 일을 휴직했습니다. 졸업하면 같은 일터로 돌아갑니다.`);
+    } else if (j) Cg.quitFor(S);
+    cg.adult = Math.floor(ageOf(S));
+    if (Cg.P(isoOf(S)).loan && cg.loan === undefined) cg.loan = 1;
+    S.work.seeking = false;
+    S.work.helping = false;
+    E.ask(S, 'major', {});
+    return T(S, '{N은} 다시 대학생이 되기로 했습니다. 이제 전공을 고릅니다.');
+  };
+  /** 휴직한 일터로 돌아간다(졸업·중퇴 뒤 E.afterSchool 에서) — 8년이 넘었거나 나라를 옮겼으면 자리가 없다 */
+  Cg.heldBack = (S) => {
+    const cg = S.cg, h = cg && cg.held;
+    if (!h) return false;
+    delete cg.held;
+    if (S.work.job || S.work.retired) return false;
+    if (isoOf(S) !== h.heldIso || S.ageM - h.heldM > 96) { log(S, `예전 일터(${h.title})로 돌아갈 자리는 더 남아 있지 않았습니다.`); return false; }
+    const o = { ...h }, since = o.since;
+    delete o.heldM; delete o.heldIso; delete o.since;
+    E.takeJob(S, o);
+    if (S.work.job && since !== undefined) S.work.job.since = since;
+    log(S, `{N은} 휴직을 마치고 예전 일터로 돌아가 ${h.title} 일을 다시 시작했습니다.`, 'good');
+    return true;
   };
 
   /* ================================================================ 재학 중 */
@@ -44233,24 +44934,50 @@ const Cg = {};
   };
   C.DEC.cg_swPick = {
     title: (S, ctx) => (ctx.mode === 'sw' ? '어느 학과로 옮길까요?' : ctx.mode === 'dbl' ? '복수전공' : '부전공'),
-    text: (S, ctx) => T(S, ctx.mode === 'sw' ? `지금 전공은 ${mjKo(S.edu.major)}입니다. 의학처럼 정원이 엄격한 학과로는 옮길 수 없습니다. 학점이 높을수록 받아 줄 가능성이 큽니다.` : `${mjKo(S.edu.major)}와 함께 공부할 분야를 고릅니다.`),
+    text: (S, ctx) => {
+      const F = C.MAJOR_FIELD || {}, f = ctx.fld && F[ctx.fld] ? F[ctx.fld].ko : '';
+      const t = ctx.mode === 'sw' ? `지금 전공은 ${mjKo(S.edu.major)}입니다. 의학처럼 정원이 엄격한 학과로는 옮길 수 없습니다. 학점이 높을수록 받아 줄 가능성이 큽니다.` : `${U.j(mjKo(S.edu.major), '과')} 함께 공부할 전공을 고릅니다.`;
+      return T(S, f ? `${t} ${f} 분야의 전공입니다.` : C.MAJOR_FIELD ? `${t} 먼저 큰 분야를 고릅니다.` : t);
+    },
     choices: (S, ctx) => {
-      const ids = Object.keys(C.MAJOR).filter((k) => k !== S.edu.major);
+      const all = Object.keys(C.MAJOR).filter((k) => k !== S.edu.major);
+      // 전공이 많아(v0.6.14 — 약 37개) 큰 분야 → 세부 전공 두 단계로 고른다(content.js 의 전공 고르기와 같은 분야)
+      const F = C.MAJOR_FIELD, inF = (f) => all.filter((k) => C.MAJOR[k].field === f);
+      const two = !!F && all.every((k) => C.MAJOR[k].field && F[C.MAJOR[k].field]);
+      const fl = two && ctx.fld && F[ctx.fld] ? ctx.fld : null;
+      const ids = fl ? inF(fl) : all;
       const P = Cg.P(isoOf(S));
       const pref = dreamMj(S);
       // 보통 선택: 꿈과 이어진 전공이 있으면 그것, 아니면 가장 흔한 전공 몫대로
-      const cand = ids.filter((k) => k !== 'med' && !(ctx.mode === 'sw' && k === 'law' && P.profLaw));
-      const tp = pref && cand.includes(pref) ? pref : (() => { const w = cand.map((k) => [k, (C.MAJOR_SHARE || {})[k] || 0.02]); const tot = w.reduce((s, [, x]) => s + x, 0); let r = h01(S, 'swp' + ctx.mode) * tot; for (const [k, x] of w) { if (r < x) return k; r -= x; } return w[0][0]; })();
+      // 의학처럼 정원이 따로 정해진 전공(문턱 2 이상 — 치의학·약학·수의학 등도)으로는 옮길 수 없다
+      const quota = (k) => k === 'med' || ((C.MAJOR[k] || {}).hard || 0) >= 2;
+      const blk = (k) => quota(k) || (ctx.mode === 'sw' && k === 'law' && P.profLaw);
+      const pickW = (cand, key) => { const w = cand.map((k) => [k, (C.MAJOR_SHARE || {})[k] || 0.02]); const tot = w.reduce((s, [, x]) => s + x, 0); let r = h01(S, key) * tot; for (const [k, x] of w) { if (r < x) return k; r -= x; } return w.length ? w[0][0] : null; };
+      const cand0 = all.filter((k) => !blk(k));
+      const tp0 = pref && cand0.includes(pref) ? pref : pickW(cand0, 'swp' + ctx.mode);
+      if (two && !fl) {
+        const outF = Object.keys(F).map((f) => {
+          const L = inF(f), open = L.filter((k) => !blk(k));
+          return { label: F[f].ko, fld: f, hidden: !L.length, disabled: !open.length, sub: open.length ? open.map((k) => mjKo(k)).join(' · ') : '옮길 수 있는 전공이 없습니다', typ: !!tp0 && C.MAJOR[tp0].field === f,
+            run: (S2) => { E.ask(S2, 'cg_swPick', { ...ctx, fld: f }); return null; } };
+        });
+        outF.push({ label: '그만둔다', sub: '지금 전공만 공부합니다', run: (S2) => T(S2, '{N은} 지금 전공을 그대로 이어 가기로 했습니다.') });
+        return outF;
+      }
+      const cand = ids.filter((k) => !blk(k));
+      const tp = cand.includes(tp0) ? tp0 : pickW(cand, 'swp' + ctx.mode + (fl || ''));
       const out = ids.map((k) => {
-        const blocked = k === 'med' || (ctx.mode === 'sw' && k === 'law' && P.profLaw);
+        const blocked = quota(k) || (ctx.mode === 'sw' && k === 'law' && P.profLaw);
         const p = Cg.swP(S, k, ctx.mode);
         return {
           label: mjKo(k), disabled: blocked, typ: !blocked && k === tp,
-          sub: blocked ? (k === 'med' ? '의학은 입학 정원이 따로 정해져 있어 옮길 수 없습니다' : '{country}에서 법조인은 학사 뒤 로스쿨로 갑니다') : `가능성 약 ${pct(p)}%`,
+          sub: blocked ? (quota(k) ? `${U.j(mjKo(k), '은')} 입학 정원이 따로 정해져 있어 옮길 수 없습니다` : '{country}에서 법조인은 학사 뒤 로스쿨로 갑니다') : `가능성 약 ${pct(p)}%`,
           run: (S2) => Cg.swDo(S2, k, ctx.mode, p),
         };
       });
+      if (fl) { const back = { ...ctx }; delete back.fld; out.push({ label: '앞 목록으로 돌아간다', sub: '다른 분야의 전공을 봅니다', run: (S2) => { E.ask(S2, 'cg_swPick', back); return null; } }); }
       out.push({ label: '그만둔다', sub: '지금 전공만 공부합니다', run: (S2) => T(S2, '{N은} 지금 전공을 그대로 이어 가기로 했습니다.') });
+      if (!out.some((c) => c.typ && !c.disabled)) out[out.length - 1].typ = true;
       return out.map((c) => ({ ...c, sub: c.sub ? T(S, c.sub) : c.sub }));
     },
   };
@@ -44662,12 +45389,15 @@ const Cg = {};
     const need = toI(usd);
     return { usd, need, tuI: toI(tu), livI: toI(liv), fam: famCap, own, loan, have: famCap + own + loan };
   };
+  /** 대학원 연구 장학금(조교·연구 지원)이 흔한 계열: 자연과학·정보통신·공학·건축·농림수산·수의와 의학·치의학·약학(v0.6.14 세부 전공 — 큰 분야로 본다) */
+  const STEM_FLD = ['nsci', 'ict', 'engc', 'agrv'];
+  const stemMj = (id) => { const m = C.MAJOR[id]; return !!m && (STEM_FLD.includes(m.field) || ['eng', 'cs', 'med', 'agri', 'dent', 'pharm'].includes(id)); };
   /** 장학금 가능성 */
   Cg.schP = (S, dest, kind) => {
     if (kind === 'lang' || kind === 'early' || kind === 'exch') return 0;
     if (kind === 'grad') {
       const g = (S.cg && S.cg.gpa) || 0.5;
-      return clamp(0.15 + 0.6 * (g - 0.5) + (S.edu.tier === 'top' ? 0.15 : 0) + (['eng', 'cs', 'med', 'agri'].includes(S.edu.major) ? 0.2 : 0), 0.05, 0.85);
+      return clamp(0.15 + 0.6 * (g - 0.5) + (S.edu.tier === 'top' ? 0.15 : 0) + (stemMj(S.edu.major) ? 0.2 : 0), 0.05, 0.85);
     }
     const zs = Cg.zOf(S);
     return clamp(0.03 + 0.12 * Math.max(0, zs) + (dest === 'USA' && S.talent && S.talent.sport >= 85 ? 0.25 : 0) + (Wd.dev(S.born.iso) <= 1 ? 0.04 : 0), 0.01, 0.45);
@@ -44961,23 +45691,56 @@ const Cg = {};
       C.ACTIONS.splice(at >= 0 ? at + 1 : C.ACTIONS.length, 0, WHA);
       C.ACTION[WHA.id] = WHA;
     }
+    // 대학 입시 다시 보기(피드백 238번 — 늦깎이·성인 학습자): 기회 수·쿨다운은 actions.js 기준표(C.ACT_W.cg_exam)
+    const EXA = { id: 'cg_exam', ko: '대학 입시 다시 보기', cat: 'learn', age: [18, 120], cd: 12,
+      need: (S) => { const w = Cg.exWhy(S); return w === true ? true : T(S, w); },
+      hint: (S) => C.gh(`붙으면 대학 입학(일을 그만두거나 휴직하거나, 야간·원격 과정으로) · 혼자 준비하면 붙을 가능성 약 ${pct(Cg.exP(S, 'self'))}%`, '떨어지면 준비한 시간'),
+      run: (S) => { E.ask(S, 'cg_exAdult', {}); return null; } };
+    if (!C.ACTION[EXA.id]) {
+      const at = C.ACTIONS.findIndex((x) => x.id === 'nightschool');
+      C.ACTIONS.splice(at >= 0 ? at + 1 : C.ACTIONS.length, 0, EXA);
+      C.ACTION[EXA.id] = EXA;
+    }
   }
 
   /* ---------------- 전공 고르기: 어려운 전공에 떨어지면 결정(155번), 붙으면 서열 배치 */
+  // v0.6.14: content.js 의 전공 고르기는 두 단계(큰 분야 → 세부 전공 — 세부 전공 선택지는 label 이 C.MAJOR[id].ko, mj 에 id)이고 ctx 의 다른 값
+  // (night 야간·원격 과정 종류 · jc 문턱이 낮은 학교 · only 고를 수 있는 전공 · excl 뺄 전공)을 다음 단계로 넘긴다. 이름 → id 는 부를 때마다 만든다(전공이 늘어도 맞게)
   if (C.DEC.major) {
     const md = C.DEC.major, mc0 = md.choices, mt0 = md.text;
-    const idOf = {};
-    for (const [k, m] of Object.entries(C.MAJOR)) idOf[m.ko] = k;
-    md.text = (S, ctx) => (ctx && ctx.excl ? T(S, '다른 전공을 골라 봅시다. 전공에 따라 들어갈 수 있는 일자리가 달라집니다.') : S.cg && S.cg.ab && !S.cg.ab.done && S.cg.ab.iso === isoOf(S) ? T(S, '{country} 대학에서 무엇을 공부할까요? 전공에 따라 들어갈 수 있는 일자리가 달라집니다.') : mt0(S, ctx));
-    md.choices = (S, ctx) => mc0(S, ctx).map((c) => {
-      const id = idOf[c.label];
-      if (!id || !ok(S)) return c;
-      const ex = ctx && ctx.excl && ctx.excl.includes(id);
-      return { ...c, hidden: ex || c.hidden, typ: ex ? false : c.typ, run: (S2) => Cg.pickMajor(S2, id) };
-    });
+    const idOfNow = () => { const o = {}; for (const [k, m] of Object.entries(C.MAJOR)) o[m.ko] = k; return o; };
+    md.text = (S, ctx) => {
+      const c = ctx || {};
+      if (!ok(S) || c.fld) return mt0(S, ctx);
+      if (c.excl) return T(S, '다른 전공을 골라 봅시다. ') + mt0(S, ctx);
+      if (c.night) return T(S, `${Cg.ntKo(S, c.night)}에서 공부할 전공을 고릅니다. 일과 함께 다니는 과정이라 의학처럼 여섯 해 동안 실습하는 전공은 없습니다. `) + mt0(S, ctx);
+      if (c.jc) return T(S, `${Cg.jcShort(S)}에서 공부할 전공을 고릅니다. 실무 계열이 많고, 법학·의학 같은 전공은 4년제에만 있습니다. `) + mt0(S, ctx);
+      if (S.cg && S.cg.ab && !S.cg.ab.done && S.cg.ab.iso === isoOf(S)) return T(S, '{country} 대학에서 공부합니다. ') + mt0(S, ctx);
+      return mt0(S, ctx);
+    };
+    md.choices = (S, ctx) => {
+      const c0 = ctx || {}, idOf = idOfNow(), lim = !!(c0.night || c0.jc);
+      const idOfC = (c) => (c.mj && C.MAJOR[c.mj] ? c.mj : c.fld ? null : idOf[c.label]);
+      const out = mc0(S, ctx).map((c) => {
+        const id = idOfC(c);
+        if (!id || !ok(S)) return c;
+        const ex = c0.excl && c0.excl.includes(id);
+        const no = lim ? Cg.mjNo(S, id, c0) : null;
+        // 야간·전문대 과정은 전공 입시가 따로 없다(학교 전형에 이미 붙음): '합격 가능성' 문구를 뺀다
+        const sub = no || (lim && c.sub ? String(c.sub).split(' · ').filter((x) => !/^합격 가능성/.test(x)).join(' · ') || null : c.sub);
+        return { ...c, sub, hidden: ex || c.hidden, disabled: c.disabled || !!no, typ: ex || no ? false : c.typ, run: (S2) => Cg.pickMajor(S2, id, c0) };
+      });
+      // 보통 선택이 막힌 전공이었으면 열린 전공 가운데 몫이 가장 큰 것을
+      const mjs = out.filter((c) => idOfC(c) && !c.disabled && !c.hidden);
+      if (lim && mjs.length && !out.some((c) => c.typ && !c.disabled && !c.hidden)) mjs.sort((a, b) => ((C.MAJOR_SHARE || {})[idOfC(b)] || 0) - ((C.MAJOR_SHARE || {})[idOfC(a)] || 0))[0].typ = true;
+      return out;
+    };
   }
-  Cg.pickMajor = (S, id) => {
+  /** 전공을 골랐다: ctx.night 야간·원격 과정 등록 · ctx.jc 문턱이 낮은 학교(이미 붙음) · 그 밖은 어려운 전공 입시 → 서열 배치 */
+  Cg.pickMajor = (S, id, ctx = {}) => {
     const m = C.MAJOR[id];
+    if (ctx.night) return Cg.ntStart(S, id, ctx.night, {});
+    if (ctx.jc) return Cg.start(S, id, 'jc', {});
     if (hardMj(id) && !U.chance(Cg.mjP(S, id, 0))) {
       Cg.ens(S).mjF = id;
       E.ask(S, 'cg_mjFail', { mj: id });
@@ -45037,8 +45800,15 @@ const Cg = {};
       if (!ok(S)) return nsT0(S, ctx);
       const P = Cg.P(isoOf(S));
       if (ctx.done === 3 && S.edu.tier === 'jc' && !ctx.ok) return T(S, `${jo(Cg.tierKo(S, 'jc', true), '을')} 마쳤습니다. 대학원에 가려면 먼저 4년제 학위가 필요합니다. ${P.xfer >= 0.05 ? `{country}에서는 졸업생의 약 ${pct(P.xfer)}%가 4년제 대학 3학년으로 편입합니다(근삿값).` : '4년제 대학 3학년으로 편입할 수도 있습니다.'}`);
+      // 야간·원격 대학 졸업: 집안 형편(학비)이 아니라 일하며 받은 학위로
+      if (ctx.done === 3 && ctx.night) return T(S, `일하면서 대학 학위를 받았습니다. 이제 대학 학력과 전공으로 더 나은 자리에 지원할 수 있습니다.${ctx.ok ? ' 대학원에 갈 수도 있습니다.' : ''}`);
       let t = nsT0(S, ctx);
       if (ctx.done === 2 && S.cg && S.cg.early) t += ` 고등학교는 ${nm(S.cg.early.iso)}에서 다녔습니다.`;
+      // 대학 낙방(피드백 238번): 다시 준비하거나 다른 길로
+      if (ctx.done === 2 && !ctx.ok && Cg.afOK(S)) {
+        t += T(S, ` 한 해 더 준비해 새 시험을 보거나, ${afJc(P) > 0 ? `${jn(Cg.jcShort(S))} ` : ''}야간·원격 대학으로 길을 바꿀 수도 있습니다.`);
+        if (P.rt >= 0.03) t += T(S, ` {country}에서는 대학 신입생의 약 ${pct(P.rt)}%가 재수를 거쳐 들어갑니다(근삿값).`);
+      }
       if ((ctx.done === 3 || ctx.done === 4) && abroadDone(S)) t += T(S, ` {country}에서 학위를 받았습니다. 이곳에 남아 일자리를 찾을 수도, 고향으로 돌아갈 수도 있습니다.`);
       return t;
     };
@@ -45065,6 +45835,15 @@ const Cg = {};
           // 조기 유학하다 돌아오는 경우: 국내 대학을 고르면 조기 유학은 끝
           for (const c of out) if (/^대학에 진학한다/.test(c.label)) { const r0 = c.run; c.run = (S2) => { if (S2.cg) delete S2.cg.early; return r0(S2); }; }
         }
+        // 대학 낙방(피드백 238번): 예전 '1년 뒤 다시 도전한다(그동안은 일을 돕습니다)' 대신 재수 학원·혼자·일하며 준비·문턱이 낮은 학교·야간·원격 대학
+        if (!ctx.ok && Cg.afOK(S)) {
+          out = out.filter((c) => !/^1년 뒤 다시 도전/.test(c.label));
+          const n = (cg.rtN || 0) + (S.edu.retries || 0) + 1;
+          const add = Cg.afChoices(S, { n, t: milTyp ? null : Cg.afTyp(S, { n }) });
+          out.splice(0, 0, ...add);
+          const tc = add.find((c) => c.typ && !c.disabled);
+          if (tc) setTyp(tc);
+        }
       }
       if (ctx.done === 3) {
         // 전문대 → 4년제 편입
@@ -45072,7 +45851,7 @@ const Cg = {};
           const p = Cg.xferP(S, 'jc');
           const ch = { label: '4년제 대학에 편입한다(3학년으로)', sub: `합격 가능성 약 ${pct(p)}% · 2년 더 다니면 4년제 학위`, run: (S2) => Cg.xferJc(S2) };
           out.splice(Math.min(1, out.length), 0, ch);
-          if (h01(S, 'xf') < P.xfer && !milTyp) setTyp(ch);
+          if (h01(S, 'xf') < P.xfer && !milTyp && !ctx.night) setTyp(ch);
         }
         // 학사 뒤 의학·법학전문대학원
         if (S.edu.tier !== 'jc' && !cg.prof && ageOf(S) < 36) {
@@ -45083,7 +45862,7 @@ const Cg = {};
             const p = Cg.profP(S, kind);
             const ch = { label: kind === 'med' ? '의학전문대학원(메디컬 스쿨)에 지원한다' : '로스쿨(법학전문대학원)에 지원한다', sub: `합격 가능성 약 ${pct(p)}% · ${kind === 'med' ? '4년 과정 뒤 의사 국가시험' : '3년 과정 뒤 변호사 시험'}${P.loan ? ' · 학비는 대출로' : ''}`, run: (S2) => Cg.profGo(S2, kind) };
             out.splice(Math.min(1, out.length), 0, ch);
-            if (want && h01(S, 'prof' + kind) < (kind === 'med' ? 0.35 : 0.3) && !milTyp && !out.some((c) => c.typ && /편입/.test(c.label))) setTyp(ch);
+            if (want && h01(S, 'prof' + kind) < (kind === 'med' ? 0.35 : 0.3) && !milTyp && !ctx.night && !out.some((c) => c.typ && /편입/.test(c.label))) setTyp(ch);
           }
         }
         // 해외 대학원
@@ -45100,9 +45879,57 @@ const Cg = {};
         if (startCh) startCh.label = '이 나라에 남아 일자리를 찾는다';
         if (out.some((c) => c.typ && (c === startCh || /^이 나라에 남아/.test(c.label))) && h01(S, 'stay') >= stay) setTyp(ch);
       }
+      // 야간·원격 대학 졸업(피드백 240번): 일하던 사람은 하던 일을 이어 가는 것이 보통, 낮 과정(대학원·편입·전문대학원·유학)으로 가면 일을 그만둔다
+      if (ctx.night && S.work.job) {
+        for (const c of out) {
+          if (/일을 시작한다$/.test(c.label)) { c.label = '지금 하던 일을 계속한다'; c.sub = '대학 학력이 생겨 더 나은 자리에도 지원할 수 있습니다'; continue; }
+          if (/대학원|편입|로스쿨|메디컬 스쿨|유학/.test(c.label)) {
+            const r0 = c.run;
+            c.sub = [c.sub, '지금 하는 일은 그만둡니다'].filter(Boolean).join(' · ');
+            c.run = (S2, q) => { Cg.quitFor(S2); return r0(S2, q); };
+          }
+        }
+      }
       return out;
     };
   }
+  // 예전 '1년 뒤 다시 도전한다'의 결과(옛 저장 · content.js retryResult): 대학에 또 떨어지면 낙방 뒤 갈래로
+  if (C.DEC.retryResult) {
+    const rr = C.DEC.retryResult, rrT0 = rr.text, rrC0 = rr.choices;
+    const afHere = (S, ctx) => ctx && ctx.k === 3 && !ctx.ok && Cg.afOK(S);
+    rr.text = (S, ctx) => (afHere(S, ctx) ? `${rrT0(S, ctx)} ${T(S, '한 해 더 준비하거나 다른 길로 대학에 갈 수 있습니다.')}` : rrT0(S, ctx));
+    rr.choices = (S, ctx) => (afHere(S, ctx) ? Cg.afFull(S, { n: (S.edu.retries || 0) + ((S.cg && S.cg.rtN) || 0) + 1 }) : rrC0(S, ctx));
+  }
+  // 첫 입시: 낙방 뒤 길로 다시 들어가는 몫만큼 덜어 나라 대학 졸업률을 그대로(engine.js E.admission 이 부른다)
+  E.admAdj = (S, k, p) => (ok(S) ? Cg.admAdj(S, k, p) : p);
+  // 대학을 다니다 그만두면 전공·학년을 남긴다(야간·원격 대학에서 남은 학년만 이어서 다니게 — 피드백 240번)
+  if (typeof C.leaveSchool === 'function') {
+    const ls0 = C.leaveSchool;
+    C.leaveSchool = (S) => {
+      if (S && S.edu && S.edu.stage === 3 && S.edu.major && ok(S)) Cg.ens(S).drop = { mj: S.edu.major, tier: S.edu.tier || 'reg', y: S.edu.year || 1, m: S.ageM };
+      ls0(S);
+    };
+  }
+  // 휴직하고 대학에 다닌 늦깎이: 졸업·중퇴 뒤에는 예전 일터로
+  {
+    const as0 = E.afterSchool;
+    E.afterSchool = (S) => { if (S && S.cg && S.cg.held && S.edu.stage === null && !S.mil && ok(S) && Cg.heldBack(S)) return; as0(S); };
+  }
+  // 예전 저장의 야간 대학 표시 옮기기 · 다른 파일이 나중에 단 설명을 덮는 일(한 번만): 공부하기 — 재수 중 가능성, 야간·원격 대학 — 과정 햇수, 다니는 동안 스트레스 +4
+  Cg.late = () => {
+    if (Cg._late) return;
+    Cg._late = 1;
+    const st = C.ACTION.study;
+    if (st) { const h0 = st.hint; st.hint = (S) => { const a = h0 ? h0(S) : ''; const x = Cg.rtNow(S); return x ? [a, `${x}(공부할수록 오름)`].filter(Boolean).join(' · ') : a; }; }
+    const na = C.ACTION.nightschool;
+    if (na) na.hint = (S) => C.gh(`졸업하면 대학 학력·전공(같은 일의 새 연봉 약 +${eduUp()}%) · 대학 학력이 필요한 일자리`, `2~4년 동안 일과 공부를 함께 함(스트레스 +4) · 학비 한 해 약 ${H.amt(S, Cg.ntFee(S, 'rem'))}~${H.amt(S, Cg.ntFee(S, 'reg'))}`);
+    if (typeof Ab !== 'undefined' && Ab && typeof Ab.stressTarget === 'function') {
+      const s0 = Ab.stressTarget;
+      Ab.stressTarget = (S) => { const t = s0(S); return S && S.cg && S.cg.nt && !S.flags.nightUntil && !S.mil && !S.prison ? clamp(t + 4, 3, 95) : t; };
+    }
+  };
+  E.hook('ensure', (S) => { Cg.late(); if (S && S.flags && S.flags.nightUntil && ok(S)) Cg.ntConv(S); });
+  E.hook('month', (S) => Cg.month(S));
   /** 형편상 해외 대학이 가능한 곳이 하나라도 있는가(장학금 포함) */
   Cg.abFeasible = (S, kind = 'ug') => Cg.dests(S, kind).slice(0, 5).some(([d]) => { const c = Cg.abCost(S, d, kind), sp = Cg.schP(S, d, kind); return c.need <= c.have || (sp >= 0.05 && c.need - (kind === 'grad' ? c.tuI + c.livI * 0.8 : c.tuI) <= c.have); });
   /** 보통 선택: 고교 졸업 때 학부 유학(나라별 비율, 형편이 넉넉할수록) */
@@ -45228,8 +46055,10 @@ const Cg = {};
       if ((ed.stage === 3 || ed.stage === 4) && cg.ab && !cg.ab.done && cg.ab.iso === isoOf(S)) r = r.replace(/(\d+)학년/, `$1학년(${nm(cg.ab.iso)} 유학)`);
       if (ed.stage !== null && ed.stage <= 2 && cg.early) r = r.replace(/(\d+)학년/, `$1학년(${nm(cg.early.iso)} 조기 유학)`);
       if (ed.stage === null) {
-        const pre = cg.rt && !cg.rt.half ? `${rtKo(cg.rt.n)} 중` : cg.lv ? (cg.lv.why === 'wh' && cg.lv.d ? `대학 휴학 중(${nm(cg.lv.d)} 워킹홀리데이)` : '대학 휴학 중') : cg.prep ? '어학 과정 중' : cg.wh ? `워킹홀리데이 중(${nm(cg.wh.iso)})` : '';
+        // 재수 중이면 시험까지 남은 달과 지금 가능성(피드백 238번 — 공부하기를 하면 오르는 것이 보이게)
+        const pre = cg.rt && !cg.rt.half ? Cg.rtNow(S) || `${rtKo(cg.rt.n)} 중` : cg.lv ? (cg.lv.why === 'wh' && cg.lv.d ? `대학 휴학 중(${nm(cg.lv.d)} 워킹홀리데이)` : '대학 휴학 중') : cg.prep ? '어학 과정 중' : cg.wh ? `워킹홀리데이 중(${nm(cg.wh.iso)})` : '';
         if (pre) r = r ? `${pre} · ${r}` : pre;
+        if (cg.nt) { const x = `${ntShort(S, cg.nt.k)} ${Cg.ntY(S)}학년`; r = r ? `${r} · ${x}` : x; }
       }
       return r;
     };
@@ -45239,8 +46068,24 @@ const Cg = {};
   Cg.rsRows = (S, rows) => {
     if (!S || !S.edu || !ok(S)) return;
     const cg = S.cg || {}, lv = S.edu.level || 0, tier = S.edu.tier, inUni = S.edu.stage === 3 || S.edu.stage === 4;
+    // 다니다 그만둔 전공(피드백 240번 — 예전에는 설명 없이 붙어 있었음): 학력 카드의 전공 줄에 밝힌다
+    if (lv === 3 && !inUni && S.edu.major && (cg.drop || cg.ntDrop || cg.entM !== undefined)) {
+      const r = rows.find((x) => x[0] === '전공');
+      if (r && !/그만둠/.test(r[1])) { r[1] = `${r[1]} — 다니다 그만둠`; r[2] = '졸업하지 않아 채용에서 전공으로 치지 않습니다 · 야간·원격 대학에서 남은 학년만 이어서 다닐 수 있습니다'; }
+    }
+    // 지금 다니는 야간·원격 대학 · 재수 · 휴직(대학 줄과 따로)
+    const extra = [];
+    if (cg.nt) {
+      const nt = cg.nt;
+      extra.push(['야간·원격 대학', `${Cg.ntKo(S, nt.k)} ${Cg.ntY(S)}학년 재학 중(${mjKo(nt.mj)}${nt.cont ? ' · 예전 학년을 이어서' : ''})`, `졸업까지 ${Math.max(0, nt.due - S.ageM)}달 · 학점 ${Cg.gpaTxt(S)} · 졸업하면 대학 학력과 전공으로 채용·연봉(같은 일의 새 연봉 약 +${eduUp()}%)`]);
+    }
+    const rn = Cg.rtNow(S);
+    if (rn) extra.push(['재수', rn, '공부하기를 할 때마다 시험을 잘 볼 가능성이 조금씩 오릅니다']);
+    if (cg.held && cg.held.title) extra.push(['휴직', `${cg.held.title} — 졸업하면 같은 일터로 돌아갑니다`, '다니는 동안 월급은 없습니다']);
     const parts = [];
     if (tier && (lv >= 4 || inUni)) parts.push(Cg.tierKo(S, tier) + (cg.uIso && cg.uIso !== S.born.iso ? `(${nm(cg.uIso)})` : ''));
+    if (cg.ntDone && lv >= 4) parts.push(`${ntShort(S, cg.ntDone.k)} 졸업(일하며 ${cg.ntDone.yrs || 4}년)`);
+    if (cg.adult && (lv >= 4 || inUni)) parts.push(`늦깎이 입학(${cg.adult}세)`);
     if (cg.rtY) parts.push(`${rtKo(cg.rtY)}${cg.rtY > 1 ? `(${cg.rtY}년)` : ''}`);
     if (cg.halfY) parts.push('반수');
     if (cg.xf) parts.push(cg.xf === 'jc' ? '전문대에서 4년제로 편입' : '상위권 대학으로 편입');
@@ -45252,14 +46097,16 @@ const Cg = {};
     if (cg.dl) parts.push('졸업 유예');
     if (cg.exch && DATA.c[cg.exch]) parts.push(`${nm(cg.exch)} 교환학생`);
     if (cg.earlyIso && DATA.c[cg.earlyIso]) parts.push(`${nm(cg.earlyIso)} 조기 유학`);
-    if (!parts.length) return;
+    if (!parts.length) { rows.push(...extra); return; }
     if (tier && lv >= 4 && rows[0] && rows[0][0] === '최종 학력' && lv === 4) rows[0][1] = rows[0][1].replace(C.EDU_NAME[lv], `${C.EDU_NAME[lv]}(${Cg.tierKo(S, tier, true)})`);
     const P = Cg.P(isoOf(S));
     const pm = tier ? Math.round((Cg.payMult(S) - 1) * 100) : 0;
     const use = tier === 'top' ? `채용에서 '출신 대학' 가산 · 사무·전문직 임금 약 ${pm >= 0 ? '+' : ''}${pm}%(${nm(isoOf(S))} 기준)` : tier === 'jc' ? `4년제 학위가 필요한 일(교사 등)은 지원 불가${Wd.dev(isoOf(S)) >= 2 ? '' : '(이 나라는 일부 허용)'} · 사무·전문직 임금 약 ${pm}% · 편입으로 4년제 학위를 딸 수 있음` : P.hire >= 0.3 ? '출신 대학 서열이 채용에 영향을 주는 나라입니다' : '';
     rows.push(['대학', parts.join(' · '), use]);
-    if (cg.m2 && C.MAJOR[cg.m2]) rows.push(['복수전공', mjKo(cg.m2), '그 전공과 이어진 일자리 채용에서 전공 일치로 칩니다']);
-    if (cg.mn && C.MAJOR[cg.mn]) rows.push(['부전공', mjKo(cg.mn), '그 전공과 이어진 일자리 채용에 조금 유리']);
+    rows.push(...extra);
+    // 복수전공·부전공은 졸업했거나 다니는 중일 때만(다니다 그만둔 사람에게 '채용에서 전공 일치'로 보이지 않게)
+    if (cg.m2 && C.MAJOR[cg.m2] && (lv >= 4 || inUni)) rows.push(['복수전공', mjKo(cg.m2), '그 전공과 이어진 일자리 채용에서 전공 일치로 칩니다']);
+    if (cg.mn && C.MAJOR[cg.mn] && (lv >= 4 || inUni)) rows.push(['부전공', mjKo(cg.mn), '그 전공과 이어진 일자리 채용에 조금 유리']);
     if (cg.abDeg && DATA.c[cg.abDeg.iso]) rows.push(['해외 학위', `${nm(cg.abDeg.iso)} ${cg.abDeg.lv >= 5 ? '대학원' : '대학'}`, `${nm(S.born.iso)}로 돌아가면 채용·임금 가산(약 +${pct(Cg.P(S.born.iso).prem)}%) · 그 나라에서는 '이 나라 학위'로 칩니다`]);
   };
 
@@ -49310,9 +50157,13 @@ const So = {};
     const mj = S.edu.major, off = track === 'off';
     if (mj === 'med' && off) return 'med';
     if (mj === 'law' && off) return 'law';
+    if ((mj === 'dent' || mj === 'pharm' || mj === 'vet') && off) return 'med';
     if (mj === 'nurse') return 'med';
-    if (mj === 'cs' && E.smEq(S) >= 55) return 'cyber';
-    if (mj === 'eng' && U.chance(0.6)) return U.chance(0.5) ? 'eng' : 'sig';
+    if ((mj === 'cs' || mj === 'ai') && E.smEq(S) >= 55) return 'cyber';
+    if ((mj === 'eng' || mj === 'arch') && U.chance(0.6)) return U.chance(0.5) ? 'eng' : 'sig';
+    if (mj === 'avia' && off && U.chance(0.6)) return 'avi';
+    if (mj === 'lang' && E.smEq(S) >= 60 && U.chance(0.4)) return 'intel';
+    if (mj === 'secu' && S.sex === 'm' && S.st.health >= 70 && U.chance(0.3)) return 'sf';
     if (E.smEq(S) >= 72 && U.chance(0.3)) return 'intel';
     if (S.sex === 'm' && S.st.health >= 75 && U.chance(0.2)) return 'sf';
     const w = [['inf', 0.34], ['art', 0.12], ['armor', 0.08], ['eng', 0.08], ['sig', 0.1], ['log', 0.14], ['adm', 0.08]];
@@ -49614,7 +50465,7 @@ const So = {};
   So.brJob = (S, so) => {
     const ed = S.edu.level, mj = S.edu.major, a = ageOf(S);
     const id = {
-      cyber: ed >= 4 ? (mj === 'cs' ? 'programmer' : 'engineer') : 'electrician', sig: ed >= 4 ? 'engineer' : 'electrician', intel: ed >= 3 ? 'clerk' : null,
+      cyber: ed >= 4 ? (mj === 'cs' || mj === 'ai' ? 'programmer' : 'engineer') : 'electrician', sig: ed >= 4 ? 'engineer' : 'electrician', intel: ed >= 3 ? 'clerk' : null,
       eng: ed >= 4 ? 'engineer' : 'construction', avi: 'mechanic', armor: 'mechanic', log: ed >= 3 ? 'clerk' : 'driver', adm: ed >= 3 ? 'clerk' : null,
       med: mj === 'med' ? 'doctor' : mj === 'nurse' ? 'nurse' : 'care', law: mj === 'law' ? 'lawyer' : null, art: 'driver',
       inf: ed >= 3 && a < 40 ? 'police' : null, sf: ed >= 3 && a < 40 ? 'police' : null,
@@ -49820,7 +50671,7 @@ const So = {};
   So.acadOk = (S) => {
     const iso = isoOf(S), a = ageOf(S);
     if (iso === 'PRK' || S.fam.married || a > 22 || S.edu.stage !== 3 || (S.edu.year || 1) > 1) return false;
-    if (S.edu.major === 'med' || S.edu.major === 'art' || S.edu.tier === 'jc') return false;
+    if (['med', 'dent', 'pharm', 'vet', 'art', 'music', 'film', 'design', 'beauty', 'theo'].includes(S.edu.major) || S.edu.tier === 'jc') return false; // 사관학교는 그 학교 전공으로 다시 시작(의약·예술·신학 계열은 옮겨 가지 않음)
     if (S.cg && S.cg.ab && !S.cg.ab.done) return false;
     if (E.smEq(S) < 62 || S.st.health < 55 || (hasDs() && Ds.milExempt(S))) return false;
     return !(S.sol && (S.sol.cadet || S.sol.acadNo));
@@ -61091,6 +61942,7 @@ const Sw = {};
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.6.14', d: '26.10.20', t: '낙방 뒤 재수 길·늦깎이 입시·야간 대학·전공 37개', items: ["대학에 떨어지면 재수 학원·혼자 공부·일하며 준비·전문대(나라별 — 커뮤니티 칼리지 등)·야간·원격 대학·군 복무·일 가운데 고릅니다. 다시 볼 때는 해마다 새 시험을 봅니다(시험을 안 봤던 사람도 붙을 수 있게 고침). 재수 중에는 '시험까지 n달 · 지금 가능성 약 n%'가 보이고, 공부하기를 하면 올라갑니다", "할 일 '대학 입시 다시 보기'(늦깎이·성인 학습자 전형, 나라별 시험 철에 한 해 한 번, 나이 제한 없음): 붙으면 일을 그만두거나 휴직하고(졸업하면 같은 일터로) 입학하거나 야간·원격 과정으로 다닙니다. 학자금 대출도 쓸 수 있습니다", "야간·원격 대학을 학교로: 18세부터, 4년제 야간·주말 과정·전문대 야간·방송통신대·사이버대 등을 고르고 전공을 정합니다. 예전에 그만둔 전공은 남은 학년만 다니고, 학년·학점·재학 표시가 있으며, 정해진 달에 졸업하면 학력·전공이 채용·연봉·대학원에 그대로 쓰입니다(큰일 기회 3번 → 2번)", "전공을 10개에서 37개로: 국제 분류 큰 분야 10개 안에서 체육·스포츠과학, 약학·치의학·수의학(6년 과정), 건축·토목, 디자인·음악·연극영화, 언론·미디어, 심리·사회복지, 외국어·통번역, 관광·조리·항공·미용, 경찰·소방·군사, 신학, 유아교육, 자연과학·인공지능 등. 큰 분야 → 세부 전공 두 단계로 고르고(전과·복수전공도), 앞 목록으로 돌아갈 수 있습니다", "직업과 전공을 새로 이음: 운동선수·운동 지도자 ↔ 체육, 기자·크리에이터 ↔ 언론·미디어, 요리사·셰프 ↔ 조리, 관광 가이드 ↔ 관광, 성직자 ↔ 신학, 경찰·소방관·직업군인 ↔ 경찰·소방·군사, 요양보호사 ↔ 사회복지, 번역 ↔ 외국어, 디자이너 ↔ 디자인, 연구원 ↔ 자연과학. 전문 학위가 필요 없는 일은 전공이 달라도 불리하지 않고, 병과·전문연구요원·사관학교 조건도 새 전공에 맞췄습니다"] },
   { v: '0.6.13', d: '26.10.20', t: '오디션 배역 맞춤·연예인의 계단·방송 묶음과 채널의 힘', items: ["오디션 1차의 천장을 없앰: 실력이 최고면 1차는 거의 통과하고, 최종은 '배역·콘셉트 맞춤'(외모·매력 재능, 나이대, 이름값, 운)으로 정합니다 — 실력 최고일 때 대형 오디션 약 65~95%(평균 약 85%). 오디션 창에 '외모 · 매력 재능'(화면의 매력은 외모·인품의 평균)을 따로 보입니다", "떨어진 까닭을 실력에 맞게: 실력이 높으면 '배역의 이미지와 맞지 않음', '그 나이대 배역이 적음', '이름이 알려진 배우가 캐스팅됨' 등. 떨어져도 단역·조연·연극·앙상블·피처링·OST·행사 제안이 옵니다", "연예인의 계단: 단역 → 조연 → 주연(가수는 행사 가수 → 가수 → 정상급 가수 등)을 해마다의 제안과 오디션 다시 보기로 오르고, 단계마다 연봉·명성·직함이 바뀝니다. 배우·방송인 오디션은 42세(뮤지컬 40세)까지, 30대 중반부터 그 나이대 배역이 서서히 줄어듭니다", "영상 올리기 한 번이 '석 달 동안 올린 영상 묶음'이 됨: 편수·조회수 합계·새 영상 하나 평균(구독자의 몇 %)·가장 많이 본 영상·이 기간 수입을 실제 수입 계산과 같은 숫자로 보여 줍니다", "채널을 열 때 장르(게임·먹방·키즈·금융·테크·교육·뷰티 등)와 숏폼 비중을 고르고, 새 연습 '영상 만들기' 실력·잘 맞는 분야·명성·채널 운이 조회수를 가릅니다. 광고 단가는 장르·숏폼(긴 영상의 약 10분의 1)에 따라 다르고, 협찬은 '한 해 n건 × 건당 단가'로 셉니다", "채널 카드에 '수입의 까닭' 줄: 한 달 조회(구독자의 몇 배 — 꾸준함·영상 실력·장르·숏폼) × 단가 + 협찬 + 후원·멤버십, 그리고 채널이 클수록 영상 하나를 보는 구독자 비율이 줄어드는 까닭(쉬는 구독자)"] },
   { v: '0.6.12', d: '26.10.20', t: '운동선수의 길·격투기·달아나기·여권', items: ["유소년 팀·학교 운동부에 들어가는 길: 나라마다 다르게 — 케냐·에티오피아는 학교 육상부와 고지대 훈련 캠프, 브라질은 풋살·구단 유소년부, 한국은 학교 운동부와 체육 특기생, 일본은 부카쓰, 미국은 학교 팀과 AAU 등. 종목마다 시작 나이가 다릅니다", "팀에 들면 해마다 학교·지역·전국 대회에 나가고, 성적에 따라 '눈에 띄는 정도'가 올라 실업팀·프로 입단 제안, 해외 구단·실업단의 영입, 지도자 추천, 공개 트라이아웃 기회가 찾아옵니다. 육상·격투기·골프처럼 늦게 피는 종목은 20대 후반까지 발탁될 수 있습니다", "대표가 되기 아주 어려운 나라의 대표급 선수에게 드물게 특별 귀화 제안: 받아들이기·조건을 더 받아내기·거절하고 고향 대표 노리기 — 국적 규칙·국제 대회 국적 변경 기다림·고향 여론이 따릅니다", "선수 종목 고르기와 생활체육 고르기를 여러 쪽으로 나눠 모든 종목을 고를 수 있게 하고, 첫 쪽에 그 나라에서 하는 격투기·무술을 늘 보여 줍니다. 생활체육에 복싱·킥복싱(무에타이)·주짓수·태권도·합기도·유도·검도·호신술·크라브 마가·우슈·카포에이라·레슬링 등을 넣고 종목 실력·띠 심사·호신·부상으로 이어지게 했습니다", "실력이 최고인 선수는 입단 테스트 1차를 거의 통과합니다. 떨어지면 '실력 부족' 대신 자리·나이·부상 이력·그날 몸 상태 같은 실제 까닭을 알려 줍니다", "강도·패싸움·단속·탈영·강제 징집에서 달아날 가능성이 몸의 '빠르기'(달리기 실력·운동 습관·나이·건강·몸의 불편)를 따릅니다 — 프로 육상 선수는 약 90%, 노인·거동이 불편한 사람은 훨씬 낮게. 선택지에 '빠르기 n(까닭) → 가능성 약 n%'", "국적이 여럿이면 해외여행·이주 때 가장 유리한 여권을 쓰고(같은 조건이면 더 센 여권), 어느 여권을 왜 썼는지 문장에 보입니다. 협정(EU 등)으로 드나들 때 국적 이름이 틀리던 것을 고쳤습니다"] },
   { v: '0.6.11', d: '26.10.19', t: '작은 정리', items: ['내부 점검용 값 칸을 지금의 능력치 구조(외모·인품, 타고난 운과 그 흐름, 타고난 재능, 개인 방송)에 맞춤 — 게임 진행에는 바뀐 것이 없음'] },
@@ -62621,8 +63473,10 @@ const Rs = {};
 (() => {
   const jobT = (S, id) => (C.JOB[id] ? (C.jobTitle ? C.jobTitle(S, C.JOB[id]) : C.JOB[id].ko) : id);
   const uniq = (a) => [...new Set(a)];
-  /** 전공과 이어진 일 */
-  Rs.majorJobs = (S, mj) => uniq(C.JOBS.filter((j) => j.major && j.major.includes(mj) && !j.special).map((j) => jobT(S, j.id))).slice(0, 5);
+  /** 전공과 이어진 일(sp: 채용이 아닌 길로 하는 특별한 일 — 선수·코치·번역·셰프 등) */
+  Rs.majorJobs = (S, mj, sp) => uniq(C.JOBS.filter((j) => j.major && j.major.includes(mj) && !j.special === !sp).map((j) => jobT(S, j.id))).slice(0, sp ? 3 : 5);
+  /** 전공 이름(큰 분야와 함께) */
+  Rs.majorKo = (mj) => { const m = C.MAJOR[mj]; if (!m) return ''; const f = C.MAJOR_FIELD && m.field && C.MAJOR_FIELD[m.field]; return f ? `${m.ko}(${f.ko})` : m.ko; };
   /** 대학 졸업이 있어야 지원할 수 있는 일(대표) */
   const uniJobs = (S) => uniq(C.JOBS.filter((j) => (j.edu || 0) >= 4 && !j.special && !j.self).map((j) => jobT(S, j.id))).slice(0, 5);
 
@@ -62637,7 +63491,8 @@ const Rs = {};
         : lvl >= 4 ? `대학 졸업이 필요한 일에 지원 가능(${uniJobs(S).join('·')} 등) · 해외 취업 비자 ×${lvl >= 5 ? '1.6' : '1.25'}` : lvl === 3 ? '대부분의 사무·기술 일에 지원 가능 · 대학 진학·검정고시 없이 가능' : '지원할 수 있는 일이 적음 · 검정고시·야간 학교로 올릴 수 있음']);
     if (S.edu.major && C.MAJOR[S.edu.major]) {
       const mj = S.edu.major;
-      rows.push(['전공', C.MAJOR[mj].ko, `${Rs.majorJobs(S, mj).join('·') || '여러 분야'} 채용에서 유리(전공과 맞으면 합격 가능성↑)`]);
+      const reg = Rs.majorJobs(S, mj), sp = Rs.majorJobs(S, mj, true);
+      rows.push(['전공', Rs.majorKo(mj), [reg.length ? `${reg.join('·')} 채용에서 유리(전공과 맞으면 합격 가능성↑)` : '여러 분야 채용에 두루 쓰임', sp.length ? `${sp.join('·')} 일과도 이어짐` : ''].filter(Boolean).join(' · ')]);
     }
     // 대학 갈래(college.js, 피드백 154번): 출신 대학 서열·재수·편입·전과·학점·복수전공·유학
     if (typeof Cg !== 'undefined' && Cg.rsRows) { try { Cg.rsRows(S, rows); } catch (e) { /* 표시만 하는 줄 */ } }
@@ -62708,7 +63563,8 @@ const Rs = {};
   /* ---------------- 운영자 모드(admin.js 가 부름): 학력·전공·자격증 바꾸기(피드백 148번) */
   Rs.admHTML = (S, sel) => {
     const edu = C.EDU_NAME.map((ko, i) => [i, ko]);
-    const mj = [['', '전공 없음']].concat(Object.entries(C.MAJOR).map(([k, d]) => [k, d.ko]));
+    // 큰 분야 순서로, 이름 앞에 분야를 붙인다(선택 상자에 묶음이 없어서)
+    const mj = [['', '전공 없음']].concat(Object.entries(C.MAJOR).map(([k, d]) => [k, C.MAJOR_FIELD && C.MAJOR_FIELD[d.field] ? `${C.MAJOR_FIELD[d.field].ko} — ${d.ko}` : d.ko]));
     const ct = [['', '더하지 않음']].concat(typeof Ct !== 'undefined' && Ct.LIST ? Object.entries(Ct.LIST).filter(([k]) => !(S.certs || []).some((c) => c.id === k)).map(([k, d]) => [k, d[0]]) : []);
     return `<p class="adm-note">학력과 자격</p><div class="adm-row3">${sel('rs-edu', '최종 학력', edu, S.edu.level || 0)}${sel('rs-major', '전공', mj, S.edu.major || '')}${sel('rs-cert', '자격증 더하기', ct, '')}</div>${typeof Cg !== 'undefined' && Cg.admHTML ? Cg.admHTML(S, sel) : ''}`;
   };
