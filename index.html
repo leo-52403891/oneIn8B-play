@@ -2916,6 +2916,126 @@ H.pick = (a) => U.pick(a);
 H.ask = (S, id, ctx = {}) => E.ask(S, id.startsWith('x_') || C.DEC[id] ? id : 'x_' + id, ctx);
 H.die = (S, cause) => E.die(S, cause);
 
+/* ---------------------------------------------------------------- 빠르기(피드백 236번) */
+/* 몸의 빠르기(0~100): 강도·패싸움·단속·탈영·강제 징집처럼 몸으로 달아나는 장면의 성공 가능성(H.fleeP)에 쓴다.
+ *   바탕 = 44 + 운동 습관(S.ft.hab) × 0.3 + 달리기 실력 × 0.5 + 프로 선수 가산(12 × 달리는 몫) + 달리기 운동 6 + (운동 재능 − 50) × 0.1
+ *     달리기 실력: 종목 기술(Sp.lvl) × 그 종목에서 달리는 몫(SPD_W — 육상 1 · 축구 0.8 · 럭비 0.75 · 농구 0.65 · 테니스 0.55 … 골프·양궁 0.05)과
+ *     일반 운동 실력(Pr.lvl 'sport') × 0.5 가운데 큰 값
+ *   × 나이(SPD_AGE — 18~30세 1 · 40세 0.92 · 55세 0.75 · 70세 0.5 · 80세 0.3 · 90세 0.12 / 6세 0.45 · 12세 0.8)
+ *   × 건강(0.55 + 건강/220 — 건강 70이면 0.87) × 몸의 불편(지체·팔다리 장애, 다친 몸, 오래 앓는 병, 투병·입원, 임신 후기, 비만)
+ *   80을 넘는 몫은 반만 더한다(프로 육상 선수 100 안팎 · 프로 축구 선수 90대 · 보통 젊은 어른 50 안팎 · 75세 15~20).
+ * 다른 이름공간(Sp·Pr·Ds·Hl)은 dsl.js 보다 늦게 불러지므로 부를 때 있는지 본다. */
+const SPD_W = { athletics: 1, soccer: 0.8, rugby: 0.75, aussierules: 0.75, gaelic: 0.75, americanfootball: 0.7, basketball: 0.65, tennis: 0.55, badminton: 0.5,
+  cricket: 0.45, cycling: 0.45, baseball: 0.4, volleyball: 0.4, boxing: 0.4, mma: 0.4, muaythai: 0.4, taekwondo: 0.4, fencing: 0.4, gymnastics: 0.4,
+  icehockey: 0.35, karate: 0.35, swimming: 0.35, judo: 0.3, wrestling: 0.3, tabletennis: 0.25, golf: 0.05, archery: 0.05, esports: 0 };
+const SPD_AGE = [[0, 0.1], [3, 0.12], [6, 0.45], [12, 0.8], [18, 1], [30, 1], [40, 0.92], [55, 0.75], [70, 0.5], [80, 0.3], [90, 0.12]];
+/** 나이에 따른 빠르기 배수(사이는 선으로 잇는다) */
+H.speedAgeF = (a) => {
+  if (a <= SPD_AGE[0][0]) return SPD_AGE[0][1];
+  for (let i = 1; i < SPD_AGE.length; i++) {
+    const [a1, f1] = SPD_AGE[i];
+    if (a <= a1) { const [a0, f0] = SPD_AGE[i - 1]; return f0 + ((f1 - f0) * (a - a0)) / (a1 - a0); }
+  }
+  return SPD_AGE[SPD_AGE.length - 1][1];
+};
+/** 빠르기를 깎는 몸의 불편: [이름, 배수] 목록 */
+const spdImp = (S) => {
+  const out = [];
+  const ds = (k) => (typeof Ds !== 'undefined' && Ds && typeof Ds.lv === 'function' ? Ds.lv(S, k) : 0);
+  const hl = (k) => (typeof Hl !== 'undefined' && Hl && typeof Hl.lv === 'function' ? Hl.lv(S, k) : 0);
+  const lv3 = (v, t) => t[U.clamp(v, 1, 3) - 1];
+  let v;
+  if (S.hosp) out.push(['입원 중', 0.1]);
+  if ((v = ds('mob'))) out.push(['거동 불편', lv3(v, [0.6, 0.3, 0.08])]);
+  if ((v = ds('limb'))) out.push(['팔다리 장애', lv3(v, [0.75, 0.5, 0.3])]);
+  if ((v = ds('cp'))) out.push(['뇌성마비', lv3(v, [0.7, 0.4, 0.15])]);
+  if ((v = ds('vis')) >= 2) out.push(['시각 장애', v >= 3 ? 0.6 : 0.85]);
+  if ((v = ds('chd'))) out.push(['심장병', lv3(v, [0.9, 0.75, 0.55])]);
+  const dz = S.cond && S.cond.disab && S.cond.disab.lv;
+  if (dz) out.push([dz >= 2 ? '다친 몸' : '다친 다리', dz >= 2 ? 0.45 : 0.7]);
+  if ((v = hl('stroke'))) out.push(['뇌졸중 후유증', lv3(v, [0.75, 0.35, 0.05])]);
+  if ((v = hl('hf'))) out.push(['심부전', lv3(v, [0.8, 0.5, 0.25])]);
+  if ((v = hl('copd'))) out.push(['만성 폐질환', lv3(v, [0.8, 0.55, 0.3])]);
+  if ((v = hl('ckd'))) out.push(['만성 신부전', lv3(v, [0.92, 0.75, 0.5])]);
+  if ((v = hl('liver'))) out.push(['간경변', lv3(v, [0.92, 0.75, 0.5])]);
+  if (hl('dementia') >= 2) out.push(['치매', 0.85]);
+  if (S.ill) out.push(typeof Hl !== 'undefined' && Hl && typeof Hl.terminal === 'function' && Hl.terminal(S) ? ['병 말기', 0.4] : ['투병 중', 0.75]);
+  if (S.sex === 'f' && S.fam && S.fam.pregDue !== null && S.fam.pregDue !== undefined) {
+    const mo = U.clamp(9 - (S.fam.pregDue - S.ageM), 1, 9);
+    if (mo >= 4) out.push([`임신 ${mo}개월`, mo >= 7 ? 0.6 : 0.85]);
+  }
+  const fat = (S.vc && S.vc.fat) || 0;
+  if (fat >= 40) out.push(['늘어난 몸무게', 1 - 0.3 * Math.min(1, fat / 100)]);
+  return out;
+};
+/** 빠르기와 그 까닭: { v: 0~100, fac: [[이름, 빠르기에 더한(−뺀) 몫]], age } */
+const spdCalc = (S) => {
+  const a = E.age(S);
+  const hasSp = typeof Sp !== 'undefined' && !!Sp && typeof Sp.lvl === 'function' && typeof Sp.ko === 'function';
+  const hab = S.ft && typeof S.ft.hab === 'number' ? S.ft.hab : 40;
+  // 달리기 실력: 달리는 몫을 곱한 종목 기술 중 가장 큰 것(프로로 뛰는 종목은 같은 값이면 그것으로)
+  let sk = 0, skId = null;
+  const j = S.work && S.work.job;
+  const pro = j && j.id === 'athlete' && j.sp && SPD_W[j.sp] !== undefined ? j.sp : null;
+  if (hasSp && S.sp && S.sp.lv) for (const id in S.sp.lv) { const w = SPD_W[id]; if (!w) continue; const x = Sp.lvl(S, id) * w; if (x > sk || (x === sk && id === pro)) { sk = x; skId = id; } }
+  let skName = skId ? `${Sp.ko(S, skId)} 실력` : '';
+  const gen = typeof Pr !== 'undefined' && Pr && typeof Pr.lvl === 'function' ? 0.5 * Pr.lvl(S, 'sport') : 0;
+  if (gen > sk) { sk = gen; skName = '운동 실력'; }
+  const proB = pro && SPD_W[pro] >= 0.4 ? 12 * SPD_W[pro] : 0;
+  if (proB && hasSp) skName = `프로 ${Sp.ko(S, pro)} 선수`;
+  const hobs = typeof C.activeHobbies === 'function' && S.hobbies ? C.activeHobbies(S) : S.hobbies || [];
+  const runOn = hobs.includes('running') || !!(S.ft && S.ft.rec === 'run' && S.ft.recM !== undefined && S.ageM - S.ft.recM <= 6);
+  const runB = runOn ? 6 : 0;
+  const tal = H.talent(S, 'sport') || 50;
+  const raw = 44 + 0.3 * hab + 0.5 * sk + proB + runB + 0.1 * (tal - 50);
+  const aF = H.speedAgeF(a);
+  const h = S.st ? S.st.health : 70;
+  const hF = U.clamp(0.55 + h / 220, 0.55, 1);
+  const imp = spdImp(S);
+  let iF = 1;
+  for (const [, m] of imp) iF *= m;
+  const x = raw * aF * hF * iF;
+  const v = U.clamp(Math.round(x > 80 ? 80 + (x - 80) / 2 : x), 1, 100);
+  // 까닭: 보통 사람(습관 40·건강 70·실력 없음)과 견주어 빠르기에 더하거나 뺀 몫
+  const s = aF * hF * iF, fac = [];
+  if (skName && (sk >= 10 || proB)) fac.push([skName, (0.5 * sk + proB) * s]);
+  if (hab >= 65) fac.push(['운동 습관 꾸준함', 0.3 * (hab - 40) * s]);
+  else if (hab < 20) fac.push(['운동 부족', 0.3 * (hab - 40) * s]);
+  if (runB) fac.push([hobs.includes('running') ? '달리기 취미' : '달리기 운동', runB * s]);
+  if (tal >= 75) fac.push(['타고난 운동 신경', 0.1 * (tal - 50) * s]);
+  if (h < 55 || h >= 90) fac.push([`건강 ${Math.round(h)}`, raw * aF * iF * (hF - 0.868)]);
+  for (const [k, m] of imp) fac.push([k, -raw * aF * hF * (1 - m)]);
+  return { v, fac, age: a };
+};
+/** 몸의 빠르기 0~100(달아나기 장면) */
+H.speed = (S) => spdCalc(S).v;
+/** '빠르기 88(프로 육상 선수·나이 24세)': 크게 더하거나 뺀 까닭 두 가지까지와 나이 */
+H.speedWhy = (S) => {
+  const r = spdCalc(S);
+  const top = r.fac.filter((f) => Math.abs(f[1]) >= 4).sort((p, q) => Math.abs(q[1]) - Math.abs(p[1])).slice(0, 2).map((f) => f[0]);
+  return `빠르기 ${r.v}(${top.concat(`나이 ${Math.floor(r.age)}세`).join('·')})`;
+};
+/** 같은 나이의 보통 빠르기(어린이끼리 견주는 장면에 mid 로 쓴다) */
+H.speedPeer = (S) => 50 * H.speedAgeF(E.age(S));
+/**
+ * 빠르기에 따른 달아날 가능성(운을 넣기 전). base: 빠르기가 mid(기본 50 — 보통 젊은 어른)인 사람의 그 장면 가능성,
+ * k: 빠르기가 얼마나 중요한지(1 이면 빠르기 25 차이에 로짓 1 — 강도 1.1 · 붙잡힘·발각이 더 중요한 장면 0.3~0.6), mid: 'peer'면 같은 나이의 보통 빠르기.
+ * 결과는 3~95%로 막는다(아무리 빨라도 흉기·총 앞에서는 장담할 수 없다).
+ */
+H.fleeP = (S, base, k = 1, mid = 50) => {
+  const b = U.clamp(base, 0.02, 0.98);
+  const m = mid === 'peer' ? H.speedPeer(S) : mid;
+  const z = Math.log(b / (1 - b)) + (k * (H.speed(S) - m)) / 25;
+  return U.clamp(1 / (1 + Math.exp(-z)), 0.03, 0.95);
+};
+/** 결정 창의 선택지 설명: '빠르기 88(…) → 가능성 약 87%'. 결정 창(C.addEvents)이 성공 가능성에 운을 로짓으로 넣는 것과 같게 계산해 보인다(운 ±2%p 이상이면 함께 적음) */
+H.fleeSub = (S, base, k = 1, mid = 50) => {
+  const p0 = H.fleeP(S, base, k, mid);
+  let p = p0, lk = 0;
+  if (p0 > 0.02 && p0 < 0.98 && E.luckL) { p = U.clamp(1 / (1 + Math.exp(-(Math.log(p0 / (1 - p0)) + E.luckL(S)))), 0.02, 0.98); lk = Math.round((p - p0) * 100); }
+  return `${H.speedWhy(S)} → 가능성 약 ${Math.round(p * 100)}%${Math.abs(lk) >= 2 ? `(운 ${lk > 0 ? '+' : '−'}${Math.abs(lk)}%p)` : ''}`;
+};
+
 /* ---------------------------------------------------------------- 사람 */
 /** 아주 가까운 가족(나·부모·배우자·연인·형제·자녀·새 가족)의 이름 */
 H.closeNames = (S) => {
@@ -6757,9 +6877,10 @@ C.metaAch = (lives) => {
         { l: '문을 두드리고 사과한다', typ: true, p: 0.65,
           ok: { t: '이웃 할아버지가 다음부터 조심하라며 웃어넘기셨습니다.', fx: { social: 2, happy: 1 } },
           no: { t: (S) => `유리값을 물어 드려야 했습니다. ${folks(S)}께 한참 잔소리를 들었습니다.`, fx: { money: -0.15, happy: -2 } } },
-        { l: '모르는 척 도망친다', p: 0.45,
+        // 피드백 236번: 같은 나이 아이들 가운데 얼마나 빠른지(dsl.js H.fleeP mid 'peer')를 조금 — 들키는 것은 대개 나중 일이다
+        { l: '모르는 척 도망친다', p: (S) => H.fleeP(S, 0.45, 0.4, 'peer'), sub: (S) => H.fleeSub(S, 0.45, 0.4, 'peer'),
           ok: { t: '아무도 몰랐지만, 그 집 앞을 지날 때마다 가슴이 두근거렸습니다.', fx: { happy: -2 } },
-          no: { t: '결국 들켜서 유리값을 물고 크게 혼났습니다.', fx: { money: -0.2, happy: -6, social: -2 } } },
+          no: { t: (S) => `${H.speed(S) < H.speedPeer(S) - 8 ? '뛰다 넘어진 사이 이웃 어른에게 붙잡혔습니다. ' : '결국 들켜서 '}유리값을 물고 크게 혼났습니다.`, fx: { money: -0.2, happy: -6, social: -2 } } },
         { l: '친구들과 용돈을 모아 물어 준다', t: '모은 동전을 내밀자 이웃 아주머니가 반만 받으셨습니다.', fx: { money: -0.05, social: 3, happy: 1 } },
       ],
     },
@@ -7746,9 +7867,10 @@ C.metaAch = (lives) => {
       id: 't_gangfight', age: [0, 120], rate: 0,
       title: '패싸움', text: '경쟁 패거리와 골목에서 맞닥뜨렸습니다. 누군가 칼을 꺼냈습니다.',
       choices: [
-        { l: '도망친다', typ: true, p: 0.8,
+        // 피드백 236번: 몸의 빠르기(dsl.js H.speed)만큼 — 보통 빠르기면 예전처럼 약 80%
+        { l: '도망친다', typ: true, p: (S) => H.fleeP(S, 0.8, 0.6), sub: (S) => H.fleeSub(S, 0.8, 0.6),
           ok: { t: '골목을 내달려 겨우 빠져나왔습니다. 그날 밤 패거리를 떠나기로 마음먹었습니다.', fx: { happy: -5 }, run: (S) => { S.flags.gang = 0; } },
-          no: { t: '붙잡혀 크게 다쳤습니다. 몇 주 동안 병원 신세를 졌습니다.', fx: { health: -15, happy: -8 } } },
+          no: { t: '뒤쫓아 온 무리에게 붙잡혀 크게 다쳤습니다. 달아난다고 늘 안전한 것은 아니었습니다. 몇 주 동안 병원 신세를 졌습니다.', fx: { health: -15, happy: -8 } } },
         { l: '끝까지 맞선다', sub: '목숨을 걸어야 합니다 · 붙잡힐 가능성도 큽니다', p: 0.99,
           ok: { run: (S) => {
             if (U.chance(0.45)) { H.jail(S, U.randInt(3, 12), '폭행'); return `경찰이 들이닥쳤습니다. {N은} 폭행 혐의로 붙잡혀 ${jailWord(S)}에 가게 되었습니다.`; }
@@ -8135,7 +8257,8 @@ C.metaAch = (lives) => {
       when: (S) => !!S.mil,
       title: '탈영의 유혹', text: '같은 부대의 한 병사가 오늘 밤 함께 부대를 빠져나가자고 속삭입니다.',
       choices: [
-        { l: '함께 도망친다', p: 0.35,
+        // 피드백 236번: 들키지 않는 것이 먼저라 빠르기는 조금만(dsl.js H.fleeP k 0.4)
+        { l: '함께 도망친다', p: (S) => H.fleeP(S, 0.35, 0.4), sub: (S) => `${H.fleeSub(S, 0.35, 0.4)} · 들키지 않는 것이 먼저입니다`,
           ok: { t: '어둠을 틈타 부대를 빠져나왔습니다. 이제 숨어 살아야 합니다.', fx: { happy: -5, social: -8 },
             run: (S) => { S.mil = null; S.flags.deserter = true; E.afterSchool(S); } },
           no: { t: '헌병에게 붙잡혔습니다. 군사 재판을 받았습니다.', run: (S) => { S.mil = null; H.jail(S, U.randInt(6, 18), '탈영'); } } },
@@ -12842,7 +12965,7 @@ const Mg = {};
     for (const c of Mg.cits(S)) {
       for (const a of c === sov(c) ? [c] : [c, sov(c)]) {
         const r = Mg.blocPair(a, dest, travel);
-        if (r && (!best || r.rank > best.rank)) best = r;
+        if (r && (!best || r.rank > best.rank)) best = { ...r, via: c }; // via: 이 협정의 자격을 준 국적(피드백 247번 — 이름을 바르게)
       }
     }
     return best;
@@ -12852,6 +12975,15 @@ const Mg = {};
 
   /* ================================================================ 비자 (관광·입국) */
   const RANK = { o: 5, f: 4, a: 3, e: 2, v: 1, '?': 1, n: 0 };
+  /** 여권의 힘: 비자 없이·도착 비자·전자 비자로 갈 수 있는 나라 수(같은 조건이면 더 센 여권을 쓴다 — 피드백 247번) */
+  const pStr = {};
+  Mg.passStrength = (p) => {
+    if (pStr[p] !== undefined) return pStr[p];
+    const V = VISA(), row = V && V.p[p];
+    let n = 0;
+    if (row) for (const c of row) if (c === 'f' || c === 'a' || c === 'e') n++; // 표의 한 줄은 글자열(또는 배열) — 나라마다 한 글자
+    return (pStr[p] = n);
+  };
   let idx = null;
   Mg.passCode = (p, dest) => {
     const V = VISA();
@@ -12867,18 +12999,23 @@ const Mg = {};
     const dn = nm(dest);
     if (Mg.isCitizen(S, dest)) return { code: 'o', why: `${dn} 국적이 있어 언제든 드나들 수 있습니다`, pass: sov(dest) };
     const fb = Mg.freeBloc(S, dest, true);
+    // 다중 국적(피드백 247번): 여권마다 입국 조건을 보고 가장 유리한 것을 쓴다(같으면 더 센 여권)
+    const pss = Mg.passports(S);
     let best = null;
-    for (const p of Mg.passports(S)) { const c = Mg.passCode(p, dest); if (!best || RANK[c] > RANK[best.c]) best = { p, c }; }
+    for (const p of pss) { const c = Mg.passCode(p, dest); if (!best || RANK[c] > RANK[best.c] || (RANK[c] === RANK[best.c] && Mg.passStrength(p) > Mg.passStrength(best.p))) best = { p, c }; }
     const pn = nm(best.p);
-    if (fb) return { code: 'f', why: `${fb.ko}에 따라 ${pn} 국민은 ${dn}에 자유롭게 드나들 수 있습니다`, pass: best.p };
+    // 다른 여권이었으면 더 불리했을 때만 한마디 붙인다
+    const worse = (code) => pss.filter((p) => RANK[Mg.passCode(p, dest)] < RANK[code]);
+    const multi = (p, code) => { const w = worse(code).filter((x) => x !== p); return w.length ? ` — ${w.map(nm).join('·')} 여권보다 유리한 ${nm(p)} 여권을 씁니다` : ''; };
+    if (fb) { const vp = fb.via ? sov(fb.via) : best.p; return { code: 'f', why: `${fb.ko}에 따라 ${nm(fb.via || best.p)} 국민은 ${dn}에 자유롭게 드나들 수 있습니다${multi(vp, 'f')}`, pass: vp }; }
     const sch = SCHENGEN.has(dest);
-    if (best.c === 'f') return { code: 'f', why: `${pn} 여권으로는 ${dn}에 비자 없이 ${sch ? '90일까지 머물' : '들어갈'} 수 있습니다`, pass: best.p };
-    if (best.c === 'a') return { code: 'a', why: `${pn} 여권으로는 ${dn} 공항에 도착해서 비자를 받을 수 있습니다`, pass: best.p };
+    if (best.c === 'f') return { code: 'f', why: `${pn} 여권으로는 ${dn}에 비자 없이 ${sch ? '90일까지 머물' : '들어갈'} 수 있습니다${multi(best.p, 'f')}`, pass: best.p };
+    if (best.c === 'a') return { code: 'a', why: `${pn} 여권으로는 ${dn} 공항에 도착해서 비자를 받을 수 있습니다${multi(best.p, 'a')}`, pass: best.p };
     const R = S.res;
     if (R && LEGAL(R.status) && R.status !== 'citizen' && R.iso === E.iso(S) && SCHENGEN.has(R.iso) && sch && R.iso !== dest) {
       return { code: 'f', why: `${nm(R.iso)} 체류 허가가 있어 같은 솅겐 지역인 ${dn}에는 비자 없이 90일까지 머물 수 있습니다`, pass: best.p, res: R.iso };
     }
-    if (best.c === 'e') return { code: 'e', why: `${pn} 여권으로는 ${dn}에 가기 전에 온라인으로 전자 비자(전자여행허가)만 받으면 됩니다`, pass: best.p };
+    if (best.c === 'e') return { code: 'e', why: `${pn} 여권으로는 ${dn}에 가기 전에 온라인으로 전자 비자(전자여행허가)만 받으면 됩니다${multi(best.p, 'e')}`, pass: best.p };
     if (best.c === 'n') return { code: 'n', why: `${pn} 여권으로는 지금 ${dn}에 들어갈 수 없습니다`, pass: best.p };
     return { code: 'v', why: `${pn} 여권으로는 ${dn}에 가려면 미리 대사관에서 비자를 받아야 합니다`, pass: best.p };
   };
@@ -13191,7 +13328,7 @@ const Mg = {};
       return { route: 'return', p: 1, ent, why: dest === S.born.iso || sov(dest) === sov(S.born.iso) ? `태어난 나라라 언제든 돌아갈 수 있습니다` : `${nm(dest)} 국적이 있어 언제든 돌아갈 수 있습니다` };
     }
     const fb = Mg.freeBloc(S, dest, false);
-    if (fb && fb.work === true) return { route: 'free', p: 1, ent, fb, why: `${fb.ko}에 따라 비자 없이 살며 일할 수 있습니다` };
+    if (fb && fb.work === true) return { route: 'free', p: 1, ent, fb, why: `${fb.ko}에 따라 ${Mg.cits(S).length > 1 && fb.via ? `${nm(fb.via)} 국적으로 ` : ''}비자 없이 살며 일할 수 있습니다` };
     const retire = Mg.retireMode(S);
     const rv = (ECON().retireVisa || {})[dest];
     if (retire && rv && Mg.passiveUSD(S) >= rv.minIncomeUSDmo && Mg.retireAgeOk(S, rv)) {
@@ -22738,13 +22875,15 @@ const Cm = {};
     const grown = S.fam.kids.some((k) => k.alive && (S.ageM - k.bornM) / 12 >= 18);
     const who = partnerOn(S) ? U.j(S.fam.partner.name, '이') : H.parentsAlive(S) > 0 ? U.j(folks(S), '이') : grown ? '자녀들이' : S.indep ? '가까운 사람들이' : null;
     const r = Math.random();
+    // 스스로 달아날 몫(약 6%)은 몸의 빠르기만큼 조금 오르내린다(빠르기 50이면 그대로 — 피드백 236번)
+    const spd = H.speed(S), pEsc = 0.06 * clamp(0.5 + spd / 100, 0.3, 1.5);
     let end, t;
     if (r < pRescue) {
       end = 'rescue';
       t = `${n}개월 만에 경찰 특공대가 은신처를 덮쳐 {N을} 구해 냈습니다. 납치범 몇 명이 그 자리에서 붙잡혔습니다.`;
-    } else if (r < pRescue + 0.06) {
+    } else if (r < pRescue + pEsc) {
       end = 'escape';
-      t = `${n}개월째 되던 밤, 감시가 느슨해진 틈을 타 맨발로 도망쳐 나왔습니다. 길가의 가게에서 겨우 도움을 청했습니다.`;
+      t = `${n}개월째 되던 밤, 감시가 느슨해진 틈을 타 맨발로 도망쳐 나왔습니다. ${spd >= 75 ? '뒤쫓는 발소리를 따돌리고 큰길까지 내달려 ' : ''}길가의 가게에서 겨우 도움을 청했습니다.`;
     } else if (who && U.chance(0.85)) {
       end = 'ransom';
       const x = H.pay(S, H.wealth(S) > 0.75 ? U.randInt(12, 36) : U.randInt(3, 12));
@@ -22918,6 +23057,10 @@ const Cm = {};
 
   /* ================================================================ 사건 */
   const robTalk = (S) => clamp(0.3 + (H.talent(S, 'sport') - 50) / 150 + (S.st.health - 60) / 200, 0.1, 0.6);
+  /** 강도에게서 달아나기(H.fleeP 의 base·k): 보통 젊은 어른(빠르기 50) 약 50% · 프로 육상 선수 약 90% · 75세 20% 안팎(피드백 236번) */
+  const FLEE_ROB = [0.5, 1.1];
+  /** 붙잡힐 때 달아나기: 경찰의 실력(법치)이 정한 가능성에 빠르기를 절반쯤만 — 무전·차량·수배가 있어 발이 빨라도 장담할 수 없다 */
+  const arrestFleeBase = (S) => clamp(0.3 - 0.08 * rlOf(S), 0.1, 0.5);
   /** '큰 건'이 있을 법한 불법 직업(가벼운 무허가 영업·후기 조작은 없음) */
   const bigOk = (S) => { const d = cjIl(S); return !!d && d.big !== 0; };
   /** 다른 패거리와 구역 다툼이 없는 일 */
@@ -22958,9 +23101,10 @@ const Cm = {};
         { l: '내주고 경찰에 신고한다', p: (S) => Cm.policeP(S, 'rob'), sub: (S) => C.t(S, clrNote(S, 'rob')),
           ok: { run: (S) => { tally(S, 'vr', 'rob', true); lose(S, 0.05, 0.15); E.stat(S, 'happy', -2); return '며칠 뒤 경찰이 범인을 붙잡았다고 연락해 왔습니다. 빼앗긴 돈도 일부 돌려받았습니다.'; } },
           no: { run: (S) => { tally(S, 'vr', 'rob', false); const a = lose(S, 0.15, 0.5, 0.02, 1); E.stat(S, 'happy', -7); return rlOf(S) < -0.4 ? `${U.j(a, '을')} 빼앗겼습니다. 경찰은 서류 한 장만 적고 돌아갔고, 오히려 "수고비"를 바라는 눈치였습니다.` : `${U.j(a, '을')} 빼앗겼습니다. 경찰이 와서 조사했지만 범인은 끝내 찾지 못했습니다. (${clrNote(S, 'rob')})`; } } },
-        { l: '소리치며 달아난다', p: (S) => clamp(0.45 + (S.st.health - 60) / 150, 0.2, 0.75),
-          ok: { t: '있는 힘껏 소리치며 내달렸습니다. 다행히 쫓아오지 않았습니다.', fx: { happy: -3 } },
-          no: { run: (S) => { const a = lose(S, 0.2, 0.6, 0.02, 1); fear(S, 8); E.stat(S, 'health', -6); E.stat(S, 'happy', -8); return `붙잡혀 몇 대 맞고 ${U.j(a, '을')} 빼앗겼습니다.`; } } },
+        // 피드백 236번: 건강만 보던 가능성을 몸의 빠르기(달리기 실력·운동 습관·나이·건강·몸의 불편 — dsl.js H.speed)로
+        { l: '소리치며 달아난다', p: (S) => H.fleeP(S, ...FLEE_ROB), sub: (S) => `${H.fleeSub(S, ...FLEE_ROB)} · 붙잡히면 다칠 수 있습니다`,
+          ok: { fx: { happy: -3 }, run: (S) => (H.speed(S) >= 80 ? '몇 걸음 만에 거리를 크게 벌렸습니다. 강도는 몇 미터 쫓아오다 이내 포기했습니다.' : '있는 힘껏 소리치며 내달렸습니다. 다행히 쫓아오지 않았습니다.') },
+          no: { run: (S) => { const fast = H.speed(S) >= 70; const a = lose(S, 0.2, 0.6, 0.02, 1); fear(S, 8); E.stat(S, 'health', -6); E.stat(S, 'happy', -8); return `${fast ? '내달렸지만 막다른 골목에 몰렸습니다. ' : ''}붙잡혀 몇 대 맞고 ${U.j(a, '을')} 빼앗겼습니다. 흉기를 든 사람에게 등을 보이는 것이 늘 안전한 것은 아닙니다.`; } } },
         { l: '맞서 싸운다', sub: '다칠 수 있습니다', p: robTalk,
           ok: { t: '몸싸움 끝에 강도가 달아났습니다. 손이 떨려 한참을 그 자리에 서 있었습니다.', fx: { happy: 2 }, val: { risk: 2 } },
           no: { run: (S) => { const a = lose(S, 0.2, 0.6, 0.03, 1); fear(S, 12); E.stat(S, 'health', -12); E.stat(S, 'happy', -10); return `흉기에 다쳐 병원 신세를 졌습니다. 가진 돈 ${a}도 모두 빼앗겼습니다.`; } } },
@@ -23222,14 +23366,14 @@ const Cm = {};
         { l: '경찰에게 돈을 쥐여 준다', need: (S) => S.indep || S.money >= H.pay(S, 3), cost: 3, p: (S) => Cm.bribeWorks(S), sub: (S) => (ccOf(S) >= 0.3 ? '부패가 적은 나라라 잘 통하지 않고, 들키면 혐의가 붙습니다' : ''),
           ok: { val: { honest: -3 }, run: (S) => { S.rap.heat = 30; return '돈봉투가 오간 뒤 사건 기록이 사라졌습니다. {N은} 그날 오후 집으로 돌아왔습니다.'; } },
           no: { run: (S, ctx) => { const m = R(ctx.months * 1.3); const tl = Cm.jailNow(S, m, ctx.why + '·뇌물 공여', ctx.ck); return `뇌물을 건네려다 혐의가 하나 더 붙었습니다. ${m}개월 형을 받았습니다.${tl}`; } } },
-        { l: '달아난다', p: (S) => clamp(0.3 - 0.08 * rlOf(S), 0.1, 0.5),
+        { l: '달아난다', p: (S) => H.fleeP(S, arrestFleeBase(S), 0.5), sub: (S) => `${H.fleeSub(S, arrestFleeBase(S), 0.5)} · 붙잡히면 도주까지 더해 형이 무거워집니다`,
           ok: { val: { risk: 3 }, run: (S) => {
             const cs = Wd.cities(E.iso(S)).filter((c) => c !== S.place.city);
             if (cs.length) { S.place.city = U.pick(cs); S.place.urban = true; }
             S.rap.heat = 70; E.stat(S, 'social', -6); E.stat(S, 'happy', -4);
             return `경찰을 따돌리고 ${U.j(S.place.city, '으로')} 몸을 숨겼습니다. 이름을 바꾸고 낯선 동네에서 숨죽여 지냅니다.`;
           } },
-          no: { run: (S, ctx) => { const m = R(ctx.months * 1.5); const tl = Cm.jailNow(S, m, ctx.why + '·도주', ctx.ck); return `몇 블록을 못 가 붙잡혔습니다. 도주까지 더해져 ${m}개월 형을 받았습니다.${tl}`; } } },
+          no: { run: (S, ctx) => { const m = R(ctx.months * 1.5); const tl = Cm.jailNow(S, m, ctx.why + '·도주', ctx.ck); return `${H.speed(S) >= 70 ? '골목을 빠져나가자 경찰차가 앞을 막아섰습니다' : '몇 블록을 못 가 붙잡혔습니다'}. 도주까지 더해져 ${m}개월 형을 받았습니다.${tl}`; } } },
       ],
     },
     {
@@ -27960,7 +28104,8 @@ const Sp = {};
    * k: team(구기 단체) · solo(라켓 개인) · race(기록) · fight(격투) · aim(골프·양궁) · gym(체조) · e(e스포츠)
    * ret: 은퇴 나이 범위 · inj: 부상 사건 빈도 배수 · risk: 선수로 뛰는 동안 사고('other') 위험 배수(전에는 모든 선수 1.5)
    * mu·sig: 연봉(이 나라 보통 일꾼 연봉 대비, 로그) 기준값에 더하는 값과 편차 · tryMax: 프로가 될 수 있는 마지막 나이
-   * top / pro: 세계 최고 리그 / 프로 리그가 있는 나라(근삿값) · proR·semiR: 규칙으로 정하는 리그 */
+   * top / pro: 세계 최고 리그 / 프로 리그가 있는 나라(근삿값) · proR·semiR: 규칙으로 정하는 리그
+   * 피드백 243번(v0.6.12): tryMax 를 종목에 맞게 — 늦게 피는 육상(27)·격투기(25~28)는 늦게까지, 일찍 끝나는 수영(22)·테니스(23)는 이르게(근삿값, 없으면 24) */
   const D1 = (iso) => devOf(iso) >= 1, D2 = (iso) => devOf(iso) >= 2;
   const COLD = (iso) => ['eca', 'na'].includes(rkOf(iso));
   const DEF = [
@@ -27976,22 +28121,22 @@ const Sp = {};
     { id: 'volleyball', ko: '배구', k: 'team', ret: [31, 35], inj: 0.9, risk: 1.25, mu: -0.9, sig: 0.8, oly: true,
       top: ['ITA', 'POL', 'BRA', 'TUR', 'RUS', 'JPN'], pro: ['KOR', 'CHN', 'IRN', 'FRA', 'ARG', 'DEU', 'GRC', 'USA', 'BEL', 'SRB', 'PHL', 'THA', 'IDN', 'PER', 'DOM', 'PRT', 'CZE', 'SVN', 'ROU', 'BGR', 'FIN', 'NLD', 'EGY', 'TUN', 'QAT', 'VNM', 'AZE', 'UKR', 'CAN', 'MEX', 'CHL', 'ESP'], semiR: D2,
       win: '마지막 스파이크가 상대 코트에 꽂혔습니다!', miss: '마지막 공격이 블로킹에 막혔습니다.', hurt: '블로킹하다 어깨와 손가락을 크게 다쳤습니다.', venue: '코트' },
-    { id: 'tennis', ko: '테니스', k: 'solo', ret: [29, 34], inj: 0.8, risk: 1.2, mu: -0.7, sig: 1.6, oly: true,
+    { id: 'tennis', ko: '테니스', k: 'solo', ret: [29, 34], inj: 0.8, risk: 1.2, mu: -0.7, sig: 1.6, oly: true, tryMax: 23,
       top: ['USA', 'ESP', 'FRA', 'GBR', 'AUS', 'ITA', 'DEU'], pro: [], proR: D2, semiR: D1,
       win: '매치 포인트를 따내 우승 트로피를 들어 올렸습니다!', miss: '마지막 공이 라인을 벗어났습니다. 준우승입니다.', hurt: '손목과 어깨 인대에 탈이 났습니다.', venue: '코트' },
     { id: 'golf', ko: '골프', k: 'aim', ret: [40, 50], inj: 0.4, risk: 1.1, mu: -0.5, sig: 1.5, oly: true, tryMax: 30,
       top: ['USA', 'JPN', 'KOR', 'GBR', 'AUS', 'ZAF'], pro: ['IND', 'CHN', 'THA', 'PHL', 'MYS'], proR: D2, semiR: D1,
       win: '마지막 퍼트가 들어가 우승 트로피를 들었습니다!', miss: '마지막 홀에서 공이 물에 빠졌습니다. 준우승입니다.', hurt: '허리 디스크가 도졌습니다.', venue: '필드' },
-    { id: 'swimming', ko: '수영', k: 'race', ret: [24, 29], inj: 0.4, risk: 1.15, mu: -1.4, sig: 0.9, oly: true,
+    { id: 'swimming', ko: '수영', k: 'race', ret: [24, 29], inj: 0.4, risk: 1.15, mu: -1.4, sig: 0.9, oly: true, tryMax: 22,
       top: ['USA', 'AUS', 'CHN', 'JPN', 'GBR'], pro: [], proR: D2, semiR: D1,
       win: '터치패드를 가장 먼저 찍었습니다! 금메달입니다.', miss: '마지막 25미터에서 따라잡혀 4위에 그쳤습니다.', hurt: '어깨 회전근이 찢어졌습니다.', venue: '수영장' },
-    { id: 'athletics', ko: '육상', k: 'race', ret: [28, 34], inj: 0.8, risk: 1.2, mu: -1.3, sig: 1.2, oly: true,
+    { id: 'athletics', ko: '육상', k: 'race', ret: [28, 34], inj: 0.8, risk: 1.2, mu: -1.3, sig: 1.2, oly: true, tryMax: 27,
       top: ['USA', 'KEN', 'ETH', 'JAM', 'GBR'], pro: [], proR: D2, semiR: D1,
       win: '결승선을 가장 먼저 통과했습니다! 금메달을 목에 걸었습니다.', miss: '마지막에 따라잡혀 4위에 그쳤습니다.', hurt: '경기 도중 햄스트링이 끊어졌습니다.', venue: '트랙' },
-    { id: 'boxing', ko: '복싱', k: 'fight', ret: [30, 36], inj: 1.4, risk: 2.2, mu: -0.7, sig: 1.5, oly: true,
+    { id: 'boxing', ko: '복싱', k: 'fight', ret: [30, 36], inj: 1.4, risk: 2.2, mu: -0.7, sig: 1.5, oly: true, tryMax: 26,
       top: ['USA', 'GBR', 'MEX', 'PHL', 'JPN'], pro: [], proR: (iso) => D1(iso) && popOf(iso) >= 1e6, semiR: (iso) => popOf(iso) >= 5e5,
       win: '마지막 라운드에 상대를 쓰러뜨리고 챔피언 벨트를 찼습니다!', miss: '판정으로 졌습니다. 얼굴이 퉁퉁 부었습니다.', hurt: '경기 뒤 눈 주위 뼈에 금이 가고 뇌진탕 진단을 받았습니다.', venue: '링' },
-    { id: 'mma', ko: '격투기', k: 'fight', ret: [30, 36], inj: 1.5, risk: 2.4, mu: -1.0, sig: 1.3, oly: false, cmu: { USA: 0.4 },
+    { id: 'mma', ko: '격투기', k: 'fight', ret: [30, 36], inj: 1.5, risk: 2.4, mu: -1.0, sig: 1.3, oly: false, cmu: { USA: 0.4 }, tryMax: 28,
       top: ['USA', 'BRA', 'JPN'], pro: ['THA', 'RUS', 'KOR', 'CHN', 'GBR', 'FRA', 'POL', 'NLD', 'IRL', 'AUS', 'CAN', 'KAZ', 'PHL', 'MEX', 'DEU', 'SWE', 'ESP', 'ITA', 'NZL', 'ARG', 'UKR', 'GEO', 'KHM', 'MMR', 'VNM', 'IDN', 'MYS', 'SGP', 'ZAF', 'AZE', 'UZB', 'KGZ'], proR: D2, semiR: D1,
       win: '마지막 라운드에 상대를 쓰러뜨리고 챔피언 벨트를 찼습니다!', miss: '판정으로 졌습니다. 온몸이 멍투성이가 되었습니다.', hurt: '경기 중 뇌진탕과 갈비뼈 골절을 입었습니다.', venue: '케이지' },
     { id: 'gymnastics', ko: '체조', k: 'gym', ret: [20, 26], inj: 1.1, risk: 1.4, mu: -1.5, sig: 0.7, oly: true, tryMax: 20,
@@ -28018,7 +28163,7 @@ const Sp = {};
     { id: 'archery', ko: '양궁', k: 'aim', ret: [35, 45], inj: 0.2, risk: 1.0, mu: -1.4, sig: 0.6, oly: true, tryMax: 30,
       top: ['KOR'], pro: ['CHN', 'JPN', 'TWN', 'USA', 'MEX', 'TUR', 'IND', 'ITA', 'FRA', 'DEU', 'NLD', 'BTN'], semiR: D2,
       win: '마지막 한 발이 10점 한가운데에 꽂혔습니다! 금메달입니다.', miss: '마지막 한 발이 8점에 머물렀습니다.', hurt: '활을 당기는 어깨 인대에 염증이 심해졌습니다.', venue: '사로' },
-    { id: 'wrestling', ko: '레슬링·씨름', k: 'fight', ret: [29, 35], inj: 1.1, risk: 1.6, mu: -1.1, sig: 1.0, oly: true, cmu: { JPN: 0.5, SEN: 0.5 },
+    { id: 'wrestling', ko: '레슬링·씨름', k: 'fight', ret: [29, 35], inj: 1.1, risk: 1.6, mu: -1.1, sig: 1.0, oly: true, cmu: { JPN: 0.5, SEN: 0.5 }, tryMax: 26,
       top: ['JPN', 'SEN'], pro: ['TUR', 'IRN', 'IND', 'RUS', 'USA', 'KOR', 'MNG', 'GEO', 'AZE', 'UZB', 'KAZ', 'PAK'], semiR: (iso) => D1(iso) && ['eca', 'mena', 'sas'].includes(rkOf(iso)),
       win: '상대를 모래판에 메다꽂고 우승했습니다!', miss: '마지막 순간 균형을 잃고 넘어졌습니다.', hurt: '경기 중 목과 무릎을 크게 다쳤습니다.', venue: '경기장',
       name: { MNG: '몽골 씨름', JPN: '스모·레슬링', KOR: '씨름·레슬링', SEN: '세네갈 씨름' } },
@@ -28041,15 +28186,15 @@ const Sp = {};
       top: [], pro: ['KOR'], semiR: (iso) => D1(iso) && Sp.popW('taekwondo', iso) >= 1.5,
       win: '마지막 라운드 머리 공격으로 점수를 뒤집어 금메달을 땄습니다!', miss: '종료 직전 몸통 공격을 내주어 은메달에 그쳤습니다.', hurt: '발차기를 하다 무릎 인대가 끊어졌습니다.', venue: '경기장',
       ex: (ko) => [`${ko} 도장에서 품새와 발차기를 연습했습니다.`, `${ko} 겨루기 연습을 몇 라운드 했습니다.`] },
-    { id: 'judo', ko: '유도', k: 'fight', bout: true, ret: [28, 33], inj: 1.2, risk: 1.4, mu: -1.1, sig: 0.5, oly: true,
+    { id: 'judo', ko: '유도', k: 'fight', bout: true, ret: [28, 33], inj: 1.2, risk: 1.4, mu: -1.1, sig: 0.5, oly: true, tryMax: 25,
       top: ['JPN'], pro: ['FRA', 'KOR', 'RUS', 'GEO', 'MNG', 'BRA', 'DEU', 'NLD', 'ESP', 'ITA', 'AZE', 'KAZ', 'UZB'], semiR: (iso) => D1(iso) && Sp.popW('judo', iso) >= 1,
       win: '한판으로 상대를 메쳐 우승했습니다!', miss: '절반을 내주고 졌습니다.', hurt: '메치기를 당하다 어깨 인대가 끊어졌습니다.', venue: '매트',
       ex: (ko) => [`${ko} 도장에서 낙법과 메치기를 연습했습니다.`, `${ko} 자유 연습(란도리)을 몇 판 했습니다.`] },
-    { id: 'karate', ko: '가라테', k: 'fight', bout: true, ret: [28, 34], inj: 0.9, risk: 1.3, mu: -1.1, sig: 0.5, oly: false,
+    { id: 'karate', ko: '가라테', k: 'fight', bout: true, ret: [28, 34], inj: 0.9, risk: 1.3, mu: -1.1, sig: 0.5, oly: false, tryMax: 26,
       top: [], pro: ['JPN'], semiR: (iso) => D1(iso) && Sp.popW('karate', iso) >= 1,
       win: '마지막 순간 상단 차기로 점수를 따내 우승했습니다!', miss: '판정으로 아깝게 졌습니다.', hurt: '겨루기 중 코뼈가 부러졌습니다.', venue: '매트',
       ex: (ko) => [`${ko} 도장에서 형(카타)을 되풀이해 연습했습니다.`, `${ko} 대련 연습을 했습니다.`] },
-    { id: 'muaythai', ko: '킥복싱', k: 'fight', ret: [27, 34], inj: 1.4, risk: 2.2, mu: -1.0, sig: 1.3, oly: false,
+    { id: 'muaythai', ko: '킥복싱', k: 'fight', ret: [27, 34], inj: 1.4, risk: 2.2, mu: -1.0, sig: 1.3, oly: false, tryMax: 26,
       name: { THA: '무에타이', KHM: '쿤크메르', MMR: '레트웨이(버마 권투)', LAO: '무에라오' },
       top: ['THA'], pro: ['JPN', 'NLD', 'KHM', 'MMR', 'CHN', 'USA', 'GBR', 'FRA', 'AUS', 'TUR', 'RUS', 'BRA', 'SGP'], semiR: (iso) => D1(iso) && Sp.popW('muaythai', iso) >= 0.8,
       win: '팔꿈치 공격으로 상대를 쓰러뜨리고 챔피언 벨트를 찼습니다!', miss: '판정으로 졌습니다. 정강이가 퉁퉁 부었습니다.', hurt: '경기 중 정강이뼈에 금이 가고 뇌진탕 진단을 받았습니다.', venue: '링' },
@@ -28337,15 +28482,53 @@ const Sp = {};
       const c0 = d.choices;
       d.choices = (S, ctx) => c0(S, ctx).map((c) => ({ ...c, run: (S2, c2) => { const r = c.run(S2, c2); if (S2.hobbies.includes('sport') || H.jobIs(S2, 'athlete') || S2.flags.athleteSch) adoptNat(S2); if (id === 'x_c_tryout' && S2.hobbies.includes('sport') && /뽑혔/.test(typeof r === 'string' ? r : (r && r.text) || '')) S2.flags.youthTeam = true; return r; } }));
     }
+    // 체육 특기생 제안의 '프로 입단 테스트에 도전한다'(ev_teen.js t_sportschol): 예전에는 타고난 재능만 봐서(재능 90이면 약 95%) 연습을 거의 안 한 15세도 곧장 프로가 되었음 →
+    // 실력(Sp.tryP — 발휘 실력·마지막 명단)으로 보되, 다듬어지지 않은 '타고난 몸과 잠재력'을 보고 가장 낮은 단계에서 계약하는 몫(예전 가능성의 절반)을 남긴다
+    // (피드백 244번 '실력이 결과로', v0.6.12). 무작위로 고르는 인생의 프로 선수 대부분이 이 길이었다(점검 scratchpad/v0612a_diag.js) — 줄어든 몫은 유소년 팀·발탁 제안의 길로 옮겨 감.
+    // 이 나라에 리그가 없어 해외 테스트가 되는 경우(15~19세 혼자 옮겨야 함)는 예전대로 둔다
+    {
+      const d = C.DEC.x_t_sportschol;
+      const talentP = (S) => sig((H.talent(S, 'sport') - 76) / 5) * U.clamp(S.st.health / 80, 0.3, 1.1); // ev_teen.js 의 예전 가능성
+      if (d && !d._sp244) {
+        const c0 = d.choices;
+        d.choices = (S, ctx) => c0(S, ctx).map((c) => {
+          if (c.label !== '프로 입단 테스트에 도전한다') return c;
+          const m = Sp.mainOrNat(S), sp = m === 'esports' ? Sp.natId(E.iso(S)) : m;
+          if (!SP[sp] || SP[sp].amateur || !Sp.tiers(S, sp).length) return c;
+          const r = Sp.tryP(S, sp);
+          if (r.lg.abroad) return c;
+          const p = Math.max(r.p, 0.5 * talentP(S));
+          return { ...c, sub: `${Sp.tierKo(S, sp, r.lg.lv)} · 가능성 약 ${Math.max(1, Math.round(p * 100))}%`, run: (S2) => withSp(S2, () => {
+            const r2 = Sp.tryP(S2, sp), pT = 0.5 * talentP(S2), byT = pT > r2.p;
+            H.reveal(S2, 'sport');
+            Sp.gain(S2, sp, 2);
+            if (U.chance(Math.max(r2.p, pT))) {
+              const mv = Sp.sign(S2, sp, byT ? Sp.tiers(S2, sp)[0] : r2.lg.lv, null);
+              const j = S2.work.job;
+              if (!j || j.id !== 'athlete') return null;
+              return C.t(S2, `{N은} ${U.j(j.title, '이')} 되었습니다! ${byT ? '아직 다듬어지지 않았지만, 타고난 몸과 잠재력을 높이 산 팀이 계약했습니다.' : '테스트에서 실력을 인정받았습니다.'} 연봉은 ${Wd.money(E.iso(S2), j.pay)}입니다. (${why(S2, sp)})`) + mv;
+            }
+            E.stat(S2, 'happy', -6);
+            return C.t(S2, `${Sp.ko(S2, sp)} ${Sp.tryKo(sp)}(${Sp.tierKo(S2, sp, r2.lg.lv || 1)})에서 떨어졌습니다. ${Sp.failWhy(S2, sp, r2, U.chance(r2.p1))} 그래도 감독의 명함은 지갑에 넣어 두었습니다. (${why(S2, sp)})`);
+          }) };
+        });
+        d._sp244 = true;
+      }
+    }
     // 국가대표: 종목을 넣어 기록
     const nat = evById('core_ath_national');
     if (nat) {
       const r0 = nat.run;
       nat.run = (S) => {
+        const n0 = S.log.length;
         r0(S);
+        // v0.6.12: 해외 리그에서 뛰는 외국인 선수는 사는 나라가 아니라 국적이 있는 나라의 대표(예전: 케냐 선수가 일본 리그에서 뛰면 '일본 국가대표')
+        const here = E.iso(S), hasMg = typeof Mg !== 'undefined' && Mg && Mg.cits;
+        const rep = !hasMg || Mg.isCitizen(S, here) ? here : (Mg.cits(S).includes(S.born.iso) ? S.born.iso : Mg.cits(S)[0]);
+        if (rep !== here && DATA.c[rep]) for (let i = n0; i < S.log.length; i++) if (typeof S.log[i].t === 'string') S.log[i].t = S.log[i].t.split(`${Wd.name(here)} 국가대표`).join(`${Wd.name(rep)} 국가대표`);
         const h = (S.honors || []).slice().reverse().find((x) => x.k === 'national');
         const sp = S.work.job && S.work.job.sp;
-        if (h && sp && !h.sp) { h.ko = `${Wd.name(E.iso(S))} ${Sp.ko(S, sp)} 국가대표`; h.sp = sp; }
+        if (h && sp && !h.sp) { h.ko = `${Wd.name(DATA.c[rep] ? rep : here)} ${Sp.ko(S, sp)} 국가대표`; h.sp = sp; }
       };
     }
     // 올림픽: 올림픽 종목이 아닌 선수(e스포츠·미식축구·호주식 풋볼·게일릭 풋볼 등)에게는 없다
@@ -28445,12 +28628,10 @@ const Sp = {};
     title: () => '선수로 뛸 종목을 고를까요?',
     text: (S) => C.t(S, `선수(프로·실업팀)로 뛰려면 종목을 정합니다. 종목마다 즐기는 사람 수, 프로 리그가 있는 나라, 연봉, 선수로 뛸 수 있는 햇수, 부상 위험이 다릅니다. 고른 종목의 기술이 연습·레슨·운동 취미로 쌓이고, 입단 테스트·대회도 그 종목으로 봅니다(종목을 바꾸면 쌓인 기술은 그 종목에 남아 있습니다). 건강을 위한 생활체육(걷기·달리기·등산·배드민턴 등)은 할 일의 '운동하기'에서 고르고, e스포츠는 운동이 아니라 게임 쪽 길(프로게임단 입단 테스트)입니다.${Sp.main(S) ? ` 지금 종목은 ${U.j(Sp.ko(S, Sp.main(S)), '이')}고, 기술은 ${Math.round(Sp.lvl(S, Sp.main(S)))}입니다.` : ''}`),
     choices: (S, ctx) => {
-      const nat = Sp.natId(E.iso(S));
-      let list = Sp.avail(S).slice(0, 9);
+      // 피드백 237번: 예전에는 인기 순 앞의 9개만 보이고 다음 쪽이 없어 격투기가 거의 안 보였음 → 여러 쪽(Sp.pickPages)
+      const pages = Sp.pickPages(S), pg = U.clamp(ctx.pg || 0, 0, pages.length - 1);
+      const list = pages[pg];
       const cur = Sp.main(S);
-      if (cur && !list.includes(cur) && Sp.can(S, cur) === true) list.push(cur);
-      if (!list.includes(nat) && Sp.can(S, nat) === true) list.unshift(nat);
-      list = list.slice(0, 10);
       const out = list.map((sp) => ({
         label: `${Sp.ko(S, sp)}${sp === cur ? ' (지금 종목)' : ''}`, sub: pickSub(S, sp),
         run: (S2, c2) => {
@@ -28460,12 +28641,35 @@ const Sp = {};
           if (S2.work.job && S2.work.job.id === 'athlete' && S2.work.job.sp !== sp && S2.work.job.sp !== 'esports') S2.sp.main = S2.work.job.sp; // 프로 선수는 뛰는 종목이 주 종목(프로게이머는 운동 종목이 따로)
           if (c2.prac) return Sp.practice(S2, c2.lesson);
           if (c2.tryout) return Sp.doTryout(S2, S2.sp.main);
-          return C.t(S2, before && before !== sp ? `운동 종목을 ${U.j(Sp.ko(S2, before), '에서')} ${U.j(Sp.ko(S2, sp), '으로')} 바꿨습니다.` : `${U.j(Sp.ko(S2, sp), '을')} 내 종목으로 정했습니다.`);
+          // 유소년 팀·학교 운동부 들어가기(athpath.js)에서 종목부터 고른 경우: 이어서 들어갈 팀을 고른다
+          if (c2.youth && typeof Ap !== 'undefined' && Ap.joinAsk) { Ap.joinAsk(S2); return null; }
+          return C.t(S2, before && before !== sp ? `운동 종목을 ${Sp.ko(S2, before)}에서 ${U.j(Sp.ko(S2, sp), '으로')} 바꿨습니다.` : `${U.j(Sp.ko(S2, sp), '을')} 내 종목으로 정했습니다.`);
         },
       }));
+      // 여러 쪽: 다른 종목도 본다 / 앞 목록으로 돌아간다(content.js 기질 고르기·dream.js 꿈 고르기와 같은 방식)
+      const pass = { act: ctx.act, prac: ctx.prac, lesson: ctx.lesson, tryout: ctx.tryout, youth: ctx.youth };
+      if (pg < pages.length - 1) out.push({ label: '다른 종목도 본다', sub: `다음 목록(${pg + 2}/${pages.length}쪽): ${pages[pg + 1].slice(0, 4).map((x) => Sp.ko(S, x)).join('·')}${pages[pg + 1].length > 4 ? ' 등' : ''}`, cancel: false, run: (S2) => { E.ask(S2, 'sp_pick', { ...pass, pg: pg + 1 }); return null; } });
+      if (pg > 0) out.push({ label: '앞 목록으로 돌아간다', sub: `앞에서 본 종목을 다시 봅니다(${pg}/${pages.length}쪽)`, cancel: false, run: (S2) => { E.ask(S2, 'sp_pick', { ...pass, pg: pg - 1 }); return null; } });
       if (!ctx.prac && !ctx.tryout) out.push({ label: '지금처럼 둔다', typ: true, run: (S2) => { if (ctx.act) { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.sportpick); delete S2.actCd.sportpick; } return null; } });
       return out;
     },
+  };
+  /** 종목 고르기 창의 쪽(피드백 237번): 첫 쪽 = 나라 인기 종목 + 인기 순 앞쪽 + 이 나라에서 하는 격투기 2~3개(늘 보임) + 지금 종목, 나머지는 9개씩 다음 쪽 */
+  Sp.pickPages = (S) => {
+    const iso = E.iso(S), all = Sp.avail(S), nat = Sp.natId(iso), cur = Sp.main(S);
+    const fights = all.filter((sp) => SP[sp].k === 'fight').sort((a, b) => Sp.popW(b, iso) - Sp.popW(a, iso));
+    const fx = fights.filter((sp) => Sp.popW(sp, iso) >= 0.6).slice(0, 3);
+    for (const sp of fights) { if (fx.length >= 2) break; if (!fx.includes(sp)) fx.push(sp); }
+    const first = [];
+    const add = (sp) => { if (sp && SP[sp] && sp !== 'esports' && !first.includes(sp) && Sp.can(S, sp) === true) first.push(sp); };
+    add(nat);
+    for (const sp of all) { if (first.length >= 8) break; add(sp); }
+    for (const sp of fx) add(sp);
+    add(cur);
+    const rest = all.filter((sp) => !first.includes(sp));
+    const pages = [first];
+    for (let i = 0; i < rest.length; i += 9) pages.push(rest.slice(i, i + 9));
+    return pages;
   };
   // 할 일: 선수로 뛸 종목 정하기(기회를 쓰지 않음). 생활체육(rec.js '운동하기')과 나누려고 '꿈에 도전' 칸에 둔다(피드백 220번)
   if (!C.ACTION.sportpick) {
@@ -28539,19 +28743,25 @@ const Sp = {};
    */
   const LV_T = { 1: -8, 2: 0, 3: 7 };
   Sp.tiers = (S, sp) => { const lg = Sp.bestLeague(S, sp); if (lg.amateur || !lg.lv) return []; return [1, 2, 3].filter((v) => v <= Math.min(lg.lv, Sp.femCap(S, sp))); };
-  Sp.tryP = (S, sp, want) => {
-    const eff = Sp.eff(S, sp), lg0 = Sp.bestLeague(S, sp);
+  /* 피드백 244번(v0.6.12): 1차에 천장(× 0.8, 해외 × 0.6)이 있어 발휘 실력이 100이어도 1차가 80%를 넘지 못했음 →
+   *   천장을 걷어 내 실력이 최고(95 안팎)면 1차는 95% 안팎으로 통과한다. 대신 문턱을 1.5 올려(73 → 74.5) 가운데 실력의 가능성은 예전과 거의 같게 두고,
+   *   해외 테스트는 곱하기 대신 문턱(+4 → +7)과 작은 배수(× 0.9 — 비자·외국인 선수 자리)로 어렵게 한다.
+   *   떨어지는 몫은 마지막 명단(타고난 체격·순발력, 나이 — 그 단계 나이 한도 3년 전부터 해마다 12%씩 줄어듦, 자리)으로 옮긴다.
+   *   o.bonus: 발휘 실력에 더하는 값(지도자 추천 등, athpath.js) */
+  Sp.tryP = (S, sp, want, o) => {
+    const eff = Sp.eff(S, sp) + ((o && o.bonus) || 0), lg0 = Sp.bestLeague(S, sp);
     const top = Math.min(lg0.lv, Sp.femCap(S, sp));
     const lv = lg0.amateur || !lg0.lv ? lg0.lv : U.clamp(want || Math.min(2, top), 1, top);
     const lg = { ...lg0, lv };
-    const lf = lg.amateur ? 1.2 : lg.abroad ? 0.6 : 1;
-    const T = 73 + (LV_T[lv] || 0) + (lg.abroad ? 4 : 0);
+    const lf = lg.amateur ? 1.15 : lg.abroad ? 0.9 : 1;
+    const T = 74.5 + (LV_T[lv] || 0) + (lg.abroad ? 7 : 0);
     const sm = Sp.skillMix(S, sp);
-    const p1 = U.clamp((sigP(eff, T, 5, sm) * 0.8 + luck(S)) * lf, 0.002, 0.9);
+    const p1 = U.clamp((sigP(eff, T, 5, sm) + luck(S)) * lf, 0.002, 0.97);
     // 마지막 계약 명단: 예전에는 타고난 재능만 봐서(재능 60이면 약 9%) 실력을 아무리 쌓아도 막혔음 → 재능 55% + 쌓은 실력 45% → 실력에 따라(실력 100이면 재능 24%, 피드백 232번), 낮은 단계일수록 쉽게
     const t2 = mix2(Sp.talent(S, sp), sm);
-    const p2 = U.clamp(0.05 + 0.85 * sigP(t2, 66 + (LV_T[lv] || 0), 6, sm), 0.03, 0.92);
-    return { eff, lg, p1, p2, p: p1 * p2, t2, sm };
+    const over = E.age(S) - (Sp.tryMaxLv(sp, lv || 1) - 3), af = over > 0 ? Math.max(0.5, 1 - 0.12 * over) : 1;
+    const p2 = U.clamp((0.05 + 0.85 * sigP(t2, 66 + (LV_T[lv] || 0), 6, sm)) * af, 0.03, 0.92);
+    return { eff, lg, p1, p2, p: p1 * p2, t2, sm, T, af };
   };
   /** 리그 단계 이름(최고 리그가 있는 나라의 '프로'는 2부·마이너 리그) */
   Sp.tierKo = (S, sp, lv) => {
@@ -28583,13 +28793,14 @@ const Sp = {};
     const hs = ay === (soc ? 17 : 18), uni = ay === (soc ? 21 : 22) && (S.edu.stage === 3 || (S.edu.level >= 4 && S.edu.stage === null));
     if (!(hs || uni) || !schoolAthlete(S, sp) || E.age(S) > Sp.tryMax(sp)) return;
     S.flags['draft' + ay] = true;
-    // 실력이 닿는 가장 높은 단계(그 단계 입단 테스트 1차 합격 가능성이 35%를 넘는 곳)
+    // 실력이 닿는 가장 높은 단계(그 단계 입단 테스트 1차 합격 가능성이 40%를 넘는 곳)
+    // v0.6.12: 1차의 천장(× 0.8)을 걷어 낸 만큼(피드백 244번) 기준 35% → 40%, 배수 0.7 → 0.62 — 지명되는 몫은 예전과 비슷하게
     const tiers = Sp.tiers(S, sp);
     let lv = 0;
-    for (const t of tiers) if (Sp.tryP(S, sp, t).p1 >= 0.35) lv = t;
+    for (const t of tiers) if (Sp.tryP(S, sp, t).p1 >= 0.4) lv = t;
     if (!lv) return;
     const boost = (S.flags.athleteSch || S.flags.youthTeam ? 1.3 : 1) * (uni && draftKind(S, sp) === 'draft' ? 1.2 : 1);
-    if (!U.chance(U.clamp(Sp.tryP(S, sp, lv).p1 * 0.7 * boost, 0, 0.9))) return;
+    if (!U.chance(U.clamp(Sp.tryP(S, sp, lv).p1 * 0.62 * boost, 0, 0.9))) return;
     let kind = draftKind(S, sp);
     if (kind === 'draft' && lv < 2) kind = 'scout';
     E.ask(S, 'sp_draft', { sp, lv, kind, uni });
@@ -28632,7 +28843,8 @@ const Sp = {};
   };
   Sp.tryMax = (sp) => SP[sp].tryMax || 24;
   /** 리그 단계별 입단 나이 한도(피드백 103번): 최고 리그 = 종목 한도, 2부·마이너 +2세, 실업·세미프로 +8세 */
-  Sp.tryMaxLv = (sp, lv) => Sp.tryMax(sp) + (lv === 1 ? 8 : lv === 2 ? 2 : 0);
+  // v0.6.12: 늦게 피는 종목(육상·격투기)의 한도를 올린 뒤에도 실업·세미프로 첫 입단은 32세까지(골프·양궁은 그대로)
+  Sp.tryMaxLv = (sp, lv) => { const m = Sp.tryMax(sp) + (lv === 1 ? 8 : lv === 2 ? 2 : 0); return lv === 1 && SP[sp] && SP[sp].k !== 'aim' ? Math.min(32, m) : m; };
   /** 이 종목 실력이 지금 쓰이는 곳(연습·레슨 창에 보여 줌) — 프로 나이가 지나도 연습할 이유 */
   Sp.useKo = (S, sp) => {
     const a = E.age(S), d = SP[sp];
@@ -28640,9 +28852,58 @@ const Sp = {};
     if (!d.amateur && Sp.tiers(S, sp).length && a <= Sp.tryMaxLv(sp, 1)) return `프로·실업팀 입단 테스트(${a <= Sp.tryMax(sp) ? `최고 리그 ${Sp.tryMax(sp)}세까지` : `실업·세미프로 ${Sp.tryMaxLv(sp, 1)}세까지`}), 대회, 건강`;
     return `동호인 리그·생활체육 대회(취미 대회 나가기), 운동 강사·코치(실력 45부터), ${['race', 'solo', 'aim'].includes(d.k) ? '나이별 마스터스 대회, ' : ''}건강`;
   };
-  Sp.doTryout = (S, sp, want) => {
+  /** 다친 이력(accident.js 운동 사고·후유증) */
+  const injHist = (S) => !!(S.acc && ((S.acc.disab || 0) >= 4 || ((S.acc.n || {}).sport || 0) >= 1));
+  /** 떨어진 까닭(피드백 244번): 실력에 맞게. 실력이 최고인 사람에게는 '실력이 모자라다' 대신 그날의 몸 상태·부상 이력·나이·자리·타고난 체격을 말한다.
+   *  r: Sp.tryP 의 값, pass1: 1차(기량 테스트)를 통과했는가 */
+  Sp.failWhy = (S, sp, r, pass1) => {
+    const d = SP[sp] || SP.soccer, a = E.age(S), T = r.T || 74.5, high = r.eff >= T + 4;
+    if (!pass1) {
+      if (high) return injHist(S) ? '테스트를 앞두고 예전에 다친 곳이 도져 제 기량을 다 보여 주지 못했습니다. 감독은 몸을 추스르고 다시 오라고 했습니다.' : '그날따라 몸이 무거워 평소 기량을 다 보여 주지 못했습니다. 감독은 다음에 꼭 다시 보자고 했습니다.';
+      if (r.eff >= T - 4) return '감독이 프로 수준에 아주 조금 못 미친다며, 한 시즌만 더 다듬어 오라고 했습니다.';
+      return Sp.lvl(S, sp) < 50 ? '감독이 기본기를 더 다지고 오라고 했습니다.' : '감독이 몸놀림이 아직 프로 수준에 못 미친다고 했습니다.';
+    }
+    // 마지막 계약 명단
+    const abroadT = r.lg && r.lg.abroad ? ' 해외 팀은 외국인 선수에게 주는 자리가 적습니다.' : '';
+    if ((r.af !== undefined && r.af < 1) || a >= Sp.tryMaxLv(sp, (r.lg && r.lg.lv) || 1) - 1) return `기량은 인정받았지만, 구단이 앞날이 긴 더 어린 선수를 골랐습니다(${Math.floor(a)}세).${abroadT}`;
+    if (injHist(S) && U.chance(0.6)) return `기량은 인정받았지만, 메디컬 테스트에서 지난 부상 이력이 걸려 계약이 미뤄졌습니다.${abroadT}`;
+    if (r.t2 < 62 + (LV_T[(r.lg && r.lg.lv) || 2] || 0)) return `기량 테스트는 통과했지만, 마지막 명단에서 체격·순발력 같은 타고난 조건이 더 좋은 후보에게 밀렸습니다.${abroadT}`;
+    const k = d.bout ? 'bout' : d.k;
+    const SEAT = {
+      team: '기량은 충분하다는 평을 들었지만, 이번 시즌 그 포지션에는 빈자리가 없었습니다.',
+      e: '실력은 충분하다는 평을 들었지만, 이번 시즌 팀의 그 자리에는 빈자리가 없었습니다.',
+      solo: '경기력은 기준을 넘었지만, 이번에 팀이 새로 받는 선수는 한 명뿐이었습니다.',
+      race: '기록은 기준을 넘었지만, 이번에 팀이 새로 받는 선수는 한 명뿐이었습니다.',
+      aim: '점수는 기준을 넘었지만, 이번에 팀이 새로 받는 선수는 한 명뿐이었습니다.',
+      gym: '연기는 기준을 넘었지만, 이번에 뽑는 자리가 이미 다른 선수로 찼습니다.',
+      fight: '실력은 인정받았지만, 데뷔전 상대를 잡지 못해 계약이 다음으로 미뤄졌습니다.',
+      bout: '실력은 인정받았지만, 이번에 실업팀이 뽑는 체급의 자리가 이미 찼습니다.',
+    };
+    return (SEAT[k] || SEAT.team) + abroadT;
+  };
+  /** 시험 없이 계약(발탁 제안·영입 — athpath.js): 연봉·리그·직함을 정하고, 해외 팀이면 그 나라로 옮긴다. 돌려주는 값: 옮긴 문장 꼬리 */
+  Sp.sign = (S, sp, lv, lgIso) => {
+    const d = SP[sp];
+    if (!d) return '';
+    const home = E.iso(S);
+    lgIso = lgIso && DATA.c[lgIso] ? lgIso : home;
+    const abroad = lgIso !== home;
+    let months = 12 * Math.exp(U.normal(Sp.payMu(sp, lgIso, lv, S) - (abroad ? 0.2 : 0), d.sig));
+    if (abroad) months *= U.clamp(Math.pow(Wd.workerMedian(lgIso) / Wd.workerMedian(home), 0.75), 0.3, 6);
+    Sp.ensureS(S);
+    H.setJob(S, 'athlete', months);
+    const j = S.work.job;
+    if (!j || j.id !== 'athlete') return '';
+    j.sp = sp; j.lg = lgIso; j.lv = lv; j.ret = Math.max(Math.floor(E.age(S)) + 3, Sp.retAge(sp));
+    j.title = Sp.title(S, sp, lv);
+    S.sp.main = sp;
+    const movedT = abroad ? Sp.relocate(S, lgIso) : '';
+    H.fameUp(S, lv >= 3 ? 10 : lv >= 2 ? 6 : 3); E.stat(S, 'happy', 15); H.ach(S, 'pro_athlete'); H.reveal(S, 'sport');
+    return movedT;
+  };
+  Sp.doTryout = (S, sp, want, o) => {
     if (!SP[sp]) sp = Sp.mainOrNat(S);
-    const d = SP[sp], r = Sp.tryP(S, sp, want), ko = Sp.ko(S, sp);
+    const d = SP[sp], r = Sp.tryP(S, sp, want, o), ko = Sp.ko(S, sp);
     H.reveal(S, 'sport');
     Sp.gain(S, sp, 2);
     if (E.age(S) > Sp.tryMaxLv(sp, r.lg.lv || 1)) { E.stat(S, 'happy', -3); return C.t(S, `${ko} ${r.lg.lv === 1 ? '실업팀' : '프로'}이 되기에는 나이가 많다는 말을 들었습니다. 동호인 리그에서는 여전히 환영받습니다.`); }
@@ -28661,7 +28922,7 @@ const Sp = {};
       const main0 = S.sp.main;
       H.setJob(S, 'athlete', months);
       const j = S.work.job;
-      j.sp = sp; j.lg = lgIso; j.ret = Sp.retAge(sp); j.lv = lv;
+      j.sp = sp; j.lg = lgIso; j.ret = Math.max(Math.floor(E.age(S)) + 3, Sp.retAge(sp)); j.lv = lv; // 늦게 입단해도 몇 해는 뛴다(v0.6.12 — 육상·격투기는 20대 후반 입단이 있음)
       if (sp === 'esports') S.sp.main = main0; // 일자리를 얻을 때(takeJob) 나라 인기 종목이 운동 종목으로 들어가지 않게
 
       j.title = Sp.title(S, sp, lv);
@@ -28672,14 +28933,20 @@ const Sp = {};
       return outT + movedT;
     }
     E.stat(S, 'happy', -6);
-    // 무엇이 모자랐고 무엇을 하면 되는지(피드백 104번)
+    // 무엇이 모자랐고 무엇을 하면 되는지(피드백 104번). 실력이 최고인 사람에게는 '실력이 모자라다' 대신 실제 까닭(피드백 244번)
+    const high = r.eff >= r.T + 4;
     const tips = [];
-    if (sp !== 'esports' && S.st.health < 75) tips.push('체력(건강)을 끌어올리기');
-    if (Sp.lvl(S, sp) < 70) tips.push(sp === 'esports' ? '게임 실력 연습·레슨' : `${ko} 기술 연습·레슨`);
-    if (Sp.talent(S, sp) < 60 && Sp.lvl(S, sp) >= 70) tips.push(sp === 'esports' ? '타고난 반응 속도의 한계를 감안해 낮은 단계 리그부터 도전하기' : '타고난 체격·순발력의 한계를 감안해 낮은 단계 리그부터 도전하기');
-    else if ((r.lg.lv || 0) >= 2) tips.push('한 단계 낮은 리그에서 경력을 쌓고 올라가기');
-    if (!(S.honors || []).length) tips.push('취미 대회 입상으로 눈에 띄기');
-    const coach = !pass1 ? (Sp.lvl(S, sp) < 50 ? '감독이 기본기를 더 다지고 오라고 했습니다.' : '감독이 몸놀림이 아직 프로 수준에 못 미친다고 했습니다.') : '기량 테스트는 통과했지만 마지막 계약 명단에는 들지 못했습니다.';
+    if (high) {
+      tips.push('다음 시즌 테스트나 다른 팀 테스트에 다시 도전하기');
+      tips.push('대회에서 계속 눈에 띄기(영입 제안이 올 수 있음)');
+    } else {
+      if (sp !== 'esports' && S.st.health < 75) tips.push('체력(건강)을 끌어올리기');
+      if (Sp.lvl(S, sp) < 70) tips.push(sp === 'esports' ? '게임 실력 연습·레슨' : `${ko} 기술 연습·레슨`);
+      if (Sp.talent(S, sp) < 60 && Sp.lvl(S, sp) >= 70) tips.push(sp === 'esports' ? '타고난 반응 속도의 한계를 감안해 낮은 단계 리그부터 도전하기' : '타고난 체격·순발력의 한계를 감안해 낮은 단계 리그부터 도전하기');
+      else if ((r.lg.lv || 0) >= 2) tips.push('한 단계 낮은 리그에서 경력을 쌓고 올라가기');
+      if (!(S.honors || []).length) tips.push('대회 입상으로 눈에 띄기');
+    }
+    const coach = Sp.failWhy(S, sp, r, pass1);
     return C.t(S, `${ko} ${Sp.tryKo(sp)}(${Sp.tierKo(S, sp, r.lg.lv || 1)})에서 떨어졌습니다. ${coach}${r.lg.abroad ? ' 이 나라에는 리그가 없어 해외 팀 테스트를 봐야 했습니다.' : ''} (${why(S, sp)})${tips.length ? ` 다음에는: ${tips.slice(0, 2).join(', ')}.` : ''}`);
   };
   C.DEC.sp_tryout = {
@@ -28897,15 +29164,18 @@ const Sp = {};
     return out.filter((t) => E.age(S) <= Sp.tryMaxLv(sp, t.lv) + 4);
   };
   /** 상위 리그로 옮길 가능성 */
-  Sp.upP = (S, t) => {
+  // 피드백 244번(v0.6.12): 1차의 천장(× 0.85, 해외 × 0.7)을 걷어 냄 — 입단 테스트(Sp.tryP)와 같은 기준(문턱 +1.5, 해외는 문턱 +7·× 0.9)
+  Sp.upR = (S, t) => {
     const sp = S.work.job.sp, eff = Sp.eff(S, sp);
-    const T = 73 + (LV_T[t.lv] || 0) + (t.abroad ? 4 : 0) - 3;
+    const T = 74.5 + (LV_T[t.lv] || 0) + (t.abroad ? 7 : 0) - 3;
     const sm = Sp.skillMix(S, sp);
-    const p1 = U.clamp((sigP(eff, T, 5, sm) * 0.85 + luck(S)) * (t.abroad ? 0.7 : 1), 0.002, 0.9);
+    const p1 = U.clamp((sigP(eff, T, 5, sm) + luck(S)) * (t.abroad ? 0.9 : 1), 0.002, 0.97);
     const t2 = mix2(Sp.talent(S, sp), sm);
-    const p2 = U.clamp(0.08 + 0.85 * sigP(t2, 64 + (LV_T[t.lv] || 0), 6, sm), 0.03, 0.92);
-    return p1 * p2;
+    const over = E.age(S) - (Sp.tryMaxLv(sp, t.lv) + 4 - 3), af = over > 0 ? Math.max(0.5, 1 - 0.12 * over) : 1;
+    const p2 = U.clamp((0.08 + 0.85 * sigP(t2, 64 + (LV_T[t.lv] || 0), 6, sm)) * af, 0.03, 0.92);
+    return { eff, T, t2, af, p1, p2, p: p1 * p2, lg: { lv: t.lv, abroad: !!t.abroad, iso: t.iso } };
   };
+  Sp.upP = (S, t) => Sp.upR(S, t).p;
   const tierWhere = (S, sp, t) => (t.abroad ? `${Wd.name(t.iso)}의 ${Sp.tierKo(S, sp, t.lv)}` : `이 나라 ${Sp.tierKo(S, sp, t.lv)}`);
   /** 새 계약: 연봉·리그·직함을 바꾼다 */
   const moveUp = (S, t, how) => {
@@ -28930,17 +29200,21 @@ const Sp = {};
     },
     choices: (S, ctx) => {
       const out = Sp.upTargets(S).map((t) => {
-        const p = Sp.upP(S, t);
+        const r = Sp.upR(S, t), p = r.p;
         return { label: `${tierWhere(S, S.work.job.sp, t)} 입단 테스트`, sub: `합격 가능성 약 ${Math.max(1, Math.round(p * 100))}%${t.abroad ? ' · 해외 이적' : ''}`,
           run: (S2) => {
             Sp.gain(S2, S2.work.job.sp, 2);
-            if (U.chance(p)) return moveUp(S2, t, '테스트를 통과해');
+            const pass1 = U.chance(r.p1);
+            if (pass1 && U.chance(r.p2)) return moveUp(S2, t, '테스트를 통과해');
             E.stat(S2, 'happy', -5);
             const tips = [];
-            if (Sp.lvl(S2, S2.work.job.sp) < 80) tips.push('기술 연습·레슨');
-            if (S2.st.health < 75) tips.push('체력(건강) 끌어올리기');
+            if (r.eff < r.T + 4) {
+              if (Sp.lvl(S2, S2.work.job.sp) < 80) tips.push('기술 연습·레슨');
+              if (S2.st.health < 75) tips.push('체력(건강) 끌어올리기');
+            }
             tips.push('지금 리그에서 뛰며 스카우트의 눈에 띄기(해마다 영입 제안이 올 수 있음)');
-            return C.t(S2, `${tierWhere(S2, S2.work.job.sp, t)} 입단 테스트에서 떨어졌습니다. 지금 팀에서 계속 뜁니다. 다음에는: ${tips.join(', ')}.`);
+            // 떨어진 까닭은 실력에 맞게(피드백 244번)
+            return C.t(S2, `${tierWhere(S2, S2.work.job.sp, t)} 입단 테스트에서 떨어졌습니다. ${Sp.failWhy(S2, S2.work.job.sp, r, pass1)} 지금 팀에서 계속 뜁니다. 다음에는: ${tips.join(', ')}.`);
           } };
       });
       out.push({ label: '지금 팀에 남는다', typ: true, run: (S2) => { if (ctx && ctx.act) { S2.ap = (S2.ap || 0) + C.actAP(S2, C.ACTION.tryout); delete S2.actCd.tryout; } return null; } });
@@ -29018,7 +29292,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.6.11';
+E.VERSION = '0.6.12';
 E.BUILD_DATE = '26.10.16';
 
 /* ================================================================ 기본 도구 */
@@ -42613,10 +42887,12 @@ const Ml = {};
     text: (S, ctx) => T(S, `${ctx.grp}이 마을에 들이닥쳐 ${ageOf(S) < 18 ? '아이와 젊은이들을' : '젊은 사람들을'} 트럭에 태우고 있습니다. {N}도 끌려갈 처지입니다.`),
     choices: (S, ctx) => {
       const mo = () => U.randInt(6, 36);
+      // 피드백 236번: 숨을 곳·들키지 않는 것이 먼저라 빠르기(dsl.js H.speed)는 절반쯤만 — 보통 빠르기면 예전처럼 약 35%
+      const pF = H.fleeP(S, 0.35, 0.5);
       const out = [
         { label: '어쩔 수 없이 따라간다', typ: true, run: (S2) => { Ml.enlist(S2, { k: 'forced', grp: ctx.grp, mo: mo() }); E.stat(S2, 'happy', -15); Ml.ensure(S2).forced = (Ml.ensure(S2).forced || 0) + 1; return null; } },
-        { label: '몰래 달아난다', sub: `가능성 약 ${pct(0.35)}%`, run: (S2) => {
-          if (U.chance(0.35 + luck(S2))) { E.stat(S2, 'happy', -6); return T(S2, '덤불 속에 숨어 밤을 새웠습니다. 다행히 끌려가지 않았습니다.'); }
+        { label: '몰래 달아난다', sub: `${H.speedWhy(S)} → 가능성 약 ${pct(pF)}% · 붙잡히면 다칠 수 있습니다`, run: (S2) => {
+          if (U.chance(pF + luck(S2))) { E.stat(S2, 'happy', -6); return T(S2, '덤불 속에 숨어 밤을 새웠습니다. 다행히 끌려가지 않았습니다.'); }
           Ml.enlist(S2, { k: 'forced', grp: ctx.grp, mo: mo(), quiet: true });
           E.stat(S2, 'health', -4); E.stat(S2, 'happy', -15);
           Ml.ensure(S2).forced = (Ml.ensure(S2).forced || 0) + 1;
@@ -42829,7 +43105,8 @@ const Ml = {};
       id: 'ml_forced_escape', age: [10, 62], cd: 1, rate: (S) => (S.mil && S.mil.k === 'forced' && S.ageM - S.mil.start >= 2 ? 0.6 : 0),
       title: '달아날 기회', text: (S) => `보초가 잠든 밤, 함께 끌려온 ${ageOf(S) < 18 ? '아이' : '사람'} 하나가 지금 달아나자고 속삭입니다.`,
       choices: [
-        { l: '지금 달아난다', p: 0.4,
+        // 피드백 236번: 보초에게 들키지 않는 것이 먼저라 빠르기(dsl.js H.speed)는 절반쯤만 — 보통 빠르기면 예전처럼 약 40%
+        { l: '지금 달아난다', p: (S) => H.fleeP(S, 0.4, 0.5), sub: (S) => `${H.fleeSub(S, 0.4, 0.5)} · 붙잡히면 혹독한 벌을 받습니다`,
           ok: { t: '어둠을 틈타 숲을 지나 구호 단체의 캠프에 닿았습니다. 무장 단체에서 벗어났습니다.', fx: { happy: 8 }, run: (S) => { Ml.discharge(S, 'escape', { quiet: true }); } },
           no: { t: '붙잡혀 끌려왔습니다. 혹독한 벌을 받았습니다.', fx: { health: -6, happy: -10 } } },
         { l: '때를 기다린다', typ: true, t: '아직은 때가 아니라고 생각했습니다. 그 사람이 무사하기를 빌었습니다.', fx: { happy: -3 } },
@@ -52264,6 +52541,12 @@ if (typeof module !== 'undefined') module.exports = Md;
  *               head(머리를 맞는 운동을 한 달 수 × 세기), conc(뇌진탕 횟수), dojo(1 도장 사건으로 시작 · 2 그만둠 · 3 계속), belt:{종목: true} }
  * 화면: H.exHabitLine(S) — 사람 탭 건강 카드(Hl.view)에 붙는 '운동 습관' 한 줄, 실력 카드(Pr.view)의 무술 실력, 운동하기 힌트·결과 문장.
  * 다른 파일의 작은 고침: sports.js(선수 종목 5개), values.js(옛 전통 운동 표·할 일 걷어 냄), practice.js·accident.js(취미·부상), situ.js(복무 중 무술).
+ * 237(v0.6.12) 생활체육(rec.js '운동하기')에서 무술·격투기를 고르면 이 파일의 무술 체계로 이어진다(따로 된 체계를 두지 않음):
+ *   - 고른 종목이 S.ft.art(하는 무술)가 되고(Ft.setArt), 요즘 하는 운동(S.ft.rec)이 그 종목인 동안은 취미가 없어도 S.ft.art 를 지우지 않는다.
+ *   - 최근 석 달 안에 그 운동을 했으면 '지금 하는 무술'(activeArt)로 본다 — 달마다 실력·띠 심사(ft_belt)·도장 친구·뇌진탕·머리 충격·부상 장면이 그대로.
+ *   - 한 번 수련의 몫(Ft.train: 종목 실력·수련 달 수·선수 종목 기술·머리 충격)은 '도장 가기'와 함께 쓴다. 다친 장면은 Ft.hurtOf.
+ *   - 크라브 마가(이스라엘 호신 무술)를 더했다. 나라별 비중은 Ft.maW 로 rec.js 가 읽는다.
+ *   - 상태는 그대로(S.ft.art·lv·mo·belt·head) — 새 필드 없음. 사망 위험 보정(MU·VZ)은 건드리지 않는다(운동 습관은 할 일 때 Ft.did 로만 오름).
  */
 'use strict';
 
@@ -52310,6 +52593,7 @@ const Ft = {};
     wingchun: { ko: '영춘권(쿵후)', k: 'm', ag: [1, 2, 2, 1, 0.3], f: 0.6, head: 0.2, def: 0.6, pl: 'hall' },
     taichi: { ko: '태극권', k: 'm', ag: [0, 0.2, 0.6, 3, 6], f: 1.3, head: 0, def: 0.05, pl: 'park', mild: 1 },
     selfdef: { ko: '호신술', k: 'm', ag: [0, 0.5, 2, 2, 0.5], f: 1.5, head: 0, def: 0.6, pl: 'gym' },
+    kravmaga: { ko: '크라브 마가', k: 'm', ag: [0, 0.8, 3, 1.5, 0.1], f: 0.8, head: 0.3, def: 0.9, pl: 'gym' }, // 이스라엘 군 호신 무술(피드백 237번)
     capoeira: { ko: '카포에이라', k: 'm', ag: [1, 2.5, 2, 0.5, 0], f: 0.7, head: 0.1, def: 0.4, pl: 'hall' },
     silat: { ko: '펜칵 실랏', k: 'm', ag: [2, 3, 1.5, 0.6, 0.1], f: 0.5, head: 0.2, def: 0.6, pl: 'hall' },
     arnis: { ko: '아르니스(막대 무술)', k: 'm', ag: [1, 2, 1.5, 0.8, 0.2], f: 0.5, head: 0.2, def: 0.5, pl: 'hall' },
@@ -52386,16 +52670,17 @@ const Ft = {};
     IRN: { wrestle: 3, taekwondo: 3, karate: 2, judo: 0.5, boxing: 0.6 },
     TUR: { taekwondo: 3, muaythai: 2, boxing: 1.5, karate: 1.5, judo: 1, wrestle: 1 },
     AFG: { taekwondo: 2.5, boxing: 1, wrestle: 1, mma: 0.5 },
+    ISR: { kravmaga: 4, judo: 2, karate: 2, taekwondo: 1.5, boxing: 1, bjj: 1, muaythai: 0.8, mma: 0.4 }, // 크라브 마가는 학교·군·동네 체육관에 두루(피드백 237번)
     IND: { karate: 2, taekwondo: 2, boxing: 1, wrestle: 1, judo: 0.4, kalari: 0.15 },
     PAK: { karate: 1.5, boxing: 1.5, wrestle: 1, taekwondo: 1 },
     BRA: { bjj: 4, judo: 2, muaythai: 1.5, capoeira: 1.5, boxing: 1, mma: 1, karate: 1, taekwondo: 0.8 },
     MEX: { boxing: 4, taekwondo: 2, karate: 1, mma: 0.5, judo: 0.5 },
     CUB: { boxing: 4, judo: 1.5, wrestle: 1 },
-    USA: { karate: 2.5, taekwondo: 2.5, boxing: 2, bjj: 2, mma: 1, muaythai: 1, judo: 0.5, selfdef: 1, wrestle: 1.5 },
+    USA: { karate: 2.5, taekwondo: 2.5, boxing: 2, bjj: 2, mma: 1, muaythai: 1, judo: 0.5, selfdef: 1, wrestle: 1.5, kravmaga: 0.4 },
     CAN: { karate: 2.5, taekwondo: 2, boxing: 1.5, bjj: 1.5, judo: 1, mma: 0.8, muaythai: 0.8, selfdef: 1 },
     GBR: { boxing: 3, karate: 2, judo: 1, muaythai: 1.5, taekwondo: 1, bjj: 1, mma: 1, selfdef: 0.6 },
     IRL: { boxing: 3, karate: 1.5, judo: 0.6, bjj: 0.8, mma: 0.8, taekwondo: 0.8 },
-    FRA: { judo: 5, karate: 2, boxing: 1.5, taekwondo: 1, muaythai: 1, aikido: 0.6 },
+    FRA: { judo: 5, karate: 2, boxing: 1.5, taekwondo: 1, muaythai: 1, aikido: 0.6, kravmaga: 0.5 },
     DEU: { judo: 2, karate: 2, boxing: 1.5, muaythai: 1.5, taekwondo: 1, selfdef: 1 },
     NLD: { muaythai: 3, judo: 2, karate: 1, boxing: 1 },
     ITA: { karate: 2, judo: 2, boxing: 1.5, muaythai: 1, taekwondo: 1 },
@@ -52425,6 +52710,11 @@ const Ft = {};
   const TR_GATE = { KOR: 0.06, PRK: 0.05, JPN: 0.1, IRL: 0.5, FIN: 0.4, SEN: 0.4, GMB: 0.4, MNG: 0.5, IND: 0.35, BGD: 0.35, PAK: 0.3, NPL: 0.3, THA: 0.3, MYS: 0.3, LAO: 0.3, MMR: 0.3 };
   /** 무술 취미가 고르기에 끼는 비율 */
   const MA_GATE = 0.5;
+  /** 그 나라에서 이 무술을 하는 사람의 상대 비중(위 표 — 나라 값이 없으면 지역 값). rec.js 생활체육 고르기가 읽는다(피드백 237번) */
+  Ft.maW = (c, id) => { const W = MA_W[c] || MA_REG[Wd.regionKey(c)] || {}; return W[id] || 0; };
+  /** 생활체육(rec.js)의 요즘 하는 운동이 무술이면 그 종목 · 최근 석 달 안에 했으면 그 종목 — rec.js 가 채운다(없으면 늘 null) */
+  Ft.recArt = () => null;
+  Ft.recArtOn = () => null;
 
   /* ================================================================ 종목 고르기 */
   /** 그 사람이 지금 할 법한 종목들의 가중치: [[id, w], …] */
@@ -52607,6 +52897,9 @@ const Ft = {};
     if (!f) return null;
     const act = C.activeHobbies(S);
     if (f.art && act.includes('martial')) return f.art;
+    // 생활체육으로 고른 무술(rec.js, 피드백 237번): 최근 석 달 안에 했으면 하고 있는 것으로 본다
+    const ra = Ft.recArtOn(S);
+    if (ra && ARTS[ra]) return ra;
     if (f.tr && act.includes('trad')) return f.tr;
     return null;
   };
@@ -52614,7 +52907,10 @@ const Ft = {};
   /** 무술·전통 운동의 부상 장면(accident.js 운동 사고가 부름): [문장, 다친 모양] */
   Ft.injScene = (S) => {
     const id = activeArt(S);
-    if (!id) return null;
+    return id ? sceneOf(S, id) : null;
+  };
+  /** 한 종목의 크게 다친 장면 */
+  const sceneOf = (S, id) => {
     const d = ARTS[id], ko = Ft.ko(S, id);
     if (d.mild) return [`${ko} 동작을 하다 무릎을 삐끗했습니다.`, 'strain'];
     if (d.pl === 'range') return ['활을 당기다 어깨를 무리했습니다.', 'strain'];
@@ -52623,6 +52919,17 @@ const Ft = {};
     if (GRAP.has(id)) return [U.pick([`${ko} 연습 상대에게 메쳐지다 잘못 떨어졌습니다.`, `${ko} 굳히기 기술에 걸려 팔이 꺾였습니다.`]), 'martial'];
     if (d.k === 'm' || (d.def || 0) >= 0.3) return [U.pick([`${ko} 겨루기 중 상대의 발차기에 얼굴을 맞았습니다.`, `${ko} 겨루기 중 넘어지며 크게 부딪혔습니다.`]), 'martial'];
     return [`${U.j(ko, '을')} 하다 크게 넘어졌습니다.`, 'sport'];
+  };
+  /** 수련 한 번에 다친 장면: [문장, 다친 모양]. 가벼우면 다친 곳까지, 크면 일어난 일만(다친 곳은 accident.js 가 정함) — rec.js 생활체육이 부름 */
+  Ft.hurtOf = (S, id, big) => {
+    const d = ARTS[id];
+    if (!d) return ['몸을 무리하게 쓰다 다쳤습니다.', 'sport'];
+    if (big) return sceneOf(S, id);
+    if (d.mild) return ['무리하게 몸을 돌리다 무릎이 시큰거렸습니다.', 'strain'];
+    if ((d.head || 0) >= 0.5) return [U.pick(['스파링 중 얼굴을 맞아 코피가 났습니다.', '미트를 치다 손목을 삐었습니다.']), 'martial'];
+    if (id === 'kendo') return ['죽도에 손목을 맞아 한동안 시큰거렸습니다.', 'martial'];
+    if (GRAP.has(id)) return [U.pick(['겨루기를 하다 손가락을 삐었습니다.', '낙법을 잘못해 어깨가 결렸습니다.']), 'martial'];
+    return [U.pick(['겨루기를 하다 손가락을 삐었습니다.', '발차기를 하다 발목을 삐었습니다.']), 'martial'];
   };
   /** 종목 실력을 쌓는다(높을수록 더디게, 운동 재능이 높을수록 빨리) */
   Ft.gain = (S, id, amt) => {
@@ -52640,10 +52947,10 @@ const Ft = {};
       const cur = key === 'm' ? 'art' : 'tr';
       if ((S.hobbies || []).includes(h)) {
         if (!f[cur] || !ARTS[f[cur]]) { f[cur] = Ft.artOf(S, key); f[cur + 'M'] = S.ageM; }
-      } else if (f[cur]) { f.last[key] = f[cur]; f[cur] = null; }
+      } else if (f[cur] && !(key === 'm' && f[cur] === Ft.recArt(S))) { f.last[key] = f[cur]; f[cur] = null; } // 생활체육으로 하는 무술은 취미가 없어도 그대로(피드백 237번)
     }
-    // 실력: 하는 종목은 쌓이고, 손을 놓은 종목은 조금씩 녹는다
-    const on = activeArt(S), on2 = f.art && f.tr && C.activeHobbies(S).includes('martial') && C.activeHobbies(S).includes('trad') ? f.tr : null;
+    // 실력: 하는 종목은 쌓이고, 손을 놓은 종목은 조금씩 녹는다(무술과 전통 운동을 함께 하면 둘 다)
+    const on = activeArt(S), on2 = on && f.tr && on !== f.tr && C.activeHobbies(S).includes('trad') ? f.tr : null;
     for (const id of [on, on2]) {
       if (!id) continue;
       Ft.gain(S, id, a < 13 ? 0.3 : 0.55);
@@ -52703,7 +53010,7 @@ const Ft = {};
   const has = (S, h) => (S.hobbies || []).includes(h);
   const placeKo = (S, id) => PL[(ARTS[id] || {}).pl] || '도장';
   const LINES = {
-    dojang: (ko) => [`${ko} 도장에서 기본 동작을 되풀이하며 땀을 흘렸습니다.`, `${ko} 도장에서 겨루기 연습을 했습니다.`, `사범님에게 ${ko} 자세를 하나하나 바로잡았습니다.`],
+    dojang: (ko) => [`${ko} 도장에서 기본 동작을 되풀이하며 땀을 흘렸습니다.`, `${ko} 도장에서 겨루기 연습을 했습니다.`, `사범님이 ${ko} 자세를 하나하나 바로잡아 주었습니다.`],
     gym: (ko) => [`${ko} 체육관에서 줄넘기와 샌드백으로 몸을 풀었습니다.`, `${ko} 체육관에서 스파링을 몇 라운드 했습니다.`, `${ko} 코치와 미트를 치며 기술을 다듬었습니다.`],
     hall: (ko) => [`${ko} 수련장에서 동작을 익혔습니다.`, `${ko} 동작을 처음부터 끝까지 이어서 해 보았습니다.`],
     park: (ko) => [`이른 아침 공원에서 사람들과 ${U.j(ko, '을')} 했습니다.`, `느린 동작으로 ${U.j(ko, '을')} 하고 나니 몸이 한결 풀렸습니다.`],
@@ -52713,14 +53020,31 @@ const Ft = {};
     court: (ko) => [`동네 공터에서 ${U.j(ko, '을')} 했습니다.`, `친구들과 ${ko} 시합을 했습니다.`],
     water: (ko) => [`${ko} 동호회에서 노 젓기 연습을 했습니다.`, `북소리에 맞춰 함께 노를 저었습니다.`],
   };
-  const actRun = (S, id, kind) => {
-    const d = ARTS[id], ko = Ft.ko(S, id), lv0 = Ft.lvl(S, id);
-    Ft.gain(S, id, 5);
-    Ft.did(S, d.mild ? 0.25 : 0.35);
+  /** 수련 한 번의 종목 몫(실력·수련 달 수·선수 종목 기술·머리 충격): [전 실력, 뒤 실력] — '도장 가기'와 생활체육(rec.js, 피드백 237번)이 함께 쓴다 */
+  Ft.train = (S, id, amt = 5) => {
+    const d = ARTS[id], lv0 = Ft.lvl(S, id);
+    if (!d) return [lv0, lv0];
     const f = ens(S);
+    Ft.gain(S, id, amt);
     f.mo[id] = (f.mo[id] || 0) + 0.5;
     if (d.sp && hasSp() && Sp.gain) Sp.gain(S, d.sp, 1.5);
     if ((d.head || 0) >= 0.5) f.head += d.head * 0.3;
+    return [lv0, Ft.lvl(S, id)];
+  };
+  /** 수련 장면 한 줄(하는 곳에 맞게) */
+  Ft.lineOf = (S, id) => U.pick((LINES[(ARTS[id] || {}).pl] || LINES.hall)(Ft.ko(S, id)));
+  /** 하는 무술을 바꾼다(예전에 하던 것은 기억해 둔다 — 취미 '무술·격투기'도 이 종목이 된다) */
+  Ft.setArt = (S, id) => {
+    if (!ARTS[id]) return;
+    const f = ens(S);
+    if (f.art === id) return;
+    if (f.art && ARTS[f.art]) f.last.m = f.art;
+    f.art = id;
+    f.artM = S.ageM;
+  };
+  const actRun = (S, id, kind) => {
+    const d = ARTS[id], ko = Ft.ko(S, id), [lv0] = Ft.train(S, id, 5);
+    Ft.did(S, d.mild ? 0.25 : 0.35);
     S.boost.health = Math.min(8, (S.boost.health || 0) + 2);
     E.stat(S, 'health', 1); E.stat(S, 'happy', 2); E.stat(S, 'social', kind === 't' ? 3 : 1);
     if (kind === 't') vadd(S, { trad: 1 });
@@ -52891,7 +53215,7 @@ const Ft = {};
     /* ---------------- 어린이 도장(부모님 결정·형편) */
     {
       id: 'ft_dojo', age: [5.5, 9.5], once: true,
-      rate: (S) => (hasFolks(S) && !has(S, 'martial') && !S.flags.ft_dojoNo && kidArt(S) ? dojoRate(S) : 0),
+      rate: (S) => (hasFolks(S) && !has(S, 'martial') && !Ft.recArt(S) && !S.flags.ft_dojoNo && kidArt(S) ? dojoRate(S) : 0),
       when: (S) => okBody(S) && !H.destitute(S),
       init: (S, ctx) => { ctx.art = kidArt(S); ctx.lean = U.chance(isoOf(S) === 'KOR' ? 0.85 : 0.55); },
       title: (S, ctx) => `${Ft.ko(S, ctx.art)} ${placeKo(S, ctx.art)}`,
@@ -52919,7 +53243,7 @@ const Ft = {};
       text: (S, ctx) => `${H.student(S) && H.dev(S) >= 2 ? '학원과 숙제가 늘면서 ' : ''}${Ft.ko(S, ctx.art)} ${placeKo(S, ctx.art)}에 가는 날이 점점 줄었습니다. 함께 다니던 친구들도 하나둘 그만두었습니다.`,
       choices: [
         ...TC((S, c) => !c.lean, { l: '그만둔다',
-          run: (S) => { S.hobbies = S.hobbies.filter((h) => h !== 'martial'); S.ft.dojo = 2; return '{N은} 도장을 그만두었습니다. 띠는 서랍 깊숙이 넣어 두었습니다.'; } }),
+          run: (S) => { S.hobbies = S.hobbies.filter((h) => h !== 'martial'); S.ft.dojo = 2; if (S.ft.art && Ft.recArt(S) === S.ft.art) S.ft.rec = null; /* 생활체육으로도 같은 도장에 다니고 있었으면 함께 그만둠(피드백 237번) */ return '{N은} 도장을 그만두었습니다. 띠는 서랍 깊숙이 넣어 두었습니다.'; } }),
         ...TC((S, c) => !!c.lean, { l: '계속 다닌다', sub: '검은 띠를 목표로',
           run: (S, ctx) => { S.ft.dojo = 3; Ft.gain(S, ctx.art, 2); return `{N은} ${U.j(Ft.ko(S, ctx.art), '을')} 계속하기로 했습니다.`; } }),
       ],
@@ -52963,7 +53287,7 @@ const Ft = {};
     /* ---------------- 중국어권 노년층의 공원 태극권 */
     {
       id: 'ft_taichi', age: [55, 85], once: true,
-      rate: (S) => (['CHN', 'TWN', 'HKG', 'MAC', 'SGP'].includes(isoOf(S)) && !has(S, 'martial') && ARTS.taichi ? (H.urban(S) ? 0.08 : 0.03) : 0),
+      rate: (S) => (['CHN', 'TWN', 'HKG', 'MAC', 'SGP'].includes(isoOf(S)) && !has(S, 'martial') && Ft.recArt(S) !== 'taichi' && ARTS.taichi ? (H.urban(S) ? 0.08 : 0.03) : 0),
       when: (S) => okBody(S) && !S.work.job,
       init: (S, ctx) => { ctx.lean = U.chance(0.35); },
       title: '공원의 아침',
@@ -53155,15 +53479,21 @@ const Ft = {};
     const cmp = z > 0.25 ? '같은 나이 사람들보다 많이 움직입니다' : z < -0.25 ? '같은 나이 사람들보다 덜 움직입니다' : '같은 나이 사람들과 비슷합니다';
     return `운동 습관: ${lab} — ${cmp} (심장병 ${PCT(m.ihd)} · 뇌졸중 ${PCT(m.stroke)}${ageOf(S) >= 50 ? ` · 치매 ${PCT(m.dementia)}` : ' · 당뇨 ' + PCT(m.diabetes)} 위험${m.other ? ` · 넘어짐 ${PCT(m.other)}` : ''})`;
   };
+  /** 화면에 보일 무술·전통 운동: [[종목, 쉬는 중인가], …] — 취미로 하는 것과 생활체육으로 하는 무술(피드백 237번) */
+  const shownArts = (S) => {
+    const f = S.ft, out = [];
+    if (f.art && ARTS[f.art] && has(S, 'martial')) out.push([f.art, !C.hobbyOK(S, 'martial')]);
+    const ra = Ft.recArt(S);
+    if (ra && ARTS[ra] && !out.some(([x]) => x === ra)) out.push([ra, Ft.recArtOn(S) !== ra]);
+    if (f.tr && ARTS[f.tr] && has(S, 'trad') && !out.some(([x]) => x === f.tr)) out.push([f.tr, !C.hobbyOK(S, 'trad')]);
+    return out;
+  };
   Ft.view = (S) => {
     if (!S || !S.ft) return null;
     const rows = [];
     const line = H.exHabitLine(S);
     if (line) rows.push(line);
-    for (const [h, k] of [['martial', 'art'], ['trad', 'tr']]) {
-      const id = S.ft[k];
-      if (id && has(S, h)) rows.push(`${Ft.ko(S, id)} 실력 ${R(Ft.lvl(S, id))}${S.ft.belt[id] ? ' · 검은 띠' : ''}${C.hobbyOK(S, h) ? '' : ' (쉬는 중)'}`);
-    }
+    for (const [id, off] of shownArts(S)) rows.push(`${Ft.ko(S, id)} 실력 ${R(Ft.lvl(S, id))}${S.ft.belt[id] ? ' · 검은 띠' : ''}${off ? ' (쉬는 중)' : ''}`);
     if ((S.ft.conc || 0) > 0) rows.push(`뇌진탕 ${S.ft.conc}번`);
     return { title: '운동', rows };
   };
@@ -53173,9 +53503,8 @@ const Ft = {};
     Pr.view = (S) => {
       const v = pv0(S);
       if (!S.ft || !Array.isArray(v)) return v;
-      for (const [h, k] of [['martial', 'art'], ['trad', 'tr']]) {
-        const id = S.ft[k];
-        if (id && has(S, h) && Ft.lvl(S, id) >= 1) v.push({ k: 'ft_' + id, ko: `${Ft.ko(S, id)} 실력${S.ft.belt[id] ? '(검은 띠)' : ''}`, v: Ft.lvl(S, id), talent: S.talentSeen && S.talentSeen.sport ? R(H.talent(S, 'sport')) : null });
+      for (const [id] of shownArts(S)) {
+        if (Ft.lvl(S, id) >= 1) v.push({ k: 'ft_' + id, ko: `${Ft.ko(S, id)} 실력${S.ft.belt[id] ? '(검은 띠)' : ''}`, v: Ft.lvl(S, id), talent: S.talentSeen && S.talentSeen.sport ? R(H.talent(S, 'sport')) : null });
       }
       return v;
     };
@@ -57300,6 +57629,17 @@ const Sl = {};
  * 다른 파일의 작은 고침: sports.js(선수 종목 이름·e스포츠 빼기), fitness.js(프로게이머 운동량), accident.js(Rc.injScene), situ.js(HOB_OK).
  * 사망 위험: 새 장치 없음 — 운동 습관(fitness.js 의 정규화된 배수)만 지나간다. 새 취미(걷기·요가)가 사람들 평균 습관을 올린 만큼(나이·소득 단계별 0~4.6점)
  *   Ft.NORM 의 평균·분산을 옮겨(DMU·DVZ) 사람들 전체의 위험은 그대로 둔다(점검: 살아 있는 사람의 '배수 넣은 위험 ÷ 안 넣은 위험' 6개국 0.99~1.01).
+ *
+ * 237(v0.6.12) "취미 운동에도 프로 운동에도 격투기 선택지가 별로 없음" — 생활체육 쪽:
+ *   1. 고르기 창을 여러 쪽으로: 첫 쪽은 많이 하는 순서 7개(+ 요즘 하는 운동), '다른 운동도 본다' / '앞 목록으로 돌아간다'로 모든 종목을 본다(Rc.pages).
+ *   2. 무술·격투기(m_<종목>): 복싱 체육관·킥복싱(태국 무에타이)·종합격투기·주짓수·태권도장·합기도·유도장·가라테·검도장·아이키도·호신술·
+ *      크라브 마가·우슈·영춘권·카포에이라·레슬링·삼보·실랏·아르니스·보비남 등. 하는 사람 비중은 fitness.js 의 나라별 표(Ft.maW)와
+ *      나이대·여성 비중(Ft.ARTS)을 그대로 쓰고(× MA_K) — 그 나라에서 하는 종목만 뜬다. 공원 태극권(taichi)도 무술 체계로 잇는다.
+ *      첫 쪽에는 그 나라에서 하는 무술을 1~2개 늘 끼운다(가중치가 낮아도 — 쪽 안은 가중치 순서 그대로, 보통 선택은 맨 위).
+ *   3. 고르면 fitness.js 의 무술 체계로: 하는 무술(S.ft.art = Ft.setArt), 수련 한 번의 실력·띠까지 남은 달·머리 충격(Ft.train),
+ *      최근 석 달 안에 했으면 '지금 하는 무술'(Ft.recArtOn → activeArt: 달마다 실력·띠 심사·도장 친구·뇌진탕), 호신('막아 낸다'은 종목 실력으로),
+ *      다친 장면(Ft.hurtOf). 새 상태 필드 없음(S.ft.rec 에 'm_<종목>' 이 들어갈 뿐).
+ *   4. 종목마다 득실이 다름(MA 표): 운동 습관 강도 · 도장 사람들(관계) · 회비(한 번 몫) · 다칠 확률·머리 충격 · 스트레스 덜기 · 호신.
  */
 'use strict';
 
@@ -57368,7 +57708,7 @@ const Rc = {};
     baseball: { link: 'baseball', k: 0.25, min: 2, ag: [1, 1.3, 0.8, 0.4, 0.05], f: 0.08, ru: 0.8, o: 1, act: 0.25, soc: 2, hap: 2, str: 3, inj: 0.5, cost: 0.006, club: 'club', a0: 8, a1: 70 },
     jokgu: { ag: [0, 0.6, 1.2, 0.8, 0.1], f: 0.05, ru: 1, o: 1, act: 0.3, soc: 2, hap: 2, str: 3, inj: 0.6, w: { _: 0, KOR: 2.5 }, pair: 1, club: 'club', a0: 13, a1: 70 },
     sqdance: { ag: [0, 0, 0.15, 2.5, 2], f: 7, ru: 0.7, o: 1, act: 0.25, soc: 3, hap: 3, str: 4, inj: 0.15, w: { _: 0, CHN: 1.2, MAC: 0.3, TWN: 0.15, HKG: 0.1, SGP: 0.1 }, club: 'neighbor', a0: 35 },
-    taichi: { ag: [0, 0.05, 0.2, 1.2, 3], f: 1.3, ru: 0.6, o: 1, act: 0.2, soc: 1, hap: 2, str: 5, mh: 1, inj: 0.1, w: { _: 0, CHN: 4, TWN: 3, HKG: 3, MAC: 3, SGP: 1.5 }, club: 'neighbor', a0: 30 },
+    taichi: { ag: [0, 0.05, 0.2, 1.2, 3], f: 1.3, ru: 0.6, o: 1, act: 0.2, soc: 1, hap: 2, str: 5, mh: 1, inj: 0.1, w: { _: 0, CHN: 4, TWN: 3, HKG: 3, MAC: 3, SGP: 1.5 }, club: 'neighbor', a0: 30, art: 'taichi' },
     parkgym: { ag: [0.1, 0.2, 0.3, 1.5, 2.5], f: 1, ru: 0.4, o: 1, act: 0.18, soc: 1, hap: 1, str: 3, inj: 0.2, w: { _: 0.2, KOR: 4, CHN: 3, TWN: 1.5, RUS: 1, UKR: 0.8 }, club: 'neighbor', a0: 30 },
     aerobic: { ag: [0.1, 0.5, 1.2, 1.3, 0.5], f: 3.5, ru: 0.4, o: 0, act: 0.4, soc: 2, hap: 3, str: 4, inj: 0.4, cost: 0.006, w: { _: 0.4, lac: 2.5, na: 1, eca: 0.8, ssa: 1, KOR: 1.5, PHL: 1 }, club: 'club', a0: 13, a1: 80 },
     stretch: { ag: [0.2, 0.3, 0.5, 1, 2.5], f: 1.5, ru: 1, o: 0, act: 0.12, soc: 0, hap: 1, str: 3, inj: 0.05, w: { _: 1.5, JPN: 4 }, a0: 6 },
@@ -57381,11 +57721,24 @@ const Rc = {};
 
   /* ---------------- 처지마다 할 수 있는 것(가중치) */
   const SITU = {
-    barracks: (S) => ({ milpt: 10, soccer: 4, jokgu: isoOf(S) === 'KOR' ? 6 : 0, gym: isoOf(S) === 'KOR' || H.dev(S) >= 2 ? 3 : 0, homeex: 2, basketball: 1, volleyball: 1 }),
+    // 한국 병사는 부대에서 태권도를 수련한다(1단 승단을 권함 — fitness.js)
+    barracks: (S) => ({ milpt: 10, soccer: 4, jokgu: isoOf(S) === 'KOR' ? 6 : 0, gym: isoOf(S) === 'KOR' || H.dev(S) >= 2 ? 3 : 0, homeex: 2, basketball: 1, volleyball: 1, m_taekwondo: isoOf(S) === 'KOR' ? 2.5 : 0 }),
     prison: () => ({ walk: 8, homeex: 6, soccer: 3, basketball: 1.5, volleyball: 1, tabletennis: 0.8 }),
     bed: () => ({ stretch: 1 }),
     frail: (S) => (mobDis(S) ? { stretch: 5, swim: 1 } : { walk: 6, stretch: 5, taichi: baseW(S, 'taichi') > 0 ? 1.5 : 0, gateball: baseW(S, 'gateball') > 0 ? 1 : 0, swim: 0.6 }),
-    strict: (S) => (taliban(S) ? { homeex: 6, stretch: 3 } : { homeex: 6, stretch: 3, walk: 3, badminton: H.dev(S) >= 1 ? 1.5 : 0, tabletennis: H.dev(S) >= 1 ? 1 : 0 }),
+    strict: (S) => (taliban(S) ? { homeex: 6, stretch: 3 } : { homeex: 6, stretch: 3, walk: 3, badminton: H.dev(S) >= 1 ? 1.5 : 0, tabletennis: H.dev(S) >= 1 ? 1 : 0, ...strictMa(S) }),
+  };
+  /** 여성의 바깥 운동이 드문 나라: 여성반이 있는 실내 무술(태권도·가라테·호신술)만, 도시에서(fitness.js 무술 취미와 같은 기준) */
+  const strictMa = (S) => {
+    const o = {};
+    if (!H.urban(S) || H.destitute(S)) return o;
+    for (const art of ['taekwondo', 'karate', 'selfdef']) {
+      const id = 'm_' + art, d = REC[id];
+      if (!d) continue;
+      const w = maBase(S, d) * d.ag[band5(ageOf(S))] * d.f;
+      if (w > 0.05) o[id] = w;
+    }
+    return o;
   };
 
   /* ---------------- 할 수 있는가(시설·형편) */
@@ -57403,6 +57756,51 @@ const Rc = {};
     aerobic: (S) => (H.urban(S) || H.dev(S) >= 2 ? true : '가까운 곳에 배울 곳이 없습니다'),
   };
 
+  /* ---------------- 무술·격투기(피드백 237번): 'm_<종목>'. 종목 정보는 fitness.js(Ft.ARTS), 하는 사람 비중은 Ft.maW(나라) × 나이대(ARTS.ag) × 여성(ARTS.f) × MA_K
+   * (MA_K: 미국 성인의 복싱·주짓수가 걷기의 약 1/15~1/20, 한국 초등학생의 태권도장이 가장 흔한 운동이 되게 — 근삿값: SFIA·국민생활체육조사·국기원)
+   * 이 표는 득실: act 운동 습관 · soc 도장·체육관 사람들 · hap 행복 · str 스트레스 덜기 · mh 마음 건강 · inj 다치는 정도 · rk 다치는 곳
+   * cost 회비(한 번 몫, 보통 월급의 몫 — 한국 태권도장·복싱장 월 13~20만 원, 미국 주짓수·종합격투기 월 150~200달러, 태국 동네 무에타이 체육관은 훨씬 쌈)
+   * a0·a1 할 수 있는 나이 · ru 시골 배수(시골에도 흔한 종목만 크게) */
+  const MA_K = 0.1;
+  const SEA_MT = new Set(['THA', 'KHM', 'MMR', 'LAO']);
+  const MA = {
+    taekwondo: { act: 0.4, soc: 2, hap: 3, str: 3, inj: 0.7, rk: '발목·발등', cost: 0.035, a0: 6, a1: 80 },
+    hapkido: { act: 0.35, soc: 1, hap: 2, str: 3, inj: 0.7, rk: '손목·어깨', cost: 0.035, a0: 6, a1: 85 },
+    judo: { act: 0.4, soc: 2, hap: 2, str: 3, inj: 1.1, rk: '어깨·발목', cost: 0.03, a0: 6, a1: 75 },
+    karate: { act: 0.35, soc: 2, hap: 2, str: 3, inj: 0.7, rk: '손가락·발목', cost: 0.03, a0: 6, a1: 85 },
+    kendo: { act: 0.35, soc: 2, hap: 2, str: 4, mh: 1, inj: 0.5, rk: '손목·아킬레스건', cost: 0.035, a0: 8, a1: 90 },
+    aikido: { act: 0.25, soc: 2, hap: 2, str: 4, mh: 1, inj: 0.5, rk: '손목', cost: 0.035, a0: 8, a1: 90 },
+    boxing: { act: 0.45, soc: 1, hap: 2, str: 6, inj: 1.2, rk: '얼굴·손목', cost: 0.035, a0: 10, a1: 70 },
+    muaythai: { act: 0.45, soc: 1, hap: 2, str: 6, inj: 1.4, rk: '정강이·얼굴', cost: (S) => (SEA_MT.has(isoOf(S)) ? 0.012 : 0.035), ru: 0.7, a0: 8, a1: 65 },
+    mma: { act: 0.45, soc: 1, hap: 2, str: 5, inj: 1.6, rk: '관절·얼굴', cost: 0.045, a0: 14, a1: 55 },
+    bjj: { act: 0.4, soc: 2, hap: 2, str: 4, inj: 1, rk: '팔·무릎 관절', cost: (S) => (isoOf(S) === 'BRA' ? 0.03 : 0.045), a0: 6, a1: 70 },
+    sambo: { act: 0.45, soc: 2, hap: 1, str: 3, inj: 1.1, rk: '무릎·발목', cost: 0.015, a0: 8, a1: 60 },
+    wrestle: { act: 0.45, soc: 2, hap: 1, str: 3, inj: 1.1, rk: '목·무릎', cost: 0.012, ru: 0.9, a0: 8, a1: 60 },
+    kurash: { act: 0.4, soc: 2, hap: 2, str: 3, inj: 1, rk: '어깨·무릎', cost: 0.012, ru: 0.9, a0: 8, a1: 60 },
+    selfdef: { act: 0.3, soc: 1, hap: 1, str: 3, inj: 0.4, rk: '손목', cost: 0.03, a0: 14, a1: 80 },
+    kravmaga: { act: 0.4, soc: 1, hap: 1, str: 4, inj: 0.8, rk: '손목·얼굴', cost: 0.045, a0: 14, a1: 70 },
+    wushu: { act: 0.35, soc: 1, hap: 2, str: 3, inj: 0.6, rk: '발목·허리', cost: 0.025, a0: 6, a1: 85 },
+    wingchun: { act: 0.3, soc: 1, hap: 2, str: 3, mh: 1, inj: 0.4, rk: '손목', cost: 0.035, a0: 8, a1: 85 },
+    capoeira: { act: 0.45, soc: 3, hap: 3, str: 4, inj: 0.7, rk: '발목·허리', cost: 0.015, ru: 0.7, a0: 6, a1: 70 },
+    silat: { act: 0.35, soc: 2, hap: 2, str: 3, inj: 0.7, rk: '손목·발목', cost: 0.012, ru: 0.9, a0: 6, a1: 80 },
+    arnis: { act: 0.35, soc: 2, hap: 2, str: 3, inj: 0.7, rk: '손가락', cost: 0.012, ru: 0.9, a0: 8, a1: 85 },
+    vovinam: { act: 0.35, soc: 2, hap: 2, str: 3, inj: 0.7, rk: '발목', cost: 0.012, ru: 0.8, a0: 6, a1: 80 },
+    kalari: { act: 0.4, soc: 1, hap: 2, str: 3, inj: 0.7, rk: '허리·발목', cost: 0.02, ru: 0.8, a0: 7, a1: 70 },
+  };
+  if (hasFt() && Ft.ARTS) {
+    for (const art in MA) {
+      const A = Ft.ARTS[art], id = 'm_' + art;
+      if (!A || REC[id]) continue;
+      REC[id] = { art, ag: A.ag, f: A.f, ru: 0.5, o: 0, club: 'club', ...MA[art] };
+      // 시설: 먹고살기 빠듯하면 못 하고, 시골에서는 시골에도 흔한 종목만(fitness.js 의 무술 취미와 같은 기준)
+      NEED[id] = (S) => (H.destitute(S) ? '먹고살기도 빠듯합니다' : H.urban(S) || H.dev(S) >= 1 || (MA[art].ru || 0) >= 0.7 ? true : '가까운 곳에 배울 곳이 없습니다');
+    }
+  }
+  const isMa = (id) => !!(REC[id] && REC[id].art);
+  Rc.isMa = isMa;
+  /** 그 나라에서 이 무술을 하는 정도(나이대·성별 곱하기 전) */
+  const maBase = (S, d) => (hasFt() && Ft.maW ? Ft.maW(isoOf(S), d.art) * MA_K : 0);
+
   /* ---------------- 계절: 겨울이 추운 나라의 겨울에는 바깥 운동이 줄고, 더운 철에는 수영이 는다 */
   const ICE = new Set(['KOR', 'JPN', 'CHN', 'MNG', 'PRK', 'KAZ', 'KGZ', 'TJK', 'UZB', 'AFG', 'IRN', 'TUR', 'ARG', 'CHL', 'GEO', 'ARM', 'AZE', 'NZL']);
   const DEEP = new Set(['RUS', 'CAN', 'KAZ', 'MNG', 'FIN', 'SWE', 'NOR', 'EST', 'LVA', 'LTU', 'BLR', 'KGZ', 'ISL', 'UKR']);
@@ -57418,6 +57816,7 @@ const Rc = {};
       const p = Sp.popW(d.link, c);
       return d.k * p * (d.min && p < d.min ? 0.1 : 1);
     }
+    if (d.art && !d.w) return maBase(S, d); // 무술·격투기: fitness.js 의 나라별 비중
     const t = d.w || {};
     return t[c] !== undefined ? t[c] : t[rk] !== undefined ? t[rk] : t._ || 0;
   };
@@ -57460,13 +57859,34 @@ const Rc = {};
     }
     return out.sort((x, y) => y[1] - x[1]);
   };
-  /** 고르기 창에 보일 목록(많이 하는 순서로 7개 + 요즘 하는 운동) */
-  Rc.list = (S) => {
-    const c = Rc.cands(S), ids = c.slice(0, 7).map(([id]) => id);
+  /** 고르기 창의 쪽들(피드백 237번): 첫 쪽은 많이 하는 순서로 7개 + 요즘 하는 운동, 그다음은 7개씩 — 모든 종목에 닿는다.
+   * 첫 쪽의 무술 몫: 그 나라에서 어느 정도 하는 무술(가중치 MA_MIN 이상)이 있으면 1~2개를 늘 끼운다
+   * (모자라면 첫 쪽에서 가장 덜 하는 다른 운동을 다음 쪽으로 미룸). 쪽 안은 가중치 순서 그대로라 보통 선택(맨 위)은 바뀌지 않는다. */
+  const PAGE = 7, MA_MIN = 0.1, MA_P1 = 2;
+  Rc.pages = (S) => {
+    const c = Rc.cands(S), w = {};
+    for (const [id, x] of c) w[id] = x;
+    const p1 = c.slice(0, PAGE).map(([id]) => id);
+    const ma = c.filter(([id, x]) => isMa(id) && x >= MA_MIN).map(([id]) => id);
+    const want = Math.min(MA_P1, ma.length);
+    for (const id of ma) {
+      if (p1.filter(isMa).length >= want) break;
+      if (p1.includes(id)) continue;
+      let k = -1;
+      for (let i = p1.length - 1; i >= 0; i--) if (!isMa(p1[i])) { k = i; break; }
+      if (k < 0) break;
+      p1.splice(k, 1, id);
+    }
+    p1.sort((a, b) => w[b] - w[a]);
     const cur = S.ft && S.ft.rec;
-    if (cur && !ids.includes(cur) && c.some(([id]) => id === cur)) ids.push(cur);
-    return ids;
+    if (cur && !p1.includes(cur) && w[cur] !== undefined) p1.push(cur);
+    const rest = c.map(([id]) => id).filter((id) => !p1.includes(id));
+    const out = [p1];
+    for (let i = 0; i < rest.length; i += PAGE) out.push(rest.slice(i, i + PAGE));
+    return out;
   };
+  /** 고르기 창 첫 쪽(예전 이름 — 많이 하는 순서로 7개 + 요즘 하는 운동) */
+  Rc.list = (S) => Rc.pages(S)[0];
   Rc.can = (S, id) => !!REC[id] && Rc.cands(S).some(([x]) => x === id);
   /** '운동하기'가 바로 할 운동(없으면 고르기 창): 부대 안·교도소·누워 지낼 때는 그때그때 고른다 */
   const curRec = (S) => {
@@ -57508,9 +57928,21 @@ const Rc = {};
       case 'stretch': return m === 'bed' ? '누운 채 하는 재활 체조' : mobDis(S) ? '상체 운동·재활 체조' : c === 'JPN' ? '라디오 체조·스트레칭' : '체조·스트레칭';
       case 'homeex': return m === 'prison' ? '맨몸 운동' : m === 'strict' ? '집 안 운동·줄넘기' : '맨몸 운동·줄넘기';
       case 'milpt': return '부대 체력 단련(구보·팔굽혀펴기)';
-      default: return '운동';
+      default: return isMa(id) ? maKo(S, REC[id].art, m) : '운동';
     }
   };
+  /** 무술·격투기의 이름: '복싱 체육관'·'태권도장'·'주짓수 도장'·'무에타이 체육관'(태국) */
+  const MA_NM = { taekwondo: '태권도장', judo: '유도장', kendo: '검도장', selfdef: '호신술 강습', capoeira: '카포에이라 모임' };
+  const MA_PL = { dojang: '도장', gym: '체육관', hall: '수련장' };
+  const maKo = (S, art, m) => {
+    const ko = hasFt() ? Ft.ko(S, art) : '무술';
+    if (m === 'barracks' && art === 'taekwondo') return `부대 ${ko} 수련`; // 부대 안에서 고를 수 있는 무술은 태권도뿐(한국)
+    if (MA_NM[art]) return MA_NM[art];
+    const pl = hasFt() && Ft.ARTS[art] ? Ft.ARTS[art].pl : 'gym';
+    return MA_PL[pl] ? `${ko} ${MA_PL[pl]}` : ko;
+  };
+  /** 무술 종목 이름(실력 줄·설명에 쓰는 짧은 이름: '복싱'·'무에타이') */
+  const artKo = (S, id) => (isMa(id) && hasFt() ? Ft.ko(S, REC[id].art) : Rc.ko(S, id));
 
   /* ================================================================ 득과 위험 */
   const costOf = (S, id) => { const d = REC[id]; if (!d || !d.cost) return 0; let v = typeof d.cost === 'function' ? d.cost(S) : d.cost; if (id === 'swim' && !swimPool(S)) v = 0; if (CLOSED[Rc.mode(S)]) v = 0; return v > 0 ? v : 0; };
@@ -57532,12 +57964,15 @@ const Rc = {};
     if (d.soc) parts.push(`관계 +${d.soc}`);
     if (S.ab && d.str) parts.push(`스트레스 −${d.str}`);
     if (S.ab && d.mh) parts.push('마음 건강 +');
+    if (isMa(id) && (artOf(id).def || 0) >= 0.4) parts.push('호신'); // 시비·폭행·괴롭힘에서 '막아 낸다'(fitness.js)
     return `얻음 ${parts.join('·')}`;
   };
-  /** '위험 …' */
+  /** 무술의 종목 정보(fitness.js Ft.ARTS) */
+  const artOf = (id) => (isMa(id) && hasFt() && Ft.ARTS[REC[id].art]) || {};
+  /** '위험 …' — 머리를 자주 맞는 종목(복싱·킥복싱·종합격투기)은 뇌진탕·오래 하면 머리 충격(치매 위험 조금, fitness.js) */
   Rc.riskKo = (S, id) => {
-    const p = injP(S, id);
-    return `위험 ${RISK_KO[id] ? `${RISK_KO[id]} ` : '다칠 확률 '}${pctKo(p)}`;
+    const p = injP(S, id), rk = RISK_KO[id] || REC[id].rk;
+    return `위험 ${rk ? `${rk} ` : '다칠 확률 '}${pctKo(p)}${(artOf(id).head || 0) >= 0.5 ? ' · 머리 충격(뇌진탕)' : ''}`;
   };
 
   /* ================================================================ 돈 */
@@ -57609,6 +58044,32 @@ const Rc = {};
     homeex: (S, m) => (m === 'prison' ? ['좁은 방에서 팔굽혀펴기와 윗몸일으키기를 했습니다.'] : m === 'strict' ? ['집 안마당에서 줄넘기를 하며 땀을 흘렸습니다.', '집 안에서 맨몸 운동을 했습니다.'] : ['집에서 팔굽혀펴기와 줄넘기를 했습니다.', '맨몸 운동을 하며 땀을 흘렸습니다.']),
     milpt: () => ['아침 점호 뒤 구보로 연병장을 몇 바퀴 돌았습니다.', '체력 측정을 앞두고 팔굽혀펴기와 윗몸일으키기를 연습했습니다.'],
   };
+  /** 무술·격투기 장면(종목마다 몇 줄 + fitness.js 의 하는 곳 장면 Ft.lineOf) */
+  const MA_LINES = {
+    boxing: (S) => ['줄넘기로 몸을 풀고 샌드백을 몇 라운드 쳤습니다. 온몸이 땀에 젖었습니다.', '코치가 대 주는 미트에 원투를 꽂았습니다. 쌓였던 답답함이 풀렸습니다.', ...(ageOf(S) >= 16 ? ['처음으로 링에 올라 두 라운드 스파링을 버텼습니다.'] : [])],
+    muaythai: (S, ko) => [`${ko} 체육관에서 패드를 차고 무릎 치기와 팔꿈치 치기를 연습했습니다.`, '샌드백을 정강이로 수백 번 찼습니다. 정강이가 조금씩 단단해졌습니다.'],
+    mma: () => ['타격과 레슬링을 번갈아 연습했습니다. 숨이 턱까지 찼습니다.', '케이지 안에서 스파링을 몇 라운드 했습니다.'],
+    bjj: () => ['도장에서 스파링을 몇 판 했습니다. 체격이 큰 상대에게 깔렸다가 기술로 빠져나왔습니다.', '관장님에게 새 조르기 기술을 배웠습니다.'],
+    judo: () => ['낙법과 업어치기를 되풀이해 연습했습니다.', '유도장에서 자유 대련(란도리)을 몇 판 했습니다.'],
+    taekwondo: (S, ko, m) => (m === 'barracks' ? ['일과를 마치고 부대원들과 태권도 품새와 발차기를 연습했습니다.'] : kid(S) ? ['태권도장에서 친구들과 품새를 맞춰 보고 줄넘기를 했습니다.', '태권도장에서 발차기로 송판을 깨 보았습니다.'] : ['태권도장에서 품새와 발차기를 연습했습니다.', '어른반에서 겨루기를 몇 판 했습니다.']),
+    karate: () => ['가라테 도장에서 형(카타)을 처음부터 끝까지 되풀이했습니다.', '가라테 도장에서 대련 연습을 했습니다.'],
+    hapkido: () => ['합기도 도장에서 손목 꺾기와 낙법을 연습했습니다.', '합기도 도장에서 잡혔을 때 빠져나오는 법을 익혔습니다.'],
+    kendo: () => ['호구를 쓰고 죽도로 머리 치기를 수백 번 되풀이했습니다.', '검도장에서 기합 소리를 지르며 대련을 했습니다.'],
+    aikido: () => ['아이키도 도장에서 상대의 힘을 흘려 넘기는 동작을 익혔습니다.'],
+    selfdef: () => ['호신술 강습에서 손목을 잡혔을 때 빠져나오는 법을 배웠습니다.', '호신술 강습에서 뒤에서 붙잡혔을 때 벗어나는 법을 연습했습니다.'],
+    kravmaga: () => ['크라브 마가 수업에서 칼을 든 상대를 막는 법을 연습했습니다.', '크라브 마가 수업에서 지친 몸으로 여러 사람을 상대하는 훈련을 했습니다.'],
+    wushu: () => ['우슈 수련장에서 권법 동작을 이어서 해 보았습니다.'],
+    wingchun: () => ['나무 인형(목인장)을 두드리며 영춘권 손기술을 익혔습니다.'],
+    capoeira: () => ['베림바우 장단에 맞춰 둥글게 둘러선 사람들 가운데서 카포에이라를 겨루었습니다.', '카포에이라 모임에서 노래를 부르며 새 동작을 배웠습니다.'],
+    wrestle: () => ['레슬링 체육관에서 태클과 빠져나오기를 연습했습니다.'],
+    sambo: () => ['삼보 체육관에서 메치기와 다리 꺾기를 연습했습니다.'],
+  };
+  const maLine = (S, art, m) => {
+    const ko = hasFt() ? Ft.ko(S, art) : '무술', own = MA_LINES[art] ? MA_LINES[art](S, ko, m) : [];
+    const ft = hasFt() && Ft.lineOf ? Ft.lineOf(S, art) : null;
+    if (!own.length) return ft || '땀을 흠뻑 흘렸습니다.';
+    return m !== 'barracks' && ft && U.chance(0.35) ? ft : U.pick(own);
+  };
   /** 다친 장면: [문장, 다친 모양(accident.js HURT)] */
   const HURTS = {
     walk: [['걷다가 길 턱에 걸려 넘어졌습니다.', '걷다가 길 턱에 걸려 크게 넘어졌습니다.', 'fall']],
@@ -57641,6 +58102,7 @@ const Rc = {};
   };
   /** 다친 장면 하나: 가벼우면 다친 곳까지, 중간 이상이면 일어난 일만(다친 곳은 accident.js 가 정함). 노인이 넘어지면 노인 낙상(엉덩이뼈·손목) */
   const hurtOf = (S, id, big) => {
+    if (!HURTS[id] && isMa(id) && hasFt() && Ft.hurtOf) return Ft.hurtOf(S, REC[id].art, big); // 무술: 코뼈·관절(fitness.js)
     const h = U.pick(HURTS[id] || [['몸을 무리하게 쓰다 다쳤습니다.', '몸을 무리하게 쓰다 크게 다쳤습니다.', 'sport']]);
     return [big ? h[1] : h[0], h[2] === 'fall' && ageOf(S) >= 65 ? 'hip' : h[2]];
   };
@@ -57657,7 +58119,7 @@ const Rc = {};
     const h0 = typeof f.hab === 'number' ? f.hab : 50;
     // 다침: 대개 가볍고(며칠), 가끔 중간 정도(몇 달) — 치료비·쉬는 동안의 벌이는 accident.js 가 매긴다
     if (U.chance(injP(S, id))) {
-      const sev = U.chance(0.15) ? 'moderate' : 'minor', [t0, ty] = hurtOf(S, id, sev !== 'minor');
+      const sev = U.chance((artOf(id).head || 0) >= 0.5 ? 0.2 : 0.15) ? 'moderate' : 'minor', [t0, ty] = hurtOf(S, id, sev !== 'minor'); // 맞붙어 치고받는 종목은 크게 다치는 몫이 조금 큼
       if (hasFt()) Ft.did(S, d.act * 0.3);
       if (hasAc()) {
         const r = Ac.hurt(S, sev, ty, { noQuit: true });
@@ -57679,7 +58141,9 @@ const Rc = {};
     // 이어지는 종목 기술(동네 축구 → 축구 기술 조금, 공원 태극권 → 태극권 실력)
     const SPL = { soccer: 'soccer', basketball: 'basketball', cricket: 'cricket', volleyball: 'volleyball', baseball: 'baseball', badminton: 'badminton', tabletennis: 'tabletennis', tennis: 'tennis', golf: 'golf', swim: 'swimming', run: 'athletics', cycle: 'cycling' };
     if (SPL[id] && hasSp() && Sp.gain) Sp.gain(S, SPL[id], 0.6);
-    if (id === 'taichi' && hasFt() && Ft.gain && Ft.ARTS && Ft.ARTS.taichi) Ft.gain(S, 'taichi', 1.5);
+    // 무술·격투기(공원 태극권 포함, 피드백 237번): fitness.js 의 수련 한 번 — 종목 실력·띠까지 남은 달·선수 종목 기술·머리 충격
+    const art = isMa(id) && hasFt() && Ft.train && Ft.ARTS[d.art] ? d.art : null;
+    const lv = art ? Ft.train(S, art, 5) : null;
     // 사람: 함께 하는 친구와 가까워지고, 동호회·동네 모임에서 가끔 새 친구
     const fr = d.pair && !CLOSED[m] && ageOf(S) >= 10 ? H.friend(S) : null;
     if (fr) fr.close = clamp((fr.close || 45) + 3, 0, 100);
@@ -57687,15 +58151,18 @@ const Rc = {};
     if (d.soc && !CLOSED[m] && U.chance(0.02 * d.soc)) {
       const a = ageOf(S), sx = U.chance(0.75) ? S.sex : S.sex === 'm' ? 'f' : 'm';
       const nf = H.addFriend(S, 'friend', H.newPerson(S, sx, a < 20 ? U.randInt(-1, 1) : U.randInt(-10, 10)));
-      if (nf) { nf.ctx = d.club === 'neighbor' ? 'neighbor' : 'club'; if (nf.name) tail = ` 함께 운동하던 ${U.j(nf.name, '과')} 가까워졌습니다.`; }
+      if (nf) { nf.ctx = d.club === 'neighbor' ? 'neighbor' : 'club'; if (nf.name) tail = ` 함께 ${art && art !== 'taichi' ? '수련하던' : '운동하던'} ${U.j(nf.name, '과')} 가까워졌습니다.`; }
     }
-    const L = LINES[id] ? LINES[id](S, m, fr) : ['땀을 흠뻑 흘렸습니다.'];
-    let t = U.pick(L.length ? L : ['땀을 흠뻑 흘렸습니다.']) + tail;
+    let t;
+    if (LINES[id]) { const L = LINES[id](S, m, fr); t = U.pick(L.length ? L : ['땀을 흠뻑 흘렸습니다.']); }
+    else t = art ? maLine(S, art, m) : '땀을 흠뻑 흘렸습니다.';
+    t += tail;
     // 쌓인 습관을 가끔 알려 준다(숨이 차는 운동만)
     if (d.act >= 0.18 && U.chance(0.3)) {
       if (h0 >= 62) t += ` ${U.pick(GOOD(S))}`;
       else if (h0 < 25 && ageOf(S) >= 25) t += ` ${U.pick(BAD)}`;
     }
+    if (lv) t += ` (${Ft.ko(S, art)} 실력 ${R(lv[0])} → ${R(lv[1])})`;
     return t;
   };
 
@@ -57704,20 +58171,30 @@ const Rc = {};
   const pickSub = (S, id, w) => {
     const cost = costOf(S, id);
     const parts = [CLOSED[Rc.mode(S)] ? '이곳에서 할 수 있음' : popKo(w), Rc.gainKo(S, id), Rc.riskKo(S, id), cost > 0 ? `돈 ${H.amt(S, cost)}` : '돈 안 듦'];
+    // 무술 취미로 다른 종목을 하고 있으면 그 종목 대신 하게 됨을 밝힌다(하는 무술은 하나 — fitness.js S.ft.art)
+    const f = S.ft, art = isMa(id) ? REC[id].art : null;
+    if (art && !CLOSED[Rc.mode(S)] && f && f.art && f.art !== art && hasFt() && Ft.ARTS[f.art] && (S.hobbies || []).includes('martial')) parts.push(`하던 ${U.j(Ft.ko(S, f.art), '은')} 그만둠`);
     return parts.join(' · ');
   };
+  /** 다음·앞 쪽을 여는 결정의 ctx(할 일이 연 결정이면 엔진이 돌려받기 표시를 이어 붙인다) */
+  const pgCtx = (ctx, pg) => { const o = { pg }; if (ctx.act) o.act = true; if (ctx.change) o.change = true; return o; };
   const LEAD = { barracks: '부대 안에서 할 수 있는 운동만 고를 수 있습니다. 요즘 하던 운동은 전역한 뒤에 이어 갑니다. ', prison: '교도소 운동 시간에 할 수 있는 것만 고를 수 있습니다. ', bed: '누운 채로 할 수 있는 운동만 할 수 있습니다. ', frail: '몸이 예전 같지 않아 가벼운 운동만 고를 수 있습니다. ' };
   C.DEC.rc_pick = {
     title: (S, ctx) => (ctx.change ? '요즘 하는 운동을 바꿀까요?' : '어떤 운동을 할까요?'),
     text: (S, ctx) => {
       const m = Rc.mode(S), cur = S.ft && S.ft.rec && REC[S.ft.rec] ? S.ft.rec : null;
-      return `${LEAD[m] || ''}생활체육은 종목마다 몸에 남는 것이 다릅니다. 달리기·수영처럼 숨이 차는 운동은 운동 습관이 빨리 붙고, 걷기·요가는 마음을 가라앉히며, 당구·볼링·게이트볼처럼 함께 하는 운동은 사람을 만나는 재미가 큽니다.${CLOSED[m] ? '' : ' 고른 운동은 \'요즘 하는 운동\'으로 남아 다음부터 바로 할 수 있습니다.'}${cur && !CLOSED[m] ? ` 요즘 하는 운동은 ${U.j(Rc.ko(S, cur), '이')}고, 운동 습관은 '${hasFt() ? Ft.habKo(S) : '보통'}'입니다.` : ''}`;
+      const pages = Rc.pages(S), pg = clamp(ctx.pg || 0, 0, pages.length - 1);
+      // 이 쪽에 무술·격투기가 있으면 그 득실을 한 줄(피드백 237번)
+      const ma = [...new Set(pages[pg].filter((id) => isMa(id) && id !== 'taichi').map((id) => artKo(S, id)))].slice(0, 3);
+      const maT = ma.length ? ` ${ma.join('·')} 같은 무술·격투기는 몸을 지키는 힘과 자신감이 붙고 도장 사람들과 가까워지지만, 다치는 일이 잦고 맞붙어 치는 종목은 머리를 맞기도 합니다.` : '';
+      return `${pg > 0 ? `다른 운동도 살펴봅니다(${pg + 1}/${pages.length}쪽). ` : ''}${LEAD[m] || ''}생활체육은 종목마다 몸에 남는 것이 다릅니다. 달리기·수영처럼 숨이 차는 운동은 운동 습관이 빨리 붙고, 걷기·요가는 마음을 가라앉히며, 당구·볼링·게이트볼처럼 함께 하는 운동은 사람을 만나는 재미가 큽니다.${maT}${CLOSED[m] ? '' : ' 고른 운동은 \'요즘 하는 운동\'으로 남아 다음부터 바로 할 수 있습니다.'}${cur && !CLOSED[m] ? ` 요즘 하는 운동은 ${U.j(Rc.ko(S, cur), '이')}고, 운동 습관은 '${hasFt() ? Ft.habKo(S) : '보통'}'입니다.` : ''}`;
     },
     choices: (S, ctx) => {
       const c = Rc.cands(S), wm = {};
       for (const [id, w] of c) wm[id] = w;
       const m = Rc.mode(S), cur = S.ft && S.ft.rec;
-      const out = Rc.list(S).map((id, i) => {
+      const pages = Rc.pages(S), n = pages.length, pg = clamp(ctx.pg || 0, 0, n - 1);
+      const out = pages[pg].map((id, i) => {
         const cost = costOf(S, id), ok = ctx.change || payable(S, cost);
         return {
           label: `${Rc.ko(S, id)}${id === cur && !CLOSED[m] ? ' (요즘 하는 운동)' : ''}`,
@@ -57726,13 +58203,24 @@ const Rc = {};
           typ: i === 0,
           run: (S2) => {
             const f = ens(S2), before = f.rec && REC[f.rec] ? f.rec : null;
-            if (!CLOSED[Rc.mode(S2)]) f.rec = id;
-            if (ctx.change) return before && before !== id ? `요즘 하는 운동을 ${Rc.ko(S2, before)}에서 ${U.j(Rc.ko(S2, id), '으로')} 바꿨습니다.` : `${U.j(Rc.ko(S2, id), '을')} 요즘 하는 운동으로 정했습니다.`;
+            let a0 = null;
+            if (!CLOSED[Rc.mode(S2)]) {
+              f.rec = id;
+              // 무술을 고르면 fitness.js 의 '하는 무술'이 된다(무술 취미가 있으면 그 종목도 이것으로)
+              if (isMa(id) && hasFt() && Ft.setArt) {
+                a0 = f.art && Ft.ARTS[f.art] && f.art !== REC[id].art && (S2.hobbies || []).includes('martial') ? f.art : null;
+                Ft.setArt(S2, REC[id].art);
+              }
+            }
+            if (ctx.change) return (before && before !== id ? `요즘 하는 운동을 ${Rc.ko(S2, before)}에서 ${U.j(Rc.ko(S2, id), '으로')} 바꿨습니다.` : `${U.j(Rc.ko(S2, id), '을')} 요즘 하는 운동으로 정했습니다.`) + (a0 ? ` 하던 ${U.j(Ft.ko(S2, a0), '은')} 그만두었습니다.` : '');
             pay(S2, costOf(S2, id));
-            return Rc.doRec(S2, id);
+            return (a0 ? `하던 ${U.j(Ft.ko(S2, a0), '을')} 그만두고 ${U.j(artKo(S2, id), '을')} 시작했습니다. ` : '') + Rc.doRec(S2, id);
           },
         };
       });
+      // 여러 쪽(피드백 237번 — 꿈·기질 고르기와 같은 '다른 …도 본다 / 앞 목록으로 돌아간다')
+      if (pg < n - 1) out.push({ label: '다른 운동도 본다', sub: `${pages[pg + 1].slice(0, 3).map((x) => Rc.ko(S, x)).join(', ')} 등(${pg + 2}/${n}쪽)`, run: (S2) => { E.ask(S2, 'rc_pick', pgCtx(ctx, pg + 1)); return null; } });
+      if (pg > 0) out.push({ label: '앞 목록으로 돌아간다', sub: `앞에서 본 운동을 다시 봅니다(${pg}/${n}쪽)`, run: (S2) => { E.ask(S2, 'rc_pick', pgCtx(ctx, pg - 1)); return null; } });
       out.push({ label: ctx.change ? '지금처럼 둔다' : '다음에 한다', cancel: true, run: () => null });
       return out;
     },
@@ -57747,7 +58235,7 @@ const Rc = {};
       ex.koS = (S) => { const id = curRec(S); return id ? `운동하기 — ${Rc.ko(S, id)}` : CLOSED[Rc.mode(S)] ? '운동하기' : '운동하기(생활체육 고르기)'; };
       ex.hint = (S) => {
         const id = curRec(S);
-        if (id) return `${Rc.gainKo(S, id)} · ${Rc.riskKo(S, id)}`;
+        if (id) return `${isMa(id) && hasFt() ? `${Ft.ko(S, REC[id].art)} 실력 ${R(Ft.lvl(S, REC[id].art))} · ` : ''}${Rc.gainKo(S, id)} · ${Rc.riskKo(S, id)}`;
         const c = Rc.cands(S);
         return c.length ? `${c.slice(0, 3).map(([x]) => Rc.ko(S, x)).join('·')} 등 · 운동 습관: ${hasFt() ? Ft.habKo(S) : '보통'}` : `운동 습관: ${hasFt() ? Ft.habKo(S) : '보통'}`;
       };
@@ -57819,8 +58307,14 @@ const Rc = {};
     if (!opts.length) return null;
     if ((S.hobbies || []).some((h) => SPORTY0.includes(h)) && U.chance(0.5)) return null; // 운동 취미의 장면도 반쯤
     const pick = U.weighted(opts);
-    return pick && HURTS[pick] ? hurtOf(S, pick, true) : null;
+    return pick && (HURTS[pick] || isMa(pick)) ? hurtOf(S, pick, true) : null;
   };
+  /* 무술 체계(fitness.js)에 알려 줌: 요즘 하는 운동이 무술이면 그 종목(취미가 없어도 S.ft.art 를 지우지 않게),
+   * 최근 석 달 안에 했고 지금 할 수 있는 처지면 '지금 하는 무술'(달마다 실력·띠 심사·도장 친구·뇌진탕) — 피드백 237번 */
+  if (hasFt()) {
+    Ft.recArt = (S) => { const id = S && S.ft && S.ft.rec, d = id && REC[id]; return d && d.art && Ft.ARTS[d.art] ? d.art : null; };
+    Ft.recArtOn = (S) => { const a = Ft.recArt(S); return a && recent(S) && !CLOSED[Rc.mode(S)] ? a : null; };
+  }
 
   /* ================================================================ 취미: 걷기·요가·당구·볼링 */
   if (C.HOBBY) {
@@ -57988,6 +58482,751 @@ const Rc = {};
 })();
 
 if (typeof module !== 'undefined') module.exports = Rc;
+
+/* 지구 어딘가에서 — 운동선수의 길(피드백 235·243번, v0.6.12)
+ *
+ * 예전(235): 15세 전에 선수로 가는 길은 사건 '유소년 팀 선발'(8~13세에 한 해 10%) 하나뿐이었고, 스스로 찾아갈 길도 나라별 유소년 길도 없었다.
+ *            케냐에서 달리기 재능이 있는 아이도 중학교를 마칠 때까지 아무 기회가 없을 수 있었다.
+ * 예전(243): 발탁은 고교·대학 졸업 무렵 두 번(sports.js Sp.draftCheck)과 스스로 보는 입단 테스트뿐이었다. 대회에서 눈에 띈 어른, 늦게 피는 종목,
+ *            해외 구단의 직접 영입, 대표 경쟁이 센 나라 정상급 선수가 받는 특별 귀화 제안이 없었다.
+ * 지금:
+ *   ① 할 일 '유소년 팀·학교 운동부 들어가기'(6~17세, 종목별 시작 나이 — 체조·수영은 일찍, 복싱·격투기·사이클은 늦게).
+ *      나라·종목별 길: 케냐·에티오피아 육상(학교 육상부 → 고지대 훈련 캠프), 브라질·아르헨티나 축구(풋살·어린이 축구 클럽 에스콜리냐 → 구단 유소년부),
+ *      한국(학교 운동부 → 체육 특기생·구단 유스), 일본(부카쓰 → 스포츠 추천·J리그 유스), 미국(학교 팀·리틀리그 → AAU·엘리트 클럽),
+ *      유럽(동네 클럽 유소년부 → 프로 아카데미), 중국(여가 체육학교 → 전문 체육학교), 그 밖(학교 운동부·동네 클럽 → 지역 대표).
+ *      들어가면 훈련으로 종목 기술·운동 실력이 달마다 쌓이고, 해마다 학교·지역·전국·국제 청소년 대회에 나가 성적(발휘 실력 Sp.eff 와 같은 나이의 기준)에 따라
+ *      '눈에 띄는 정도'(S.ath.vis[종목] 0~100, 해마다 15%씩 옅어짐)가 오른다. 전국 대회 입상부터 수상 기록(Cr.honor)에 남는다.
+ *      학생은 체육 시간·운동회에서 눈에 띄어 운동부로 불려 가기도 한다(9~15세, 재능이 높을수록 자주).
+ *      아카데미·캠프·특기생(t2)에 들면 sports.js 의 지명(Sp.draftCheck)이 보는 표시(S.flags.youthTeam·athleteSch)도 켠다.
+ *   ② 발탁 제안(해마다, 선수가 아닌 사람): 실력(입단 테스트 합격 가능성 Sp.tryP 의 제곱) × 눈에 띄는 정도 × 소속(아카데미가 가장 큼)으로 실업팀·프로 제안이 온다.
+ *      종목별 첫 계약 나이(체조 14 · 수영·탁구 15 · 축구·육상·테니스 16 · 그 밖 17~18)와 마지막 발탁 나이(체조 19 · 축구 23 … 육상·격투기·골프 29 · 양궁 30, 근삿값).
+ *      해외 구단·실업팀의 직접 영입(케냐·에티오피아 러너 → 일본 실업단, 아프리카·남미 축구 유망주 → 유럽 구단, 카리브해 야구 → 미국 등, 18세부터 — FIFA 19조),
+ *      지도자 추천(조금 유리한 테스트), 공개 트라이아웃 모집. 어른도 아마추어 대회 성적으로 눈에 띌 수 있다(늦게 피는 선수).
+ *   ③ 특별 귀화 제안(드묾): 실력이 대표급인데 자기 나라 대표가 되기 아주 어려운 선수(중국 탁구, 케냐·에티오피아 육상, 브라질 축구, 미국 농구, 캐나다 아이스하키,
+ *      한국 양궁 등)에게 귀화 선수를 들이는 나라(바레인·카타르·튀르키예·카자흐스탄·필리핀 농구·한국·일본 럭비 등)가 제안한다.
+ *      받아들인다 / 조건을 더 받아낸다 / 거절하고 고향 대표를 노린다. 국적(Mg.loseOnNatur — 한국 특별 귀화는 원래 국적 유지), 포상금·연봉,
+ *      단체 종목은 그 나라 팀으로 옮김(선수 계약은 그대로 — sports.js Sp.relocate 와 같은 방식), 국제 연맹의 국적 변경 대기(근삿값), 고향 여론(평판·명성).
+ *      북한에서 태어나 북한에 사는 사람·출국이 막힌 사람(Rg.exitWhy)에게는 없다.
+ * 상태(옛 저장에는 없어 처음 쓸 때 Ap.ens 로 만든다):
+ *   S.ath = { vis: {종목: 0~100}, team: { sp, t(1 학교·클럽 | 2 아카데미·캠프·특기생), ko, m, iso } | null, done(유소년 팀을 마침), spotNo(운동부 권유를 거절한 횟수),
+ *             natN·natM(귀화 제안 횟수·달), natDone, nt: { iso, sp, okM, done }(대표 자격 대기), homeBid·homeN(고향 대표 도전) }
+ */
+'use strict';
+
+const Ap = {};
+(() => {
+  const hasPr = () => typeof Pr !== 'undefined' && !!Pr && typeof Pr.gain === 'function';
+  const hasCr = () => typeof Cr !== 'undefined' && !!Cr && typeof Cr.honor === 'function';
+  const hasMg = () => typeof Mg !== 'undefined' && !!Mg && typeof Mg.cits === 'function' && typeof Mg.loseOnNatur === 'function';
+  const SPD = () => (typeof Sp !== 'undefined' && Sp && Sp.DEF ? Sp.DEF : {});
+  const iso = (S) => E.iso(S);
+  const nm = (i) => Wd.name(i);
+  const pct = (p) => Math.max(1, Math.round(p * 100));
+  const luck = (S) => (E.luckP ? E.luckP(S) : 0);
+  const sig = (x) => 1 / (1 + Math.exp(-x));
+  const rk = (i) => (i && DATA.c[i] ? Wd.regionKey(i) : 'eca');
+  const dv = (i) => (i && DATA.c[i] ? Wd.dev(i) : 0);
+  const sigP = (eff, T, sc, p) => (hasPr() && Pr.sigP ? Pr.sigP(eff, T, sc, p) : sig((eff - T) / sc));
+  const earn = (S, x) => { if (typeof Ec !== 'undefined' && Ec.earn) Ec.earn(S, 'other', x); else E.addMoney(S, x); };
+  const repUp = (S, d) => { if (S.rap && typeof S.rap.rep === 'number') S.rap.rep = U.clamp(S.rap.rep + d, 0, 100); };
+
+  /* ================================================================ 상태 */
+  Ap.ens = (S) => {
+    if (!S.ath) S.ath = { vis: {}, team: null };
+    if (!S.ath.vis) S.ath.vis = {};
+    if (S.ath.team === undefined) S.ath.team = null;
+    return S.ath;
+  };
+  Ap.vis = (S, sp) => (S.ath && S.ath.vis && S.ath.vis[sp]) || 0;
+  const visUp = (S, sp, d) => { const A = Ap.ens(S); A.vis[sp] = U.clamp((A.vis[sp] || 0) + d, 0, 100); };
+  Ap.team = (S) => (S.ath && S.ath.team) || null;
+
+  /* ================================================================ 종목별 나이(근삿값) */
+  // 유소년 팀에 들어갈 수 있는 나이: 체조·수영·아이스하키·태권도는 일찍, 복싱·사이클·종합격투기는 늦게
+  const START = {
+    gymnastics: [6, 13], swimming: [6, 15], icehockey: [6, 16], taekwondo: [6, 17], karate: [6, 17], soccer: [7, 16], tennis: [7, 16], tabletennis: [7, 16], judo: [7, 17],
+    badminton: [8, 16], golf: [8, 17], baseball: [8, 17], cricket: [8, 17], gaelic: [8, 17], muaythai: [8, 17], basketball: [9, 17], rugby: [9, 17], aussierules: [9, 17],
+    wrestling: [9, 17], fencing: [9, 17], archery: [9, 17], volleyball: [10, 17], athletics: [10, 17], americanfootball: [10, 17], boxing: [11, 17], cycling: [11, 17], mma: [14, 17],
+  };
+  Ap.start = (sp) => START[sp] || [9, 17];
+  // 첫 계약(프로·실업·대표 상비군) 나이: 체조 14 · 수영·탁구 15 · 축구(유스 계약)·육상·테니스·양궁 16 · 그 밖 17~18
+  const FIRST = { gymnastics: 14, swimming: 15, tabletennis: 15, tennis: 16, soccer: 16, badminton: 16, athletics: 16, archery: 16, icehockey: 17, golf: 17, taekwondo: 17, judo: 17, karate: 17, fencing: 17, baseball: 17 };
+  Ap.firstAge = (sp) => FIRST[sp] || 18;
+  // 대회 성적으로 발탁될 수 있는 마지막 나이: 일찍 끝나는 체조·수영, 늦게 피는 육상·격투기·골프·양궁(20대 후반)
+  const DISC = {
+    gymnastics: 19, swimming: 22, icehockey: 22, soccer: 23, tennis: 23, basketball: 23, americanfootball: 23, aussierules: 23, baseball: 24, badminton: 24,
+    tabletennis: 25, volleyball: 25, rugby: 25, cycling: 26, taekwondo: 26, cricket: 27, judo: 27, fencing: 27, wrestling: 27, karate: 28, boxing: 28, muaythai: 28,
+    mma: 29, athletics: 29, golf: 29, archery: 30,
+  };
+  Ap.discMax = (sp) => Math.min(DISC[sp] || 24, typeof Sp !== 'undefined' && Sp.tryMaxLv ? Sp.tryMaxLv(sp, 1) : 30);
+
+  /* ================================================================ 나라·종목별 유소년 길 */
+  const CAMP = ['KEN', 'ETH', 'UGA', 'ERI']; // 고지대 장거리 육상의 나라
+  const SOVIET = ['RUS', 'BLR', 'UKR', 'KAZ', 'UZB', 'KGZ', 'TJK', 'TKM', 'AZE', 'ARM', 'GEO', 'MDA'];
+  /** t1: 학교 운동부·동네 클럽(들어가기 쉬움) · t2: 아카데미·캠프·특기생(뽑혀야 함). sch: 체육 특기생 표시(athleteSch), fee: 해마다 드는 비용(달 수) */
+  Ap.route = (S, sp) => {
+    const i = iso(S), d = SPD()[sp] || {}, k = d.k || 'team', ko = Sp.ko(S, sp), st = inSchool(S), r = rk(i), a = E.age(S);
+    const team = Sp.teamSport(sp);
+    let t1 = st ? { ko: `학교 ${ko}부`, d: '학교 대항 대회에 나갑니다' } : { ko: `동네 ${ko} 클럽`, d: '동네 클럽에서 훈련하며 지역 대회에 나갑니다' };
+    if (k === 'fight') t1 = { ko: `${ko} 도장·체육관 선수반`, d: '선수반에서 훈련하며 청소년 대회에 나갑니다' };
+    else if (['swimming', 'gymnastics', 'tennis', 'golf', 'fencing', 'icehockey', 'cycling'].includes(sp)) t1 = { ko: `${ko} 클럽 선수반`, d: '클럽 선수반에서 훈련하며 청소년 대회에 나갑니다' };
+    let t2 = { ko: k === 'fight' ? '시·도 청소년 대표 선수단' : team ? '지역 유소년 대표·아카데미' : '지역 유망주 훈련 센터', d: '지역에서 뽑힌 유망주가 모여 전문 코치에게 배웁니다' };
+    if (CAMP.includes(i) && sp === 'athletics') {
+      t1 = st ? { ko: '학교 육상부', d: '학교 대항 대회(학교 → 지역 → 전국)와 크로스컨트리에 나갑니다' } : { ko: '마을 달리기 모임', d: '마을 언덕길을 함께 달리며 지역 대회에 나갑니다' };
+      t2 = { ko: i === 'ETH' ? '고지대 육상 클럽·훈련 캠프' : '고지대 육상 훈련 캠프', d: '해발 2,000미터가 넘는 고지대 마을(이텐 같은 곳)의 캠프에서 코치·선배들과 하루 두 번 달립니다. 해외 매니저와 실업팀 스카우트가 자주 찾아옵니다' };
+    } else if (sp === 'soccer' && r === 'lac') {
+      t1 = i === 'BRA' ? { ko: '동네 풋살 팀·어린이 축구 클럽(에스콜리냐)', d: '풋살과 길거리 축구로 공을 다루며 동네 대회에 나갑니다' } : { ko: '동네 클럽 유소년 축구', d: '동네 클럽의 연령별 팀에서 뜁니다' };
+      t2 = { ko: i === 'BRA' ? '프로 구단 유소년부(카테고리아 지 바지)' : '프로 구단 유소년 아카데미', d: '프로 구단의 연령별 유소년 팀에서 숙식하며 훈련합니다' };
+    } else if (sp === 'soccer' && r === 'ssa') {
+      t1 = st ? { ko: '학교 축구부', d: '학교 대항 대회에 나갑니다' } : { ko: '동네 축구 팀', d: '맨땅 운동장에서 동네 대회에 나갑니다' };
+      t2 = { ko: '축구 아카데미', d: '유럽 구단과 이어진 아카데미도 있어, 18세가 넘으면 해외 구단으로 가는 길이 열리기도 합니다' };
+    } else if (i === 'KOR') {
+      if (sp === 'baseball' && a < 13) t1 = { ko: '리틀야구단', d: '리틀야구 대회에 나갑니다' };
+      t2 = sp === 'soccer' ? { ko: '프로 구단 유스 팀(U-15·U-18)', d: '프로 구단 유스 팀에서 훈련하며 학교를 다닙니다', sch: true } : { ko: '체육 특기생(체육중·체육고)', d: '수업 일부를 훈련으로 바꾸고 전국 대회를 목표로 합니다', sch: true };
+    } else if (i === 'JPN') {
+      if (st && k !== 'fight') t1 = { ko: `${ko} 부카쓰(학교 운동부)`, d: '수업이 끝난 뒤 부 활동으로 현 대회·전국 대회를 목표로 합니다' };
+      t2 = sp === 'soccer' ? { ko: 'J리그 구단 유스 팀', d: '프로 구단 유스 팀에서 훈련합니다', sch: true } : sp === 'baseball' ? { ko: '고시엔 강호교 야구부(스포츠 추천)', d: '스포츠 추천으로 야구 강호교에 들어가 고시엔 대회를 노립니다', sch: true } : { ko: '스포츠 강호교 추천 입학', d: '운동부가 강한 학교에 스포츠 추천으로 들어갑니다', sch: true };
+    } else if (i === 'CHN') {
+      if (st) t1 = { ko: '학교 운동부·여가 체육학교', d: '수업이 끝나면 여가 체육학교(업여 체교)에 가서 훈련합니다' };
+      t2 = { ko: '성·시 전문 체육학교', d: '나라의 선수 양성 체계인 체육학교에 들어가 하루 대부분을 훈련합니다', sch: true };
+    } else if (i === 'USA') {
+      if (st) t1 = sp === 'baseball' && a < 13 ? { ko: '리틀리그', d: '리틀리그 대회에 나갑니다' } : { ko: `학교 ${ko} 팀`, d: '학교 대항 리그에 나갑니다' };
+      t2 = sp === 'soccer' ? { ko: '프로 구단 유소년 아카데미', d: '프로 구단 아카데미에서 훈련합니다' } : sp === 'americanfootball' ? { ko: '고교 풋볼 명문교 팀', d: '대학 스카우트가 찾아오는 명문교 팀에서 뜁니다' }
+        : { ko: team ? 'AAU·트래블 팀(엘리트 클럽)' : '엘리트 클럽 선수반', d: '주말마다 다른 주로 원정을 다니며 대학·프로 스카우트 앞에서 뜁니다', fee: 0.5 };
+    } else if (i === 'CUB') {
+      t2 = { ko: '체육 영재학교(EIDE)', d: '나라가 뽑은 유망주가 다니는 체육 학교입니다', sch: true };
+    } else if (sp === 'muaythai' && ['THA', 'KHM', 'MMR', 'LAO'].includes(i)) {
+      t1 = { ko: `동네 ${ko} 캠프`, d: '동네 캠프에서 훈련하며 지역 경기장 시합에 나갑니다' };
+      t2 = { ko: `이름난 ${ko} 캠프`, d: '큰 도시의 이름난 캠프에서 숙식하며 큰 경기장 시합을 준비합니다' };
+    } else if (sp === 'cricket' && ['IND', 'PAK', 'BGD', 'LKA', 'AFG', 'NPL'].includes(i)) {
+      t1 = st ? { ko: '학교 크리켓 팀', d: '학교 대항 대회에 나갑니다' } : { ko: '동네 크리켓 클럽', d: '동네 클럽에서 뜁니다' };
+      t2 = { ko: '크리켓 아카데미', d: '주(州) 대표를 길러 내는 아카데미에서 훈련합니다' };
+    } else if (SOVIET.includes(i)) {
+      t2 = { ko: '유소년 체육학교(스포츠 학교)', d: '나라가 운영하는 유소년 체육학교에 다니며 전문 코치에게 배웁니다', sch: true };
+    } else if (r === 'eca' || r === 'na' || dv(i) >= 3) {
+      if (k !== 'fight') t1 = { ko: `동네 ${ko} 클럽 유소년부`, d: '동네 클럽의 연령별 팀에서 뛰며 지역 리그에 나갑니다' };
+      t2 = team ? { ko: '프로 클럽 유소년 아카데미', d: '프로 클럽 아카데미에서 훈련합니다' } : { ko: '지역 엘리트 훈련 센터', d: '지역 연맹이 뽑은 유망주가 모여 훈련합니다' };
+    }
+    // 아카데미·캠프·특기생(t2)을 뽑기 시작하는 나이(근삿값): 축구 아카데미 9세 안팎, 체조·수영은 일찍,
+    // 나라가 뽑는 특기생·체육학교(한국 체육중·일본 추천 입학·중국 체육학교·쿠바 EIDE 등)와 고지대 육상 캠프는 중학생 나이(12세)부터, 그 밖 10세
+    t2.min = t2.sch || (CAMP.includes(i) && sp === 'athletics') ? 12 : sp === 'soccer' ? 9 : sp === 'gymnastics' ? 7 : sp === 'swimming' ? 8 : Math.max(10, Ap.start(sp)[0] + 2);
+    return { t1, t2 };
+  };
+
+  /* ================================================================ 들어가기 */
+  /** 학교에 다니는가(졸업한 해 생일에 다음 학교 진학 결정을 기다리는 동안도 학생으로 본다) */
+  const inSchool = (S) => H.student(S) || (S.edu.stage === null && S.queue.some((q) => q.id === 'nextStage'));
+  /** 같은 나이 유소년 선수의 기준 발휘 실력(7세 32 → 19세 약 61) */
+  const bench = (a) => 32 + 2.4 * (U.clamp(a, 7, 19) - 7);
+  /** 들어갈 가능성: t1 은 대부분 받아 주고, t2 는 실력(+ 대회에서 눈에 띈 만큼)이 같은 나이 기준보다 10쯤 높아야 */
+  Ap.joinP = (S, sp, t) => {
+    const eff = Sp.eff(S, sp), b = bench(E.age(S));
+    if (t === 1) return U.clamp(0.6 + (eff - b) / 40 + (Sp.popW(sp, iso(S)) >= 6 ? 0.05 : 0), 0.3, 0.95);
+    return U.clamp(sigP(eff + 0.25 * Ap.vis(S, sp), b + 10, 5, Sp.skillMix(S, sp)) * 0.9 + luck(S), 0.02, 0.9);
+  };
+  /** 나이가 맞는가(true | 이유) */
+  const ageOk = (S, sp) => {
+    const r = Ap.start(sp), a = E.age(S), ko = Sp.ko(S, sp);
+    if (a < r[0]) return `${U.j(ko, '은')} ${r[0]}세부터 유소년 팀에 들어갈 수 있습니다`;
+    if (a >= r[1] + 1) return `${ko} 유소년 팀에 들어갈 나이(${r[1]}세)가 지났습니다 — 대회 성적·입단 테스트로 도전합니다`;
+    return true;
+  };
+  /** 팀에 들어간다. r: 길(Ap.route 의 t1·t2 — ko 이름, sch 체육 특기생, fee 해마다 드는 비용) */
+  Ap.join = (S, sp, t, r) => {
+    const A = Ap.ens(S);
+    Sp.ensureS(S);
+    S.sp.main = sp;
+    A.team = { sp, t, ko: r.ko, m: S.ageM, iso: iso(S) };
+    if (r.fee) A.team.fee = r.fee;
+    delete A.done;
+    // 지명(Sp.draftCheck)이 보는 표시: 아카데미·캠프·특기생(t2)만 '유소년 팀'으로 본다(학교 운동부는 운동 취미 + 종목 기술 30으로 이미 지명 대상)
+    if (t === 2) S.flags.youthTeam = true;
+    if (r.sch) S.flags.athleteSch = true;
+    if (t === 2 && !S.hobbies.includes('sport')) { S.hobbies.unshift('sport'); S.hobbies = S.hobbies.slice(0, 2); } // 아카데미·캠프는 운동이 생활의 중심(운동 취미)
+    H.reveal(S, 'sport');
+    E.stat(S, 'happy', 5);
+  };
+  /** 팀을 마친다(나이·이주·프로 입단). quiet 이면 기록 없이 */
+  const endTeam = (S, why) => {
+    const A = Ap.ens(S), T = A.team;
+    if (!T) return;
+    A.team = null;
+    A.done = true;
+    A.past = (A.past || []).concat([{ sp: T.sp, ko: T.ko, from: T.m, to: S.ageM }]).slice(-3);
+    if (why === 'age') E.log(S, C.t(S, `${T.ko} 선수 시절을 마쳤습니다. 함께 땀 흘린 팀 친구들과 마지막 인사를 나눴습니다.`), 'ev');
+    else if (why === 'move') E.log(S, C.t(S, `나라를 옮기게 되어 ${U.j(T.ko, '을')} 떠났습니다.`), 'ev');
+  };
+  /** 할 일·종목 고르기에서 부른다: 종목이 없으면 먼저 종목을 고르고, 있으면 들어갈 팀을 고른다 */
+  Ap.joinAsk = (S) => {
+    if (!Sp.main(S)) E.ask(S, 'sp_pick', { youth: true });
+    else E.ask(S, 'ap_join', {});
+  };
+  C.DEC.ap_join = {
+    title: () => '어느 팀에 들어갈까요?',
+    text: (S) => {
+      const sp = Sp.main(S) || Sp.mainOrNat(S), ko = Sp.ko(S, sp), R = Ap.route(S, sp), T = Ap.team(S);
+      const lead = CAMP.includes(iso(S)) && sp === 'athletics' ? '이 나라의 달리기 선수는 대개 학교 육상 대회에서 눈에 띄어 고지대 훈련 캠프로 갑니다.' : `${U.j(ko, '은')} 나라마다 선수가 자라는 길이 다릅니다. 여기서는 ${R.t1.ko}${U.hasBatchim(R.t1.ko) ? '이나' : '나'} ${U.j(R.t2.ko, '이')} 그 길입니다.`;
+      return C.t(S, `${lead} 팀에 들어가면 훈련으로 기술이 쌓이고, 해마다 대회에 나가 성적에 따라 실업팀·프로 스카우트의 눈에 띕니다.${T ? ` 지금은 ${T.ko} 소속입니다.` : ''} (발휘 실력 ${Math.round(Sp.eff(S, sp))} · 눈에 띄는 정도 ${Math.round(Ap.vis(S, sp))})`);
+    },
+    choices: (S) => {
+      const sp = Sp.main(S) || Sp.mainOrNat(S), R = Ap.route(S, sp), T = Ap.team(S), ok = ageOk(S, sp), can = Sp.can(S, sp);
+      const why = can !== true ? can : ok !== true ? ok : null;
+      const out = [];
+      const add = (t, r) => {
+        const p = Ap.joinP(S, sp, t);
+        const young = t === 2 && r.min && E.age(S) < r.min ? `${U.j(r.ko, '은')} ${r.min}세부터 뽑습니다` : null;
+        out.push({ label: r.ko, disabled: !!(why || young), sub: why || young || `${r.d} · 가능성 약 ${pct(p)}%${r.fee ? ` · 해마다 비용 약 ${H.amt(S, r.fee)}` : ''}`,
+          run: (S2) => {
+            Sp.gain(S2, sp, 1);
+            if (U.chance(p)) {
+              Ap.join(S2, sp, t, r);
+              return C.t(S2, t === 2 ? `{N은} ${r.ko}에 뽑혔습니다! ${r.d}.` : `{N은} ${r.ko}에 들어갔습니다! 새 운동복을 받아 들고 첫 훈련에 나갔습니다.`);
+            }
+            E.stat(S2, 'happy', -4);
+            return C.t(S2, t === 2 ? `${r.ko} 선발에서 떨어졌습니다. 대회에서 성적을 내면 다음에는 먼저 연락이 올 수도 있습니다. (발휘 실력 ${Math.round(Sp.eff(S2, sp))})` : `${r.ko} 선발에서 떨어졌습니다. 코치가 기본기를 다져 내년에 다시 오라고 했습니다.`);
+          } });
+      };
+      if (!T) add(1, R.t1);
+      if (!T || T.t === 1) add(2, R.t2);
+      // '다음에 한다'를 '다른 종목을 고른다'보다 앞에(들어갈 팀이 모두 막혔을 때 첫 선택이 종목 고르기로 돌고 돌지 않게)
+      out.push({ label: '다음에 한다', typ: true, run: () => null });
+      out.push({ label: '다른 종목을 고른다', sub: '선수로 뛸 종목부터 다시 고릅니다', cancel: false, run: (S2) => { E.ask(S2, 'sp_pick', { youth: true }); return null; } });
+      return out;
+    },
+  };
+  // 할 일: 유소년 팀·학교 운동부 들어가기(꿈에 도전 칸, '선수로 뛸 종목 정하기' 다음). 하루 테스트로 몇 해가 이어지는 일 → 큰일 기회 1번, 떨어지면 한 해 뒤
+  if (!C.ACTION.youthteam) {
+    const a = { id: 'youthteam', ko: '유소년 팀·학교 운동부 들어가기', cat: 'dream', age: [6, 17], cd: 12,
+      koS: (S) => (Ap.team(S) ? '더 큰 팀(아카데미·특기생)에 도전하기' : '유소년 팀·학교 운동부 들어가기'),
+      where: (S) => !H.jobIs(S, 'athlete') && !(Ap.team(S) && Ap.team(S).t === 2),
+      need: (S) => {
+        if (S.mil) return '군 복무 중입니다';
+        const sp = Sp.main(S);
+        if (!sp) return true;
+        const can = Sp.can(S, sp);
+        if (can !== true) return can;
+        return ageOk(S, sp);
+      },
+      hint: (S) => {
+        const sp = Sp.main(S);
+        if (!sp) return '먼저 선수로 뛸 종목을 고릅니다 · 나라마다 선수가 자라는 길이 다릅니다';
+        const R = Ap.route(S, sp), T = Ap.team(S);
+        const t2 = E.age(S) < (R.t2.min || 0) ? `${R.t2.ko} ${R.t2.min}세부터` : `${R.t2.ko} 약 ${pct(Ap.joinP(S, sp, 2))}%`;
+        return T ? t2 : `${R.t1.ko} 약 ${pct(Ap.joinP(S, sp, 1))}% · ${t2}`;
+      },
+      run: (S) => { Ap.joinAsk(S); return null; } };
+    const i = C.ACTIONS.findIndex((x) => x.id === 'sportpick');
+    C.ACTIONS.splice(i >= 0 ? i + 1 : C.ACTIONS.length, 0, a);
+    C.ACTION.youthteam = a;
+  }
+  if (C.ACT_W) C.ACT_W.youthteam = ['d', 2, 12];
+
+  /* ================================================================ 달마다: 팀 훈련 */
+  E.hook('month', (S) => {
+    const T = S.ath && S.ath.team;
+    if (!T || !S.alive || S.prison || !SPD()[T.sp]) return;
+    Sp.gain(S, T.sp, T.t === 2 ? 0.4 : 0.22);
+    if (hasPr()) Pr.gain(S, 'sport', T.t === 2 ? 0.14 : 0.08);
+    Sp.ensureS(S);
+    S.sp.n = S.sp.n || {};
+    S.sp.n[T.sp] = (S.sp.n[T.sp] || 0) + (T.t === 2 ? 0.12 : 0.06); // 꾸준한 훈련도 쌓인 노력(재능의 벽, Sp.effortB)
+  });
+
+  /* ================================================================ 대회 */
+  /** 그 나라에서 그 종목 대표가 되기 어려운 정도(인기·인구, 0~0.9) */
+  const depth = (sp, i) => U.clamp((Sp.popW(sp, i) - 3) / 9, 0, 1) * 0.6 + (((DATA.c[i] || {}).pop || 0) >= 1e8 ? 0.3 : 0);
+  const compName = (S, sp, L, adult) => {
+    const i = iso(S), ko = Sp.ko(S, sp), st = inSchool(S), camp = CAMP.includes(i) && sp === 'athletics';
+    if (adult) return [`동호인 ${ko} 대회`, `지역 아마추어 ${ko} 대회`, `전국 아마추어 ${ko} 선수권`, `국제 ${ko} 오픈 대회`][Math.max(0, L)];
+    if (S.edu.stage === 3) return [`대학 대항 ${ko} 대회`, `지역 대학 ${ko} 대회`, `전국 대학 ${ko} 선수권`, '세계 대학 경기 대회(유니버시아드)'][Math.max(0, L)];
+    if (L <= 0) return camp ? (st ? '학교 대항 육상 대회' : '마을 대항 달리기 대회') : st ? `학교 대항 ${ko} 대회` : `동네 ${ko} 대회`;
+    if (L === 1) return i === 'USA' ? `주(州) 청소년 ${ko} 대회` : i === 'KOR' ? `시·도 청소년 ${ko} 대회` : camp ? '카운티·지역 육상 대회' : `지역 청소년 ${ko} 대회`;
+    if (L === 2) return i === 'JPN' && st ? (S.edu.stage === 2 ? `전국 고교 ${ko} 대회(인터하이)` : `전국 중학 ${ko} 대회`) : camp && st ? '전국 학교 육상 대회' : `전국 청소년 ${ko} 대회`;
+    return `국제 청소년 ${ko} 대회(세계 청소년 선수권 등)`;
+  };
+  /** 한 해 대회: 같은 나이 기준(어른은 60)보다 발휘 실력이 얼마나 높은지 + 그날의 흩어짐(실력이 높을수록 좁음). 돌려주는 값: 다다른 단계 −1~3 */
+  Ap.compete = (S, sp, T, adult) => {
+    const i = iso(S), eff = Sp.eff(S, sp), sm = Sp.skillMix(S, sp);
+    const b = adult ? 60 : bench(E.age(S)), dep = depth(sp, i);
+    const lf = hasPr() && Pr.luckF ? Pr.luckF(sm) : 1;
+    const z = (eff - b) / 6 + (T && T.t === 2 ? 0.3 : 0) + U.normal(0, 0.8 * lf) + luck(S) * 5;
+    let L = z < 0 ? -1 : z < 1 ? 0 : z < 2 + dep * 0.5 ? 1 : z < 3 + dep ? 2 : 3;
+    if (L === 3 && Sp.league(sp, i) === 0 && Sp.popW(sp, i) < 1) L = 2; // 국제 대회에 선수를 거의 보내지 않는 종목
+    const v0 = Ap.vis(S, sp);
+    visUp(S, sp, [0, 2, 6, 14, 24][L + 1] * (T && T.t === 2 ? 1.15 : 1) * (adult ? 0.8 : 1));
+    H.reveal(S, 'sport');
+    const name = compName(S, sp, L, adult);
+    if (L >= 2) {
+      H.fameUp(S, L === 3 ? 3 : 1);
+      if (hasCr()) Cr.honor(S, 'contest', `${name} 입상`);
+    }
+    if (adult && L < 1) return L;
+    const v1 = Ap.vis(S, sp);
+    const res = L < 0 ? `${name}에 나갔지만 예선에서 떨어졌습니다.` : L === 0 ? `${name}에서 입상했습니다.` : L === 1 ? `${name}에서 입상했습니다!` : L === 2 ? `${name}에서 입상해 이름이 알려지기 시작했습니다!` : (adult ? `${name}에서 입상했습니다! 실업팀·프로 스카우트가 이름을 적어 갔습니다.` : `청소년 대표로 뽑혀 ${name}에 나갔습니다!`);
+    const head = T ? `${T.ko} 소속으로 한 시즌을 뛰었습니다. ` : ''; // '…학교에서'가 학생이 아닐 때 학교 장면처럼 읽히지 않게 '소속으로'
+    E.log(S, C.t(S, `${head}${res} (발휘 실력 ${Math.round(eff)} · 눈에 띄는 정도 ${Math.round(v0)} → ${Math.round(v1)})`), L >= 2 ? 'good' : 'ev');
+    return L;
+  };
+
+  /* ================================================================ 해마다 */
+  const blocked = (S) => (S.born.iso === 'PRK' && iso(S) === 'PRK') || (typeof Rg !== 'undefined' && Rg && typeof Rg.exitWhy === 'function' && !!Rg.exitWhy(S));
+  const busy = (S) => !!(S.mil || S.ill || S.hosp || S.prison || (H.incap && H.incap(S)));
+  /** 사건으로 생긴 표시(유소년 팀 선발 c_tryout · 체육 특기생 t_sportschol)를 팀으로 옮겨 둔다(옛 저장 포함) */
+  const sync = (S) => {
+    const A = Ap.ens(S), a = E.age(S);
+    if (A.team || A.done || H.jobIs(S, 'athlete')) return;
+    const sp = Sp.main(S) || Sp.mainOrNat(S);
+    if (!SPD()[sp] || sp === 'esports') return;
+    const ko = Sp.ko(S, sp);
+    if (S.flags.athleteSch && a < 23 && (H.student(S) || S.edu.stage === 3)) A.team = { sp, t: 2, ko: S.edu.stage === 3 ? `대학 ${ko}부(체육 특기생)` : `체육 특기생(${ko})`, m: S.ageM, iso: iso(S) };
+    else if (S.flags.youthTeam && a < 19) A.team = { sp, t: 1, ko: `동네 ${ko} 유소년 팀`, m: S.ageM, iso: iso(S) };
+  };
+  const teamOver = (S) => {
+    const T = Ap.team(S);
+    if (!T) return;
+    const a = E.age(S), college = S.flags.athleteSch && S.edu.stage === 3 && a < 23;
+    if (H.jobIs(S, 'athlete')) endTeam(S, 'pro');
+    else if (T.iso && T.iso !== iso(S) && !S.tmp) endTeam(S, 'move');
+    else if (a >= 19 && !college) endTeam(S, 'age');
+    else if (Sp.can(S, T.sp) !== true) endTeam(S, 'quiet');
+    else if (college && !/대학/.test(T.ko)) { T.ko = `대학 ${Sp.ko(S, T.sp)}부(체육 특기생)`; T.t = 2; delete T.fee; } // 특기생으로 대학 운동부에 이어 간다
+    else if (T.t === 1 && /학교|부카쓰|리틀/.test(T.ko) && !inSchool(S) && S.edu.stage !== 3) T.ko = Ap.route(S, T.sp).t1.ko; // 학교를 그만두면 동네 클럽·모임에서 계속 뛴다
+  };
+  /** 실력이 닿는 단계와 그 입단 테스트 가능성(나이 한도를 넘은 단계는 뺌) — 높은 단계부터, 가능성 30%가 넘는 가장 높은 곳 */
+  const bestTier = (S, sp) => {
+    let best = null;
+    for (const t of Sp.tiers(S, sp)) {
+      if (E.age(S) > Sp.tryMaxLv(sp, t)) continue;
+      const r = Sp.tryP(S, sp, t);
+      if (!best || r.p >= 0.3 || r.p > best.r.p) best = { lv: t, r };
+    }
+    return best;
+  };
+  // 해외 구단·실업팀의 직접 영입(근삿값): from(태어나 자란 나라) → to(데려가는 나라)
+  const ABROAD = [
+    { from: CAMP, sp: ['athletics'], to: ['JPN'], who: '%s 실업단(기업 육상부·에키덴 팀)', lv: 2, note: '일본 기업 육상부는 해마다 케냐·에티오피아의 젊은 러너를 데려가 역전 경주(에키덴)와 마라톤에 내보냅니다' },
+    { from: (i) => ['ssa', 'lac'].includes(rk(i)) || ['MAR', 'DZA', 'TUN', 'EGY'].includes(i), sp: ['soccer'], to: ['PRT', 'BEL', 'FRA', 'NLD', 'ESP', 'ITA'], who: '%s 구단', lv: 2, note: '유럽 구단 스카우트는 아프리카·남미 유망주를 데려가 2군·하부 리그에서 키웁니다. 국제 이적은 18세부터 할 수 있습니다(FIFA 19조)' },
+    { from: ['DOM', 'VEN', 'CUB', 'PAN', 'NIC', 'COL', 'PRI', 'MEX'], sp: ['baseball'], to: ['USA'], who: '프로 %s 구단', lv: 2, note: '미국 구단은 카리브해·중남미 유망주와 계약해 마이너리그에서 키웁니다' },
+    { from: (i) => rk(i) === 'ssa', sp: ['basketball'], to: ['ESP', 'FRA', 'TUR', 'ITA'], who: '%s 구단', lv: 2, note: '유럽 구단은 아프리카의 키 큰 유망주를 데려가 하부 리그에서 키웁니다' },
+    { from: ['BRA', 'CUB', 'ARG', 'SRB', 'DOM'], sp: ['volleyball'], to: ['TUR', 'ITA', 'POL', 'JPN'], who: '%s 구단', lv: 2, note: '튀르키예·이탈리아 리그는 외국인 선수에게 큰 연봉을 줍니다' },
+    { from: ['FJI', 'TON', 'WSM', 'PNG'], sp: ['rugby'], to: ['FRA', 'JPN', 'NZL', 'AUS', 'GBR'], who: '%s 구단', lv: 2, note: '태평양 섬나라 선수는 프랑스·일본·뉴질랜드 구단이 일찍 데려갑니다' },
+    { from: ['COL', 'ERI', 'RWA', 'ECU', 'ETH'], sp: ['cycling'], to: ['ESP', 'ITA', 'FRA', 'BEL'], who: '프로 %s 팀', lv: 2, note: '유럽 프로 팀은 고지대에서 자란 산악 선수를 눈여겨봅니다' },
+    { from: ['CHN'], sp: ['tabletennis'], to: ['DEU', 'JPN', 'FRA'], who: '%s 리그 구단', lv: 2, note: '대표 경쟁이 센 중국 선수는 독일·일본 리그에서 뛰는 일이 많습니다' },
+  ];
+  const abroadPick = (S, sp) => {
+    const home = iso(S);
+    if (E.age(S) < 18 || blocked(S)) return null;
+    for (const r of ABROAD) {
+      if (!r.sp.includes(sp)) continue;
+      if (!(typeof r.from === 'function' ? r.from(home) : r.from.includes(home))) continue;
+      const to = r.to.filter((d) => d !== home && DATA.c[d] && Sp.league(sp, d) >= 1);
+      if (!to.length) continue;
+      const dest = U.pick(to);
+      return { dest, who: r.who, note: r.note, lv: Math.max(1, Math.min(r.lv, Sp.league(sp, dest), Sp.femCap(S, sp))) };
+    }
+    return null;
+  };
+  /** 발탁 제안이 오는 빈도: 배수 × (입단 테스트 합격 가능성)² × 눈에 띄는 정도 × 소속. 가능성을 제곱해 실력이 닿는 선수에게 몰리게 했다
+   *  (점검 scratchpad/v0612a_meas.js: 가능성에 그대로 비례하면 무작위로 고르는 인생의 프로 선수 몫이 예전의 약 6배가 되었음) */
+  Ap.K_OFFER = 0.7;
+  const offerCheck = (S, sp) => {
+    const a = E.age(S), d = SPD()[sp];
+    if (!d || d.amateur || a < Ap.firstAge(sp) || a > Ap.discMax(sp)) return false;
+    const T = Ap.team(S), v = Ap.vis(S, sp);
+    if (!T && v < 8) return false;
+    const best = bestTier(S, sp);
+    if (!best || best.r.p < 0.15) return false;
+    const visF = U.clamp(v / 50, 0.1, 1.2), routeF = T ? (T.t === 2 ? 1.3 : 1) : 0.7;
+    if (!U.chance(U.clamp(Ap.K_OFFER * best.r.p * best.r.p * visF * routeF, 0, 0.25))) return false;
+    // 리그가 없는 나라는 해외 팀이 제안한다(Sp.bestLeague), 몇몇 나라·종목은 해외 구단이 직접 데려간다
+    let ctx = { sp, lv: best.lv };
+    if (best.r.lg.abroad && best.r.lg.iso) {
+      if (blocked(S) || a < 18) return false;
+      ctx = { sp, lv: best.lv, dest: best.r.lg.iso, who: '%s 팀', note: '' };
+    } else if (U.chance(0.45)) {
+      const ab = abroadPick(S, sp);
+      if (ab) ctx = { sp, lv: ab.lv, dest: ab.dest, who: ab.who, note: ab.note };
+    }
+    E.ask(S, 'ap_offer', ctx);
+    return true;
+  };
+  const coachCheck = (S, sp) => {
+    const a = E.age(S), d = SPD()[sp], T = Ap.team(S), v = Ap.vis(S, sp);
+    if (!d || d.amateur || a < Math.max(15, Ap.firstAge(sp)) || a > Ap.discMax(sp) || (!T && v < 25)) return false;
+    const best = bestTier(S, sp);
+    if (!best || best.r.lg.abroad || best.r.p < 0.12 || !U.chance(T ? 0.05 : 0.03)) return false;
+    E.ask(S, 'ap_coach', { sp, lv: best.lv });
+    return true;
+  };
+  const openCheck = (S, sp) => {
+    const a = E.age(S), d = SPD()[sp];
+    if (!d || d.amateur || a < 18 || a > Ap.discMax(sp) || Sp.lvl(S, sp) < 55 || !(S.hobbies.includes('sport') || Ap.vis(S, sp) >= 5)) return false;
+    const tiers = Sp.tiers(S, sp), lv = tiers[0];
+    if (!lv || a > Sp.tryMaxLv(sp, lv) - 1 || Sp.bestLeague(S, sp).abroad || !U.chance(0.015)) return false;
+    E.ask(S, 'ap_open', { sp, lv });
+    return true;
+  };
+  const upgCheck = (S, sp, T) => {
+    if (T.t !== 1 || ageOk(S, sp) !== true || E.age(S) < (Ap.route(S, sp).t2.min || 0)) return false;
+    const v = Ap.vis(S, sp);
+    if (v < 15 || !U.chance(U.clamp((0.25 * v) / 40, 0, 0.45))) return false;
+    E.ask(S, 'ap_upg', { sp });
+    return true;
+  };
+  /** 운동회·체육 시간에 눈에 띄어 운동부로 불려 가는 종목: 내 종목, 고지대 육상의 나라는 육상, 그 밖에는 나라 인기 종목(가끔 육상) */
+  const spotSp = (S) => {
+    const i = iso(S);
+    if (Sp.main(S)) return Sp.main(S);
+    if (CAMP.includes(i) && Sp.can(S, 'athletics') === true) return 'athletics';
+    if (U.chance(0.3) && Sp.can(S, 'athletics') === true) return 'athletics';
+    const nat = Sp.natId(i);
+    return Sp.can(S, nat) === true ? nat : null;
+  };
+  const spotCheck = (S) => {
+    const A = Ap.ens(S), a = E.age(S);
+    if (A.team || A.done || !H.student(S) || a < 9 || a >= 16 || (A.spotNo || 0) >= 2) return false;
+    const sp = spotSp(S);
+    if (!sp || sp === 'esports' || ageOk(S, sp) !== true) return false;
+    const camp = CAMP.includes(iso(S)) && sp === 'athletics';
+    const p = (0.01 + Math.max(0, Sp.talent(S, sp) - 60) / 200) * (camp ? 1.6 : 1) * (S.hobbies.includes('sport') ? 1.3 : 1);
+    if (!U.chance(U.clamp(p, 0, 0.5))) return false;
+    E.ask(S, 'ap_spot', { sp });
+    return true;
+  };
+
+  Ap.year = (S, ay) => {
+    const A = Ap.ens(S);
+    for (const k of Object.keys(A.vis)) { A.vis[k] *= 0.85; if (A.vis[k] < 0.5) delete A.vis[k]; }
+    if (busy(S)) return;
+    sync(S);
+    teamOver(S);
+    ntCheck(S);
+    homeBidCheck(S);
+    if (natCheck(S)) return;
+    if (H.jobIs(S, 'athlete')) return;
+    const T = Ap.team(S), sp = T ? T.sp : Sp.main(S), a = E.age(S);
+    if (!sp || !SPD()[sp] || sp === 'esports' || Sp.can(S, sp) !== true) { spotCheck(S); return; }
+    if (T && T.fee) E.addMoney(S, -H.pay(S, T.fee)); // 미국 AAU·엘리트 클럽 등: 해마다 회비·원정비
+    if (T && a >= 7) Ap.compete(S, sp, T, false);
+    else if (!T && a >= 17 && a <= Ap.discMax(sp) + 2 && (S.hobbies.includes('sport') || Ap.vis(S, sp) >= 5) && Sp.lvl(S, sp) >= 30 && U.chance(0.6)) Ap.compete(S, sp, null, true);
+    if (S.queue.some((q) => q.id === 'sp_draft')) return; // 이번 해에 지명 제안(Sp.draftCheck)을 받았으면
+    if (offerCheck(S, sp) || coachCheck(S, sp) || openCheck(S, sp)) return;
+    if (T) upgCheck(S, sp, T);
+    else spotCheck(S);
+  };
+  E.hook('year', (S, ay) => { if (S.alive && typeof Sp !== 'undefined' && Sp.DEF) Ap.year(S, ay); });
+
+  /* ================================================================ 결정: 운동부 권유 · 더 큰 팀 · 발탁 · 지도자 추천 · 공개 트라이아웃 */
+  C.DEC.ap_spot = {
+    title: () => '운동부에 들어오라는 권유',
+    text: (S, ctx) => {
+      const ko = Sp.ko(S, ctx.sp), R = Ap.route(S, ctx.sp);
+      if (CAMP.includes(iso(S)) && ctx.sp === 'athletics') return C.t(S, `학교 운동회 달리기에서 {N이} 상급생들까지 제치고 가장 먼저 들어왔습니다. 육상부 코치가 {N을} 불러 ${R.t1.ko}에 들어오라고 합니다. 잘 뛰면 지역 대회, 전국 대회까지 나갈 수 있습니다.`);
+      return C.t(S, `체육 시간에 {N}의 몸놀림을 눈여겨본 ${ko} 코치가 ${R.t1.ko}에 들어오라고 합니다. ${R.t1.d}.`);
+    },
+    choices: (S, ctx) => {
+      const R = Ap.route(S, ctx.sp);
+      return [
+        { label: '운동부에 들어간다', sub: `${R.t1.ko} · 훈련으로 기술이 쌓이고 해마다 대회에 나갑니다`, run: (S2) => { Ap.join(S2, ctx.sp, 1, R.t1); return C.t(S2, `{N은} ${R.t1.ko}에 들어갔습니다. 첫 훈련 날, 운동장을 몇 바퀴나 돌았는지 모릅니다.`); } },
+        { label: '지금은 그냥 즐긴다', typ: true, sub: '운동은 놀이로만 합니다', run: (S2) => { const A = Ap.ens(S2); A.spotNo = (A.spotNo || 0) + 1; return C.t(S2, '운동부에는 들어가지 않고 친구들과 노는 것으로 만족했습니다.'); } },
+      ];
+    },
+  };
+  C.DEC.ap_upg = {
+    title: () => '더 큰 팀에서 온 연락',
+    text: (S, ctx) => {
+      const T = Ap.team(S), R = Ap.route(S, ctx.sp);
+      return C.t(S, `${T ? `${T.ko} 소속으로 뛰는 ` : ''}{N}의 대회 성적을 본 ${R.t2.ko} 쪽에서 들어오라고 연락해 왔습니다. ${R.t2.d}. (눈에 띄는 정도 ${Math.round(Ap.vis(S, ctx.sp))})`);
+    },
+    choices: (S, ctx) => {
+      const R = Ap.route(S, ctx.sp);
+      return [
+        { label: `${U.j(R.t2.ko, '으로')} 간다`, typ: true, sub: `훈련이 더 많아지고, 스카우트의 눈에 더 잘 띕니다${R.t2.fee ? ` · 해마다 비용 약 ${H.amt(S, R.t2.fee)}` : ''}`, run: (S2) => { Ap.join(S2, ctx.sp, 2, R.t2); return C.t(S2, `{N은} ${R.t2.ko}에 들어갔습니다. 함께 훈련하는 선배들의 실력에 입이 벌어졌습니다.`); } },
+        { label: '지금 팀에 남는다', sub: '익숙한 곳에서 계속 뜁니다', run: (S2) => C.t(S2, '익숙한 팀에 남기로 했습니다. 팀 친구들이 반겼습니다.') },
+      ];
+    },
+  };
+  const payKo = (S, sp, lgIso, lv) => { const m = Math.exp(Sp.payMu(sp, lgIso, lv, S)); return m >= 4 ? '높음' : m >= 1.6 ? '보통' : '낮음'; };
+  C.DEC.ap_offer = {
+    title: (S, ctx) => (ctx.dest ? '해외 구단의 영입 제안' : '입단 제안'),
+    text: (S, ctx) => {
+      const ko = Sp.ko(S, ctx.sp), T = Ap.team(S), where = T ? `${T.ko} 소속으로 뛰는` : '대회에 나서는';
+      const tail = ` (눈에 띄는 정도 ${Math.round(Ap.vis(S, ctx.sp))} · 발휘 실력 ${Math.round(Sp.eff(S, ctx.sp))})`;
+      if (ctx.dest) return C.t(S, `${nm(ctx.dest)}의 ${String(ctx.who || '%s 팀').replace('%s', ko)}에서 ${where} {N을} 데려가고 싶다고 연락해 왔습니다.${ctx.note ? ` ${ctx.note}.` : ''} 말도 생활도 낯설겠지만, 더 큰 무대입니다.${tail}`);
+      return C.t(S, `${where} {N}의 경기를 지켜본 ${Sp.tierKo(S, ctx.sp, ctx.lv)} ${ko} ${Sp.teamSport(ctx.sp) ? '구단' : '팀'}이 입단을 제안했습니다. 테스트 없이 바로 계약할 수 있습니다.${tail}`);
+    },
+    choices: (S, ctx) => {
+      const lgIso = ctx.dest || iso(S);
+      const out = [{ label: ctx.dest ? `${U.j(nm(ctx.dest), '으로')} 간다` : '입단한다', typ: true,
+        sub: `${ctx.dest ? `${nm(ctx.dest)}의 ` : ''}${Sp.tierKo(S, ctx.sp, ctx.lv)} · 연봉 ${payKo(S, ctx.sp, lgIso, ctx.lv)}${ctx.dest ? ' · 그 나라로 옮겨 삽니다' : ''}`,
+        run: (S2) => {
+          const mv = Sp.sign(S2, ctx.sp, ctx.lv, ctx.dest || null);
+          const j = S2.work.job;
+          if (!j || j.id !== 'athlete') return null;
+          endTeam(S2, 'pro');
+          return C.t(S2, `{N은} ${U.j(j.title, '이')} 되었습니다! 대회에서 흘린 땀이 계약으로 돌아왔습니다. 연봉은 ${Wd.money(E.iso(S2), j.pay)}입니다.`) + mv;
+        } }];
+      if (E.age(S) < 19 && H.student(S)) out.push({ label: '학교를 마치고 다시 생각한다', sub: '실력이 그대로면 제안은 다시 올 수 있습니다', run: (S2) => C.t(S2, '학교를 마치고 나서 생각하기로 했습니다. 감독은 아쉬워하며 연락처를 남겼습니다.') });
+      else out.push({ label: '운동은 취미로 남긴다', sub: '지금 하는 일·공부를 이어 갑니다', run: (S2) => { const A = Ap.ens(S2); A.vis[ctx.sp] = Ap.vis(S2, ctx.sp) * 0.5; E.stat(S2, 'happy', -1); return C.t(S2, `${U.j(Sp.ko(S2, ctx.sp), '은')} 취미로 남기기로 했습니다.`); } });
+      return out;
+    },
+  };
+  C.DEC.ap_coach = {
+    title: () => '지도자의 추천',
+    text: (S, ctx) => {
+      const T = Ap.team(S), ko = Sp.ko(S, ctx.sp);
+      return C.t(S, `${T ? `${T.ko} 코치가` : '{N을} 가르쳐 온 코치가'} ${Sp.tierKo(S, ctx.sp, ctx.lv)} ${ko} ${Sp.teamSport(ctx.sp) ? '구단' : '팀'}에 {N}의 추천서를 써 주었습니다. 추천을 받고 보는 테스트라 처음 보는 테스트보다 조금 유리합니다.`);
+    },
+    choices: (S, ctx) => {
+      const r = Sp.tryP(S, ctx.sp, ctx.lv, { bonus: 4 });
+      return [
+        { label: '추천받은 테스트를 본다', typ: true, sub: `${Sp.tierKo(S, ctx.sp, ctx.lv)} · 합격 가능성 약 ${pct(r.p)}%`, run: (S2) => { const t = Sp.doTryout(S2, ctx.sp, ctx.lv, { bonus: 4 }); if (H.jobIs(S2, 'athlete')) endTeam(S2, 'pro'); return t; } },
+        { label: '지금은 사양한다', sub: '추천은 고맙지만 다음 기회를 봅니다', run: (S2) => C.t(S2, '추천은 고맙게 받았지만 이번에는 테스트를 보지 않았습니다.') },
+      ];
+    },
+  };
+  C.DEC.ap_open = {
+    title: () => '공개 트라이아웃',
+    text: (S, ctx) => C.t(S, `${Sp.tierKo(S, ctx.sp, ctx.lv)} ${Sp.ko(S, ctx.sp)} ${Sp.teamSport(ctx.sp) ? '구단' : '팀'}이 공개 트라이아웃을 연다는 공고를 냈습니다. 경력을 묻지 않고 누구나 지원할 수 있습니다. 늦게 실력이 핀 선수가 이 길로 프로가 되기도 합니다.`),
+    choices: (S, ctx) => {
+      const r = Sp.tryP(S, ctx.sp, ctx.lv), serious = Sp.lvl(S, ctx.sp) >= 55;
+      return [
+        { label: '트라이아웃에 나간다', typ: serious, sub: `합격 가능성 약 ${pct(r.p)}%`, run: (S2) => Sp.doTryout(S2, ctx.sp, ctx.lv) },
+        { label: '이번에는 넘긴다', typ: !serious, run: (S2) => C.t(S2, '공고를 한참 들여다보다가 이번에는 넘기기로 했습니다.') },
+      ];
+    },
+  };
+
+  /* ================================================================ 특별 귀화 제안(243번) */
+  // 대표 되기가 아주 어려운 나라(그 종목, 0~1 — 근삿값): 중국 탁구, 케냐·에티오피아 육상, 브라질 축구, 미국 농구, 캐나다 아이스하키, 뉴질랜드 럭비, 러시아 레슬링, 한국 양궁 등
+  const NAT_HARD = {
+    athletics: { KEN: 1, ETH: 1, JAM: 0.6, ERI: 0.4, UGA: 0.4, NGA: 0.4, MAR: 0.3, USA: 0.5 },
+    tabletennis: { CHN: 1, JPN: 0.3 },
+    badminton: { CHN: 0.6, IDN: 0.3, KOR: 0.2 },
+    soccer: { BRA: 1, ARG: 0.6, URY: 0.3, NGA: 0.3, SEN: 0.2, CIV: 0.2, GHA: 0.2 },
+    basketball: { USA: 1, SRB: 0.3 },
+    icehockey: { CAN: 1, USA: 0.6, RUS: 0.3, SWE: 0.3, FIN: 0.3 },
+    rugby: { NZL: 1, FJI: 0.8, TON: 0.7, WSM: 0.7, ZAF: 0.5, AUS: 0.4 },
+    wrestling: { RUS: 1, GEO: 0.4, IRN: 0.3 },
+    judo: { RUS: 0.6, GEO: 0.5, JPN: 0.4 },
+    boxing: { CUB: 0.8, KAZ: 0.3, UZB: 0.3 },
+    volleyball: { CUB: 0.8, BRA: 0.5, SRB: 0.3 },
+    tennis: { RUS: 0.8 },
+    archery: { KOR: 1 },
+    gymnastics: { CHN: 0.3, RUS: 0.3 },
+  };
+  // 귀화 선수를 들이는 나라(가중치 — 근삿값): 바레인·카타르·튀르키예 육상, 필리핀·한국·일본 농구 귀화 선수, 한국·중국·카자흐스탄 아이스하키, 카자흐스탄 테니스, 일본 럭비 등
+  const NAT_DEST = {
+    athletics: [['BHR', 4], ['QAT', 3], ['TUR', 3], ['KAZ', 1.5], ['AZE', 1], ['ISR', 1], ['ARE', 0.5], ['USA', 0.5]],
+    tabletennis: [['SGP', 2], ['USA', 1], ['AUT', 1], ['ESP', 1], ['TUR', 1], ['QAT', 1], ['CAN', 1], ['AUS', 1], ['LUX', 0.5], ['POL', 0.5], ['CHL', 0.5]],
+    badminton: [['SGP', 2], ['USA', 1], ['CAN', 1], ['AUS', 1]],
+    soccer: [['QAT', 2], ['JPN', 1.5], ['CHN', 1], ['PRT', 1], ['ESP', 1], ['ITA', 1], ['TUR', 1], ['MEX', 0.5], ['AZE', 0.5], ['IDN', 0.5]],
+    basketball: [['PHL', 3], ['KOR', 1.5], ['JPN', 1.5], ['CHN', 1], ['TUR', 1], ['MNE', 0.5], ['BIH', 0.5], ['GEO', 0.5], ['JOR', 0.5], ['QAT', 0.5]],
+    icehockey: [['KOR', 2], ['KAZ', 2], ['CHN', 1.5], ['ITA', 1], ['DEU', 1], ['AUT', 0.5], ['HUN', 0.5]],
+    rugby: [['JPN', 3], ['FRA', 1], ['GBR', 1], ['ITA', 1], ['USA', 1], ['AUS', 1]],
+    wrestling: [['AZE', 2], ['BHR', 1.5], ['TUR', 1], ['ITA', 1], ['ARM', 0.5], ['HUN', 0.5]],
+    judo: [['ARE', 2], ['AZE', 1.5], ['ISR', 0.5], ['TUR', 0.5]],
+    boxing: [['AZE', 2], ['TUR', 1], ['ESP', 1], ['BHR', 0.5]],
+    volleyball: [['QAT', 1.5], ['TUR', 1.5], ['ITA', 1], ['AZE', 1]],
+    tennis: [['KAZ', 4], ['AUS', 0.5]],
+    archery: [['JPN', 1], ['AUS', 1], ['USA', 0.5], ['ITA', 0.5]],
+    gymnastics: [['AZE', 1], ['TUR', 0.5]],
+  };
+  // 국제 연맹의 국적 변경 대기(해 — 근삿값): 세계육상 3년, FIFA 18세 뒤 그 나라에서 5년 거주, FIBA 귀화 선수 한 명은 바로,
+  // IIHF 그 나라 리그 2시즌, ITTF 18세 미만 3년·18~21세 5년(21세가 넘으면 바꿀 수 없음), 월드럭비 5년 거주, 레슬링 1년, 테니스 1년, 그 밖 IOC 기본 3년
+  const NAT_WAIT = { athletics: 3, soccer: 5, basketball: 0, icehockey: 2, tabletennis: 3, rugby: 5, wrestling: 1, judo: 3, boxing: 3, volleyball: 2, badminton: 3, tennis: 1, archery: 3, gymnastics: 3 };
+  // 특별 귀화로 원래 국적을 지닐 수 있는 나라: 한국 체육 우수 인재 특별 귀화(국적법 — 외국 국적 불행사 서약)
+  const NAT_KEEP = { KOR: '한국의 체육 우수 인재 특별 귀화라, 한국 안에서 외국 국적을 쓰지 않겠다고 서약하면 원래 국적을 지닐 수 있습니다' };
+  const natHome = (S) => { const c = Mg.cits(S); return c.includes(S.born.iso) ? S.born.iso : c[0]; };
+  /** 받을 수 있는가: 대표급 실력(발휘 실력 76 이상 + 프로 리그·대표·전국 대회 이름값), 고향 대표가 아주 어려운 종목, 18~31세, 3년에 한 번·평생 두 번까지 */
+  const natElig = (S) => {
+    const A = Ap.ens(S), a = E.age(S);
+    if (!hasMg() || blocked(S) || A.natDone || (A.natN || 0) >= 2 || (A.natM !== undefined && S.ageM - A.natM < 36) || a < 18 || a > 31) return null;
+    const j = S.work.job, pro = j && j.id === 'athlete' && j.sp && j.sp !== 'esports';
+    const sp = pro ? j.sp : Sp.main(S);
+    if (!sp || !NAT_HARD[sp] || !NAT_DEST[sp] || (sp === 'tabletennis' && a > 21)) return null;
+    const home = natHome(S), hard = NAT_HARD[sp][home] || 0;
+    if (!hard || iso(S) !== home) return null;
+    const eff = Sp.eff(S, sp);
+    const name = (hasCr() && Cr.honorN(S, ['national', 'champion']) > 0) || Ap.vis(S, sp) >= 70;
+    if (eff < 76 || !((pro && Sp.curLv(S) >= 2) || name)) return null;
+    const dests = NAT_DEST[sp].filter(([d]) => DATA.c[d] && d !== home && !Mg.isCitizen(S, d));
+    if (!dests.length) return null;
+    return { sp, home, hard, eff, dests };
+  };
+  const natCheck = (S) => {
+    const e = natElig(S);
+    if (!e || !U.chance(0.12 * e.hard * U.clamp((e.eff - 74) / 12, 0.2, 1.2))) return false;
+    const dest = U.weighted(e.dests), a = E.age(S), team = Sp.teamSport(e.sp);
+    let wait = NAT_WAIT[e.sp] !== undefined ? NAT_WAIT[e.sp] : 3;
+    if (e.sp === 'tabletennis') wait = a < 18 ? 3 : 5;
+    const A = Ap.ens(S);
+    A.natN = (A.natN || 0) + 1;
+    A.natM = S.ageM;
+    const rich = dv(dest) >= 3 || ['QAT', 'BHR', 'ARE', 'KAZ', 'AZE'].includes(dest);
+    E.ask(S, 'ap_nat', { sp: e.sp, dest, home: e.home, hard: e.hard, wait, team, bonusM: rich ? 24 : 12, payX: rich ? 1.6 : 1.3 });
+    return true;
+  };
+  /** 귀화하면 잃는 국적(한국 특별 귀화는 들이는 쪽의 이중 국적 제한이 없음 — 원래 나라가 막는 경우만) */
+  const natLose = (S, dest) => {
+    const L = Mg.loseOnNatur(S, dest);
+    if (!NAT_KEEP[dest]) return L;
+    const N = (DATA.soc && DATA.soc.natur) || {};
+    const lose = L.lose.filter((c) => { const o = N[c] || {}; return o.dual === false || o.dual === 'limited'; });
+    return { lose, why: lose.length ? L.why.filter((w) => !w.startsWith(U.j(nm(dest), '은'))) : [] };
+  };
+  /** 선수 계약을 지닌 채 옮긴다(sports.js Sp.relocate 와 같은 방식 — E.moveCountry 가 일을 잃게 하므로 잠시 떼어 둠). 가족도 함께 */
+  const moveKeep = (S, dest) => {
+    if (!dest || dest === iso(S) || !DATA.c[dest]) return false;
+    const j = S.work.job;
+    S.work.job = null;
+    try {
+      if (hasMg() && Mg.go) Mg.go(S, dest, 'work', { fam: true });
+      else E.moveCountry(S, dest, 'visa');
+    } finally {
+      if (j) { S.work.job = j; j.lg = dest; S.work.seeking = false; }
+    }
+    return true;
+  };
+  const natAccept = (S, ctx, better) => {
+    const sp = ctx.sp, ko = Sp.ko(S, sp), dest = ctx.dest, here = iso(S);
+    const L = natLose(S, dest), lose = L.lose;
+    // 국적: 새 국적을 더하고(특별 귀화 — 거주 햇수 없이), 원래 국적은 규칙대로
+    S.cit = Mg.cits(S).filter((c) => !lose.includes(c));
+    if (!S.cit.includes(dest)) S.cit.push(dest);
+    S.citHow = S.citHow || {};
+    S.citHow[dest] = 'sport';
+    S.stamps.push({ iso: dest, m: S.ageM, k: 'natur' });
+    H.ach(S, 'naturalized');
+    // 돈: 포상금·집(그 나라 보통 일꾼 연봉 기준)과 연봉
+    const bonus = (Wd.workerMedian(dest) * ctx.bonusM * (better ? 1.5 : 1)) / 12;
+    earn(S, bonus);
+    let j = S.work.job, moved = false;
+    if (j && j.id === 'athlete' && j.sp === sp) {
+      j.pay *= ctx.payX * (better ? 1.15 : 1);
+      if (ctx.team && Sp.league(sp, dest) >= 1) {
+        const lv = Math.max(1, Math.min(3, Sp.league(sp, dest), Sp.femCap(S, sp)));
+        j.lv = lv; j.title = Sp.title(S, sp, lv);
+        moved = moveKeep(S, dest);
+      }
+    } else {
+      const go = ctx.team && Sp.league(sp, dest) >= 1;
+      const at = go ? dest : here, lv = Math.max(1, Math.min(2, Sp.league(sp, at) || 1, Sp.femCap(S, sp)));
+      if (go) { moveKeep(S, dest); moved = true; }
+      Sp.sign(S, sp, lv, null);
+      j = S.work.job;
+      if (j && j.id === 'athlete') j.pay *= ctx.payX;
+      endTeam(S, 'pro');
+    }
+    // 사는 나라의 국적을 내려놓고 그대로 살면 체류 자격(영주)으로
+    if (!moved && S.res && lose.includes(here)) S.res = { iso: here, status: 'pr', since: S.ageM };
+    // 대표 자격 대기·고향 여론
+    const A = Ap.ens(S);
+    A.natDone = true;
+    A.nt = { iso: dest, sp, okM: S.ageM + Math.round(ctx.wait * 12) };
+    repUp(S, -Math.round(2 + 4 * ctx.hard));
+    H.fameUp(S, 4);
+    E.stat(S, 'happy', better ? 8 : 5);
+    const fam = hasMg() && Mg.family ? Mg.family(S).n > 0 : false;
+    const parts = [
+      `{N은} ${nm(dest)}의 특별 귀화 제안을 받아들여 ${nm(dest)} 국민이 되었습니다.`,
+      lose.length ? `${lose.map(nm).join('·')} 국적은 내려놓았습니다.` : (NAT_KEEP[dest] ? '서약을 하고 원래 국적도 지녔습니다.' : '원래 국적도 그대로 지닙니다.'),
+      `포상금 ${U.j(Wd.money(iso(S), bonus), '을')} 받고 연봉도 올랐습니다.`,
+      moved ? `${fam ? '가족과 함께 ' : ''}${U.j(nm(dest), '으로')} 옮겨 그 나라 팀에서 뜁니다.` : `훈련은 지금처럼 ${nm(here)}에서 합니다.`,
+      ctx.wait > 0 ? `국제 연맹 규정에 따라 약 ${ctx.wait}년 뒤부터 ${nm(dest)} 대표로 국제 대회에 나갈 수 있습니다(근삿값).` : `곧바로 ${nm(dest)} 대표로 나갈 수 있습니다(귀화 선수는 한 팀에 한 명).`,
+      dv(ctx.home) <= 1 ? '고향에서는 \'나라를 떠났다\'는 비판도 있었지만, 형편을 아는 사람들은 응원해 주었습니다.' : '고향에서는 \'나라를 버렸다\'는 비판과 \'선수의 선택\'이라는 목소리가 엇갈렸습니다.',
+    ];
+    return C.t(S, parts.join(' '));
+  };
+  C.DEC.ap_nat = {
+    title: () => '특별 귀화 제안',
+    text: (S, ctx) => {
+      const ko = Sp.ko(S, ctx.sp), L = natLose(S, ctx.dest);
+      const keep = NAT_KEEP[ctx.dest] ? ` ${NAT_KEEP[ctx.dest]}.` : '';
+      const why = L.lose.length ? ` 다만 ${L.lose.map(nm).join('·')} 국적은 내려놓아야 합니다.` : keep || ' 원래 국적은 그대로 지닐 수 있습니다.';
+      return C.t(S, `${nm(ctx.dest)} ${ko} 연맹이 {N}에게 귀화해 ${nm(ctx.dest)} 대표로 뛰어 달라고 제안했습니다. ${nm(ctx.home)}에서는 ${ko} 대표가 되기가 하늘의 별 따기라, 이런 제안을 받는 선수가 적지 않습니다. 조건은 포상금과 집, 오른 연봉${ctx.team ? `, ${nm(ctx.dest)} 팀 입단` : ''}입니다.${why} ${ctx.wait > 0 ? `국제 연맹 규정상 대표로 나서기까지 약 ${ctx.wait}년을 기다려야 할 수 있습니다(근삿값).` : '귀화 선수 한 명 자리로 곧바로 대표로 뛸 수 있습니다(근삿값).'}`);
+    },
+    choices: (S, ctx) => {
+      const p = U.clamp(0.45 + (S.fame || 0) / 200 + (Sp.eff(S, ctx.sp) - 80) / 40, 0.25, 0.8);
+      const L = natLose(S, ctx.dest);
+      return [
+        { label: '받아들인다', sub: `${nm(ctx.dest)} 국적${L.lose.length ? ` · ${L.lose.map(nm).join('·')} 국적을 내려놓음` : ''} · 포상금·연봉 오름 · 고향 평판 내려감`, run: (S2) => natAccept(S2, ctx, false) },
+        { label: '조건을 더 받아낸다', sub: `포상금·연봉을 더 달라고 합니다 · 가능성 약 ${pct(p)}% · 안 되면 제안이 사라집니다`, run: (S2) => {
+          if (U.chance(p)) return `${C.t(S2, '버틴 끝에 포상금을 올리고 가족이 살 집까지 받아냈습니다.')} ${natAccept(S2, ctx, true)}`;
+          E.stat(S2, 'happy', -3);
+          return C.t(S2, `협상이 길어지는 사이 ${nm(ctx.dest)} 연맹은 다른 선수에게 같은 제안을 했습니다.`);
+        } },
+        { label: '거절하고 고향 대표를 노린다', typ: true, sub: '고향 평판 오름 · 이듬해부터 대표 선발전에 도전합니다', run: (S2) => {
+          const A = Ap.ens(S2);
+          A.homeBid = S2.ageM;
+          A.homeN = 0;
+          repUp(S2, 2); H.fameUp(S2, 1); E.stat(S2, 'happy', 2);
+          return C.t(S2, `{N은} 제안을 정중히 거절했습니다. "${nm(ctx.home)} 대표가 꿈입니다." 이 말이 알려지자 고향 사람들이 박수를 보냈습니다.`);
+        } },
+      ];
+    },
+  };
+  /** 거절하고 고향 대표를 노린 사람: 해마다 대표 선발전(세 번까지) */
+  const homeBidCheck = (S) => {
+    const A = Ap.ens(S);
+    if (A.homeBid === undefined || S.ageM - A.homeBid < 10) return;
+    const j = S.work.job, sp = j && j.id === 'athlete' && j.sp ? j.sp : Sp.main(S);
+    const home = hasMg() ? natHome(S) : S.born.iso;
+    if (!sp || iso(S) !== home || E.age(S) > 34) { delete A.homeBid; return; }
+    const hard = (NAT_HARD[sp] || {})[home] || 0.5, eff = Sp.eff(S, sp), ko = Sp.ko(S, sp);
+    const p = U.clamp(0.1 + (eff - 78) / 40 - 0.1 * hard + luck(S), 0.04, 0.45);
+    A.homeN = (A.homeN || 0) + 1;
+    if (U.chance(p)) {
+      delete A.homeBid;
+      H.fameUp(S, 6); E.stat(S, 'happy', 10); repUp(S, 2);
+      if (hasCr()) Cr.honor(S, 'national', `${nm(home)} ${ko} 국가대표`);
+      E.log(S, C.t(S, `귀화 제안을 거절하고 버틴 끝에 {N이} ${nm(home)} ${ko} 국가대표로 뽑혔습니다! 고향 사람들이 제 일처럼 기뻐했습니다.`), 'good');
+      return;
+    }
+    if (A.homeN >= 3) delete A.homeBid;
+    E.log(S, C.t(S, `${nm(home)} ${ko} 대표 선발전에서 아깝게 밀렸습니다. 이 나라 대표의 벽은 여전히 높았습니다.`), 'ev');
+  };
+  /** 국적 변경 대기가 끝나면: 새 나라 대표로 첫 국제 대회 */
+  const ntCheck = (S) => {
+    const A = Ap.ens(S), N = A.nt;
+    if (!N || N.done || S.ageM < N.okM) return;
+    N.done = true;
+    const ko = Sp.ko(S, N.sp), j = S.work.job;
+    if (j && j.id === 'athlete' && j.sp === N.sp && U.chance(0.8)) {
+      H.fameUp(S, 6); E.stat(S, 'happy', 8);
+      if (hasCr()) Cr.honor(S, 'national', `${nm(N.iso)} ${ko} 국가대표`);
+      E.log(S, C.t(S, `국적 변경 대기가 끝나 {N이} ${nm(N.iso)} ${ko} 국가대표로 처음 국제 대회에 나갔습니다.`), 'good');
+    } else E.log(S, C.t(S, `${nm(N.iso)} 대표로 나갈 자격은 생겼지만, 이번 대표 명단에는 들지 못했습니다.`), 'ev');
+  };
+  // 이미 유소년 팀·운동부에 있는 아이에게는 '동네 유소년 팀 선발'(ev_child.js c_tryout)이 다시 오지 않는다
+  {
+    const ev = C.EVENTS.find((e) => e.id === 'c_tryout');
+    if (ev && !ev._ap) { const r0 = ev.rate; ev.rate = (S) => (S.ath && S.ath.team ? 0 : typeof r0 === 'function' ? r0(S) : r0); ev._ap = true; }
+  }
+  // 특별 귀화를 받아들인 선수는 원래 나라 대표로 뽑히지 않는다(새 나라 대표는 대기가 끝난 뒤 ntCheck 가 맡음)
+  {
+    const ev = C.EVENTS.find((e) => e.id === 'core_ath_national');
+    if (ev && !ev._ap) { const r0 = ev.rate; ev.rate = (S) => (S.ath && S.ath.natDone ? 0 : typeof r0 === 'function' ? r0(S) : r0); ev._ap = true; }
+  }
+  // 선거의 '귀화한 시민' 감점(nklife.js Nk.howOf): 운동으로 받은 특별 귀화도 귀화로 본다
+  if (typeof Nk !== 'undefined' && Nk && typeof Nk.howOf === 'function' && !Nk.howOf._ap) {
+    const h0 = Nk.howOf;
+    const h1 = (S, i) => { const r = h0(S, i); return r === 'sport' ? 'natural' : r; };
+    h1._ap = true;
+    Nk.howOf = h1;
+  }
+
+  /* ================================================================ 입단 테스트 창에 '눈에 띄는 정도' */
+  if (C.DEC.sp_tryout) {
+    const x0 = C.DEC.sp_tryout.text;
+    C.DEC.sp_tryout.text = (S, ctx) => {
+      const t = x0(S, ctx), sp = Sp.mainOrNat(S), v = Ap.vis(S, sp);
+      return v >= 1 ? `${t} 대회 성적으로 쌓인 눈에 띄는 정도는 ${Math.round(v)}입니다(높을수록 실업팀·프로가 먼저 제안해 옵니다).` : t;
+    };
+  }
+})();
+
+if (typeof module !== 'undefined') module.exports = Ap;
 
 /* 지구 어딘가에서 — 할 일마다 그것만의 득(피드백 226번)·쇼핑 고르기(225번)·익스트림 스포츠 종목별 위험(227번) (v0.6.9)
  *
@@ -59246,6 +60485,7 @@ const Sw = {};
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.6.12', d: '26.10.20', t: '운동선수의 길·격투기·달아나기·여권', items: ["유소년 팀·학교 운동부에 들어가는 길: 나라마다 다르게 — 케냐·에티오피아는 학교 육상부와 고지대 훈련 캠프, 브라질은 풋살·구단 유소년부, 한국은 학교 운동부와 체육 특기생, 일본은 부카쓰, 미국은 학교 팀과 AAU 등. 종목마다 시작 나이가 다릅니다", "팀에 들면 해마다 학교·지역·전국 대회에 나가고, 성적에 따라 '눈에 띄는 정도'가 올라 실업팀·프로 입단 제안, 해외 구단·실업단의 영입, 지도자 추천, 공개 트라이아웃 기회가 찾아옵니다. 육상·격투기·골프처럼 늦게 피는 종목은 20대 후반까지 발탁될 수 있습니다", "대표가 되기 아주 어려운 나라의 대표급 선수에게 드물게 특별 귀화 제안: 받아들이기·조건을 더 받아내기·거절하고 고향 대표 노리기 — 국적 규칙·국제 대회 국적 변경 기다림·고향 여론이 따릅니다", "선수 종목 고르기와 생활체육 고르기를 여러 쪽으로 나눠 모든 종목을 고를 수 있게 하고, 첫 쪽에 그 나라에서 하는 격투기·무술을 늘 보여 줍니다. 생활체육에 복싱·킥복싱(무에타이)·주짓수·태권도·합기도·유도·검도·호신술·크라브 마가·우슈·카포에이라·레슬링 등을 넣고 종목 실력·띠 심사·호신·부상으로 이어지게 했습니다", "실력이 최고인 선수는 입단 테스트 1차를 거의 통과합니다. 떨어지면 '실력 부족' 대신 자리·나이·부상 이력·그날 몸 상태 같은 실제 까닭을 알려 줍니다", "강도·패싸움·단속·탈영·강제 징집에서 달아날 가능성이 몸의 '빠르기'(달리기 실력·운동 습관·나이·건강·몸의 불편)를 따릅니다 — 프로 육상 선수는 약 90%, 노인·거동이 불편한 사람은 훨씬 낮게. 선택지에 '빠르기 n(까닭) → 가능성 약 n%'", "국적이 여럿이면 해외여행·이주 때 가장 유리한 여권을 쓰고(같은 조건이면 더 센 여권), 어느 여권을 왜 썼는지 문장에 보입니다. 협정(EU 등)으로 드나들 때 국적 이름이 틀리던 것을 고쳤습니다"] },
   { v: '0.6.11', d: '26.10.19', t: '작은 정리', items: ['내부 점검용 값 칸을 지금의 능력치 구조(외모·인품, 타고난 운과 그 흐름, 타고난 재능, 개인 방송)에 맞춤 — 게임 진행에는 바뀐 것이 없음'] },
   { v: '0.6.10', d: '26.10.18', t: '능력치의 까닭·운의 흐름·실력이 결과로', items: ["능력치 막대를 누르면 오르내리는 까닭: 지금 값이 다가가는 자리와 그것을 이루는 몫(예: 외모 — 타고난 외모 +16 · 나이 −10 · 건강 −3 · 운동 습관 +2)과 최근 1년 사이 오르내린 일", "운은 사람마다 타고난 중심이 있고 그 둘레에서 한두 해씩 이어지는 흐름으로 오르내림 — 좋은 흐름이면 좋은 일이 잦고 나쁜 일·사고가 줄며 도전의 성공 가능성이 오름('가능성 약 62%(운 +5%p)'), 상태 줄에 '운이 좋은 흐름'", "외모를 오래 가꾸는 길: 꾸준한 운동은 체형과 나이 듦을 늦추고, 식단 관리, 할 일 '외모 오래 가꾸기'(치아 교정·피부 관리·시력 교정·옷차림 — 몇 해 감), 꾸밈 효과가 천천히 빠지고 꾸준히 가꾸면 더 천천히", "건강이 오르는 일: 병을 이겨 낸 뒤 체력 되찾기·재활을 마침·담배를 끊고 1년·5년·꾸준한 운동의 덕·혈압·혈당 안정", "지식이 20세에 거의 꽉 차던 것을 바로잡아 학교·일·공부로 오래 오름(진학·채용 눈금은 그대로), 언변은 팀장 이상의 일·팀 주장·모임 이끌기·발표·면접·강연으로도 오름, 은퇴 뒤 신용은 연금과 재산으로", "실력이 높을수록 실력의 몫이 커짐: 실력 0일 때 재능 45%·실력 40% → 실력 100일 때 재능 20%·실력 65%, 실력이 높을수록 운의 폭이 좁아짐 — 글솜씨 100이면 원고 완성도 중앙값 77 → 86", "첫 원고 계약은 완성도를 따름(완성도 60 약 8% · 75 약 20% · 85 약 40% · 95 약 60%), 신춘문예·공모전·오디션·입단 테스트·대회·경시대회도 발휘 실력을 따름 — 결정 창에 '이번 원고에 쓰인 실력: 글솜씨 100 · 재능 50 · 운 −7'", "선수 결승은 아무리 잘해도 가능성 75%까지"] },
   { v: '0.6.9', d: '26.10.18', t: '할 일마다의 득·쇼핑·익스트림 스포츠·나쁜 습관·직급 이름', items: ["할 일마다 그것만의 남는 득: 쉬기·목욕탕·상담은 스트레스·마음 건강, 공연·경기는 함께 간 사람과 가까움·교양, 전시는 교양·지식, 여행은 스트레스를 크게 덜고 '추억'(노년 행복·자서전), 데이트는 연인 사랑, 야간 강좌는 새 친구·취미, 연애 상대 찾기는 실패해도 새 친구·자신감, 영적인 길 찾기는 삶의 의미", "늦게 오는 득을 보이게: 금연·절주(앞으로 줄어드는 위험과 끊은 지 n달째), 건강검진(일찍 발견할 가능성), 보험(보장 내용·받은 보장), 야간 대학(졸업까지·졸업 뒤 연봉), 방송(이번 영상 조회수), 식단(몸무게 경향)", "모든 할 일 단추에 '얻음 · 위험'을 숫자로", "쇼핑은 고르기로: 옷(외모 몇 달)·선물(가족·연인·친구 — 명절·기념일이면 더)·살림살이·함께 구경·충동구매(자주 하면 쇼핑 중독·카드 빚)", "익스트림 스포츠는 종목 10개 가운데 고르고 종목마다 실제 근삿값의 위험(번지점프 사망 1/50만 … 베이스 점프 1/2,300·8,000m 원정 1%)과 부상, 자주 하면 익스트림 취미, 8,000m 등정은 명성", "이사는 집 크기와 동네(직장·학교·조용함·정다운 이웃)를 고름", "나쁜 습관에도 이어지는 득: 안전띠·헬멧 안 매기는 편함(행복 +1, 더운 나라 헬멧 +2), 과속은 출퇴근 시간 단축(스트레스 −2), 담배·술은 관계, 바람은 설렘, 연락 끊기는 스트레스↓, 문신은 행복·외모 — 위험은 그대로, '선 넘기' 단추마다 위험을 숫자로(사고 때 사망 1.6배·지금 나이 사망 위험 +9% 등)", "자녀마다 다른 쪽 부모 표시('아버지 벤저민(사실혼)')", "직업마다 고유한 직급 이름(의사 과장·병원장, 교사 교감·교장, 경찰 경위·총경 등), 개원의는 직급 없음('개원의 (팀장)'이던 것)", "이미 학교를 떠났는데 '졸업한다'를 고르면 'undefined 졸업'이 나오던 것, 0원 예금에서 돈이 숫자가 아니게 되던 것, 일부 할 일 설명에 'undefined'가 보이던 것"] },
