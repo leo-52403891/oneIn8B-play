@@ -13817,7 +13817,8 @@ const Mg = {};
 /* 80억분의 1 — 일과 영향력: 구독자·작가 경력·스스로 하는 일·구직 선발·선거 (피드백 3·7·10·11·13·20·21번)
  *
  * 상태(모두 JSON 으로 저장되고 'ensure' 연결 고리에서 채운다)
- *   S.stream   { on, fans, lang, pool, rpm, K, eff, since, inc, y0, y1, slumpM, uses }  개인 방송 채널
+ *   S.stream   { on, fans, lang, pool, rpm, K, eff, since, inc, y0, y1, slumpM, uses, vir }  개인 방송 채널(vir: 영상이 크게 퍼진 달)
+ *              장르·숏폼·채널 운·석 달 묶음(gen, sh, pz, gAsk, ssn, vm, cat, live)은 media.js(피드백 209·242번)
  *   S.books    [{ t, y, m, iso, lang, total, sold, per, q, bestAt, best, bestM, rights, tr, ghost }]  낸 책
  *   S.wskill   글솜씨(0~100). '글쓰기'를 할수록 는다.
  *   S.honors   [{ k, ko, y }]  오래 남는 성과(대회·국가대표·논문·문학상·당선·베스트셀러…)
@@ -14167,7 +14168,8 @@ const Cr = {};
     if (st.on && F < Ff) F += (Ff - F) * (0.02 + 0.1 * ef);
     if (ef > 0.05) {
       if (F < Keff) {
-        const r = (0.01 + 0.3 * Math.pow(ef, 1.3)) * (0.7 + H.charm(S) / 170) * Math.exp(U.normal(0, 0.25));
+        // 피드백 242: 채널의 힘·숏폼 비중(media.js Cr.growF — 잘 만드는 채널·숏폼은 구독자가 빨리 는다, 0.8~1.4배. 다다를 수 있는 구독자 K 는 그대로)
+        const r = (0.01 + 0.3 * Math.pow(ef, 1.3)) * (0.7 + H.charm(S) / 170) * Math.exp(U.normal(0, 0.25)) * (Cr.growF ? Cr.growF(S, st) : 1);
         F += r * F * (1 - F / Keff) + (F < 100 ? U.rand() * 3 * ef : 0);
       } else F -= (F - Keff) * 0.001; // 뜸해져도 구독을 끊는 사람은 많지 않다(조회수·수입이 먼저 준다). 피드백 70번: 0.25% → 0.1%
     } else F *= st.on ? 0.9995 : 0.998; // 영상을 거의 올리지 않으면 한 해 0.6~2.4%씩 준다(피드백 70번)
@@ -14199,10 +14201,12 @@ const Cr = {};
     const cap = Cr.hardCap(st);
     st.fans = Math.round(Math.min(cap, st.fans + Math.max(1, Math.max(0, st.K - st.fans) * 0.01 + U.randInt(0, 15))));
     // 영상이 퍼지는 순간: 한 번에 늘어나는 폭에 한계가 있다
-    if (U.chance(0.03 * (H.talent(S, 'charm') / 50) * (st.fans < st.K ? 1 : 0.4)) && st.fans < cap) {
+    // 퍼질 가능성: 채널의 힘·숏폼 비중(media.js Cr.viralF, 0.85~1.3배 — 피드백 242번)
+    if (U.chance(0.03 * (H.talent(S, 'charm') / 50) * (st.fans < st.K ? 1 : 0.4) * (Cr.viralF ? Cr.viralF(S, st) : 1)) && st.fans < cap) {
       const bump = Math.min(cap - st.fans, Math.max(st.fans * (0.3 + U.rand() * 0.7), U.randInt(300, 3000)));
       st.fans = Math.round(st.fans + bump);
       st.K = Math.min(st.pool * Cr.CAP_FRAC, Math.max(st.K * 1.25, st.fans * 1.1));
+      st.vir = S.ageM; // 이번 석 달 묶음에 크게 퍼진 영상이 있었다(media.js Md.season)
       H.fameUp(S, 2);
       return `올린 영상이 크게 퍼졌습니다! 구독자가 ${U.fmtKo(st.fans)}명이 되었습니다.`;
     }
@@ -20163,7 +20167,8 @@ const Pr = {};
     const k = Pr.eff(S, 'music') >= Pr.eff(S, 'perform') ? 'music' : 'perform';
     const eff = Pr.eff(S, k);
     const inf = typeof Cr !== 'undefined' && Cr.influence ? Cr.influence(S) : 0;
-    const p1 = U.clamp(sig((eff - 72) / 6) * 0.75 + U.clamp((inf - 25) / 150, 0, 0.35) + luck(S), 0.002, 0.9);
+    // 피드백 244번(v0.6.13): 1차의 × 0.75 천장을 걷어 냄 — 대신 문턱을 2 올림(Pr.auditionK 와 같은 기준)
+    const p1 = U.clamp(sig((eff - 74) / 6) + U.clamp((inf - 25) / 150, 0, 0.35) + luck(S), 0.002, 0.97);
     const p2 = U.clamp(Pr.debutP(S, H.talent(S, Pr.KINDS[k].talent)) + U.clamp((inf - 25) / 200, 0, 0.25), 0.02, 0.9);
     return { k, eff, inf, p1, p2, p: p1 * p2 };
   };
@@ -20181,81 +20186,337 @@ const Pr = {};
     return parts.join(' · ');
   };
 
-  /* 오디션 종류(피드백 112번: 음악인지 연기인지 종류가 없었음). mix: 쓰는 실력 비중, T: 1차 기준, max: 도전 나이 한도, mu: 연봉(로그) */
+  /* 오디션 종류(피드백 112번: 음악인지 연기인지 종류가 없었음). mix: 쓰는 실력 비중, T: 1차 기준, max: 도전 나이 한도, mu: 연봉(로그)
+   * 피드백 244번(v0.6.13) — 최종 심사는 '배역·콘셉트 맞춤':
+   *   img: 최종에서 보는 이미지의 몫(lk 외모 · ch 매력 재능 · mu 음악 재능(음색) · hp 건강 · so 사교),
+   *   a0: 그 나이대 배역·자리가 줄어들기 시작하는 나이(근삿값). max 까지 서서히 줄고, max 는 그대로 넘을 수 없는 한도.
+   *       배우·뮤지컬·방송인은 한도를 38 → 42·40·42세로 늦춤(30대 후반부터 서서히 — 갑자기 막히지 않게).
+   *   fem: 여성은 그만큼 일찍 줄어듦, early: 한국·일본·중국의 아이돌·가수는 1년 일찍(배역·데뷔 나이 차이 — 근삿값, 작게만).
+   *   rk: 단계 이름(아래 단계부터 — 단역 → 조연 → 주연), rt: 단계별 직함, off: 떨어진 뒤 들어오는 작은 제안, offKo: 창에 보일 이름
+   *   (아이돌은 그룹 활동(media.js)이 따로 있어 단계를 두지 않음) */
   const AUD = {
-    singer: { ko: '가수', mix: { music: 0.8, perform: 0.2 }, T: 72, max: 32, mu: 0.6, title: '가수' },
-    idol: { ko: '아이돌(노래·춤)', mix: { music: 0.5, perform: 0.5 }, T: 74, max: 24, mu: 0.8, title: '아이돌 가수', need: (S) => (['KOR', 'JPN', 'CHN', 'TWN', 'THA', 'PHL', 'IDN', 'VNM'].includes(E.iso(S)) || Wd.dev(E.iso(S)) >= 2 ? true : '이 나라에는 아이돌 기획사가 드뭅니다') },
-    actor: { ko: '배우(영화·드라마)', mix: { perform: 0.85, music: 0.15 }, T: 72, max: 38, mu: 0.6, title: '배우' },
-    musical: { ko: '뮤지컬 배우', mix: { music: 0.5, perform: 0.5 }, T: 70, max: 38, mu: 0.2, title: '뮤지컬 배우', need: (S) => (Wd.dev(E.iso(S)) >= 2 ? true : '뮤지컬 공연이 드문 나라입니다') },
-    dancer: { ko: '댄서·안무가', mix: { perform: 1 }, T: 70, max: 30, mu: 0.1, title: '댄서' },
-    player: { ko: '연주자(오케스트라·밴드·전통 음악)', mix: { music: 1 }, T: 68, max: 45, mu: 0.1, title: '연주자', need: (S) => (Pr.lvl(S, 'music') >= 40 ? true : '노래·악기 실력 40이 있어야 합니다') },
-    model: { ko: '모델', mix: { perform: 0.3, charmX: 0.7 }, T: 70, max: 28, mu: 0.4, title: '모델' },
-    voice: { ko: '성우', mix: { perform: 0.6, music: 0.4 }, T: 66, max: 45, mu: 0.2, title: '성우', need: (S) => (Wd.dev(E.iso(S)) >= 2 ? true : '성우 일이 드문 나라입니다') },
-    comic: { ko: '코미디언·방송인', mix: { perform: 0.6, socialX: 0.4 }, T: 70, max: 38, mu: 0.4, title: '방송인' },
+    singer: { ko: '가수', mix: { music: 0.8, perform: 0.2 }, T: 72, max: 32, a0: 26, fem: 1, early: 1, mu: 0.6, title: '가수', img: { lk: 0.3, ch: 0.3, mu: 0.4 },
+      rk: ['행사·피처링', '음반 활동', '정상급'], rt: ['행사 가수', '가수', '정상급 가수'], off: ['드라마 OST 한 곡', '다른 가수의 노래 피처링', '지역 축제·행사 무대'], off1: ['정식 음반 계약', '드라마 주제곡'], offKo: '피처링·OST·행사 제안' },
+    idol: { ko: '아이돌(노래·춤)', mix: { music: 0.5, perform: 0.5 }, T: 74, max: 24, a0: 20, fem: 1, early: 1, mu: 0.8, title: '아이돌 가수', img: { lk: 0.45, ch: 0.35, mu: 0.2 }, offKo: '작은 기획사',
+      need: (S) => (['KOR', 'JPN', 'CHN', 'TWN', 'THA', 'PHL', 'IDN', 'VNM'].includes(E.iso(S)) || Wd.dev(E.iso(S)) >= 2 ? true : '이 나라에는 아이돌 기획사가 드뭅니다') },
+    actor: { ko: '배우(영화·드라마)', mix: { perform: 0.85, music: 0.15 }, T: 72, max: 42, a0: 34, fem: 1, mu: 0.6, title: '배우', img: { lk: 0.5, ch: 0.5 },
+      rk: ['단역', '조연', '주연'], rt: ['단역 배우', '조연 배우', '주연 배우'], off: ['드라마 단역', '독립영화 출연', '작은 극단의 연극 무대'], off1: ['드라마 조연', '영화 조연'], offKo: '단역·조연·연극 제안' },
+    musical: { ko: '뮤지컬 배우', mix: { music: 0.5, perform: 0.5 }, T: 70, max: 40, a0: 33, fem: 1, mu: 0.2, title: '뮤지컬 배우', img: { lk: 0.35, ch: 0.35, mu: 0.3 },
+      rk: ['앙상블', '조연', '주연'], rt: ['뮤지컬 앙상블 배우', '뮤지컬 조연 배우', '뮤지컬 주연 배우'], off: ['대형 뮤지컬 앙상블', '소극장 뮤지컬', '지역 공연단 무대'], off1: ['다른 뮤지컬의 조연'], offKo: '앙상블·소극장 제안',
+      need: (S) => (Wd.dev(E.iso(S)) >= 2 ? true : '뮤지컬 공연이 드문 나라입니다') },
+    dancer: { ko: '댄서·안무가', mix: { perform: 1 }, T: 70, max: 30, a0: 25, mu: 0.1, title: '댄서', img: { lk: 0.35, ch: 0.4, hp: 0.25 },
+      rk: ['백업 댄서', '전속 댄서', '안무가'], rt: ['백업 댄서', '전속 댄서', '안무가'], off: ['가수 무대의 백업 댄서', '공연단 단원', '행사 무대 댄서'], off1: ['가수의 전속 댄서'], offKo: '백업 댄서·공연단 제안' },
+    player: { ko: '연주자(오케스트라·밴드·전통 음악)', mix: { music: 1 }, T: 68, max: 45, a0: 36, mu: 0.1, title: '연주자', img: { lk: 0.1, ch: 0.2, mu: 0.7 },
+      rk: ['객원', '정단원', '수석'], rt: ['객원 연주자', '연주자', '수석 연주자'], off: ['객원 연주', '지역 악단 단원', '행사·결혼식 연주'], off1: ['다른 악단의 정단원'], offKo: '객원 연주·지역 악단 제안',
+      need: (S) => (Pr.lvl(S, 'music') >= 40 ? true : '노래·악기 실력 40이 있어야 합니다') },
+    model: { ko: '모델', mix: { perform: 0.3, charmX: 0.7 }, T: 70, max: 28, a0: 22, mu: 0.4, title: '모델', img: { lk: 0.75, ch: 0.25 },
+      rk: ['피팅·카탈로그', '광고·잡지', '톱 모델'], rt: ['피팅 모델', '모델', '톱 모델'], off: ['쇼핑몰 피팅 모델', '카탈로그·전단 촬영', '지역 패션쇼 무대'], off1: ['잡지 화보', '광고 촬영'], offKo: '피팅·카탈로그 모델 제안' },
+    voice: { ko: '성우', mix: { perform: 0.6, music: 0.4 }, T: 66, max: 45, a0: 36, mu: 0.2, title: '성우', img: { ch: 0.4, mu: 0.6 },
+      rk: ['단역', '조연', '주연'], rt: ['단역 성우', '성우', '주연 성우'], off: ['광고·안내 방송 녹음', '외화 더빙 단역', '게임 캐릭터 단역'], off1: ['애니메이션 조연'], offKo: '단역 녹음 제안',
+      need: (S) => (Wd.dev(E.iso(S)) >= 2 ? true : '성우 일이 드문 나라입니다') },
+    comic: { ko: '코미디언·방송인', mix: { perform: 0.6, socialX: 0.4 }, T: 70, max: 42, a0: 33, fem: 1, mu: 0.4, title: '방송인', img: { lk: 0.15, ch: 0.5, so: 0.35 },
+      rk: ['신인', '고정 출연', '간판'], rt: ['신인 방송인', '방송인', '간판 방송인'], off: ['예능 보조 출연', '소극장 개그 무대', '지역 행사 진행'], off1: ['예능 고정 출연'], offKo: '보조 출연·소극장 무대 제안' },
   };
+  Pr.AUD = AUD;
   // 쌓은 실력의 비중: 예전에는 따로 키웠으나(재능 0.35·실력 0.5) 이제 Pr.eff 가 실력에 따라 정한다(피드백 232번)
   const effK = (S, k) => Pr.eff(S, k);
   const audEff = (S, d) => { let e = 0; for (const [k, w] of Object.entries(d.mix)) e += w * (k === 'charmX' ? 0.5 * H.looks(S) + 0.3 * H.talent(S, 'charm') + 0.2 * S.st.health : k === 'socialX' ? 0.5 * S.st.social + 0.5 * H.talent(S, 'charm') : effK(S, k)); return e; };
-  const audSkill = (S, d) => { let x = 0, w0 = 0; for (const [k, w] of Object.entries(d.mix)) if (Pr.KINDS[k]) { x += w * Pr.lvl(S, k); w0 += w; } return w0 ? x / w0 : 50; };
+  /** 그 오디션의 실력(운의 폭을 정함): 주로 보는 실력의 무게를 더 크게(비중의 제곱) — v0.6.13: 연기 100·노래 0인 배우는 97(예전 평균 85라 운의 폭이 덜 좁아졌음) */
+  const audSkill = (S, d) => { let x = 0, w0 = 0; for (const [k, w] of Object.entries(d.mix)) if (Pr.KINDS[k]) { x += w * w * Pr.lvl(S, k); w0 += w * w; } return w0 ? x / w0 : 50; };
   const audTal = (S, d) => { let t = 0; for (const [k, w] of Object.entries(d.mix)) t += w * H.talent(S, k === 'music' ? 'music' : 'charm'); return t; };
-  /** small: 작은 기획사·극단·지역 무대(기준 −8) */
+  const infOf = (S) => (typeof Cr !== 'undefined' && Cr.influence ? Cr.influence(S) : 0);
+  /** 최종 심사에서 보는 이미지(0~100) */
+  const imgOf = (S, d) => {
+    const w = d.img || { lk: 0.5, ch: 0.5 };
+    return (w.lk || 0) * H.looks(S) + (w.ch || 0) * H.talent(S, 'charm') + (w.mu || 0) * H.talent(S, 'music') + (w.hp || 0) * S.st.health + (w.so || 0) * S.st.social;
+  };
+  /** 그 나이대 배역·자리가 줄어들기 시작하는 나이 */
+  const ageFrom = (S, d) => d.a0 - (S.sex === 'f' ? d.fem || 0 : 0) - (d.early && ['KOR', 'JPN', 'CHN'].includes(E.iso(S)) ? d.early : 0);
+  /** 배역·콘셉트 맞춤(로짓, 피드백 244번): 기본 2.0(약 88%) + 이미지(외모·매력 재능 등, 55 기준 ±25마다 ±1, −1.2~+1.3)
+   *   + 나이(줄어들기 시작하는 나이부터 한도까지 0 → −1.1, 작은 무대는 절반) + 이름값(영향력 20부터 40마다 +1, 최대 +1.2) + 운(E.luckL).
+   *   실력이 최고인 사람의 대형 오디션: 맞춤에 따라 약 65~95%, 평균 약 85%(사용자 결정 261019). small: 작은 무대는 +0.8 */
+  Pr.audFit = (S, id, small, inf) => {
+    const d = AUD[id], a = E.age(S), img = imgOf(S, d), a0 = ageFrom(S, d);
+    if (inf === undefined) inf = infOf(S);
+    const imgL = U.clamp((img - 55) / 25, -1.2, 1.3);
+    const ageL = a > a0 ? -1.1 * Math.min(1, (a - a0) / Math.max(1, d.max - a0)) * (small ? 0.5 : 1) : 0;
+    const nameL = U.clamp((inf - 20) / 40, 0, 1.2);
+    const luckL = E.luckL ? E.luckL(S) : 0;
+    return { L: 2.0 + (small ? 0.8 : 0) + imgL + ageL + nameL + luckL, img, imgL, ageL, nameL, a0 };
+  };
+  /** small: 작은 기획사·극단·지역 무대(기준 −8)
+   * 피드백 244번(v0.6.13): 1차에 천장(× 0.75)이 있어 실력이 100이어도 1차가 78%를 넘지 못했음 → 천장을 걷어 실력이 최고(95 안팎)면 1차는 95% 안팎.
+   *   대신 1차 문턱을 2 올려(입단 테스트 Sp.tryP 와 같은 방식) 가운데 실력의 가능성은 예전과 비슷하게 둔다.
+   *   1차는 '실기'라 쌓은 실력이 80을 넘는 만큼 더 본다(발휘 실력 + (실력 − 80) × 0.5 — 재능·외모가 보통(50)인 연기 95 배우도 1차 약 90%,
+   *   80 아래는 예전과 같음). 외모·이미지는 최종에서 본다.
+   *   최종은 '다듬어진 정도'(타고난 끼와 쌓은 실력 — 예전과 같음) × '배역·콘셉트 맞춤'(Pr.audFit). 예전의 이름값 덧셈은 맞춤 안으로 옮김. */
   Pr.auditionK = (S, id, small) => {
-    const d = AUD[id], eff = audEff(S, d), T = d.T - (small ? 8 : 0);
-    const inf = typeof Cr !== 'undefined' && Cr.influence ? Cr.influence(S) : 0;
+    const d = AUD[id], T = d.T - (small ? 8 : 0), T1 = T + 2;
+    const inf = infOf(S);
     const sk = audSkill(S, d);
-    const p1 = U.clamp(Pr.sigP(eff, T, 6, sk) * 0.75 + U.clamp((inf - 25) / 150, 0, 0.35) + luck(S), 0.002, 0.9);
+    const eff0 = audEff(S, d), eff = eff0 + 0.5 * Math.max(0, sk - 80);
+    const p1 = U.clamp(Pr.sigP(eff, T1, 6, sk) + U.clamp((inf - 25) / 150, 0, 0.35) + luck(S), 0.002, 0.97);
     // 최종 계약: 타고난 끼와 쌓은 실력(실력 0이면 끼 53%, 실력 100이면 24% — Pr.mix, 피드백 232번. 예전: 끼 55% 고정)
     const t2 = Pr.mix(audTal(S, d), sk, 0, 0);
-    const p2 = U.clamp(0.05 + 0.85 * Pr.sigP(t2, T - 6, 6, sk) + U.clamp((inf - 25) / 200, 0, 0.25), 0.03, 0.92);
-    return { id, d, eff, inf, p1, p2, p: p1 * p2, T, sk };
+    const ready = Pr.sigP(t2, T - 6, 6, sk);
+    const fit = Pr.audFit(S, id, small, inf);
+    const p2 = U.clamp((0.06 + 0.94 * ready) * sig(fit.L), 0.03, 0.96);
+    return { id, d, eff, eff0, inf, p1, p2, p: p1 * p2, T, T1, sk, ready, fit };
+  };
+  /** 떨어진 뒤 들어오는 작은 제안(단역·조연·앙상블·피처링 …)의 가능성: 작은 무대에서 붙었을 몫(예전 '작은 기획사·극단'과 같은 셈)과,
+   *  실력이 1차 문턱을 넉넉히 넘는 사람에게 주는 몫(최종까지 본 사람은 제작진이 기억함 — 1차에서 떨어졌으면 0.6배) 가운데 큰 쪽 */
+  const offerP = (r, rs, pass1) => U.clamp(Math.max(Math.max(0, rs.p - r.p) / Math.max(0.05, 1 - r.p), 0.9 * sig((r.eff - r.T1 - 3) / 2) * (pass1 ? 1 : 0.6)), 0, 0.95);
+  /** 화면용: 대형 합격·떨어져도 제안까지 받을 가능성 */
+  Pr.audChance = (S, id) => {
+    const r = Pr.auditionK(S, id), rs = Pr.auditionK(S, id, true);
+    const any = r.p + r.p1 * (1 - r.p2) * offerP(r, rs, true) + (1 - r.p1) * offerP(r, rs, false);
+    return { r, rs, big: r.p, any: Math.max(r.p, any) };
   };
   const audMain = (d) => (d.mix.music >= (d.mix.perform || 0) ? 'music' : 'perform');
+  const pct = (p) => Math.max(1, Math.round(p * 100));
+  const hasCr = () => typeof Cr !== 'undefined' && !!Cr && typeof Cr.honor === 'function';
+
+  /* ---------------- 연예인의 단계(피드백 244번, v0.6.13): 단역 → 조연 → 주연(오디션 종류마다 AUD[].rk 이름)
+   * 새 상태: S.work.job.ent = { rank: 0~2, m: 그 단계가 된 달(S.ageM), roles: 그동안 맡은 작품 수, hits: 마지막으로 본 큰 작품 성공 수(S.flags.hits) }
+   * 옛 저장·다른 길(연습생 데뷔·오디션 방송)로 된 연예인은 처음 볼 때 직함으로 종류를, 작은 무대·큰 성공·명성으로 단계를 정한다.
+   * 아이돌은 그룹 활동(media.js)이 따로 있어 단계를 두지 않는다. 해마다의 사건은 ev_jobs.js(j_ent_step·j_ent_small·j_ent_dry). */
+  const TITLE_AUD = [[/뮤지컬/, 'musical'], [/성우/, 'voice'], [/모델/, 'model'], [/연주/, 'player'], [/댄서|안무/, 'dancer'], [/방송인|코미디/, 'comic'], [/배우/, 'actor'], [/가수/, 'singer'], [/연예인/, 'actor']]; // 마지막: 직함 없이 '연예인'으로만 된 일(검사 도구의 강제 배치 등)은 배우 길로
+  /** 지금 연예인의 단계(없으면 null). peek: 옛 저장이어도 상태에 쓰지 않고 셈만 한다(할 일 목록 등 자주 부르는 곳) */
+  Pr.entOf = (S, peek) => {
+    const j = S.work && S.work.job;
+    if (!j || j.id !== 'entertainer' || j.idol || j.aud === 'idol' || /아이돌/.test(j.title || '')) return null;
+    if (j.ent && typeof j.ent === 'object' && AUD[j.aud] && AUD[j.aud].rk) return j.ent;
+    if (!j.aud && !j.idolChk) return null; // 연습생 데뷔한 '가수'가 아이돌인지 media.js 가 먼저 가린 뒤에(데뷔 다음 달)
+    let id = AUD[j.aud] && AUD[j.aud].rk ? j.aud : null;
+    if (!id) { const m = TITLE_AUD.find(([re]) => re.test(j.title || '')); id = m ? m[1] : null; }
+    if (!id) return null;
+    const e = { rank: j.small ? 0 : (S.flags.hits || 0) >= 1 || (S.fame || 0) >= 55 ? 2 : 1, m: S.ageM, roles: 0, hits: S.flags.hits || 0 };
+    if (peek) return e;
+    j.aud = id; j.ent = e;
+    return e;
+  };
+  /** 단계 이름(r 생략 시 지금 단계) */
+  Pr.entRankKo = (S, r) => { const e = Pr.entOf(S, true), j = S.work.job, d = e && AUD[j.aud]; return d && d.rk ? d.rk[U.clamp(r === undefined ? e.rank : r, 0, 2)] : ''; };
+  /** 단계를 올린다(연봉·직함·명성) — 해마다의 '더 큰 자리 제안'(ev_jobs.js), 오디션 다시 보기, 큰 작품의 성공에서.
+   *  연봉: 지금의 1.4배와 그 단계에서 흔한 벌이(근삿값 — 조연은 보통 일꾼 벌이의 약 1.5배, 주연은 약 3.3배가 가운데) 가운데 큰 쪽 */
+  Pr.entPromote = (S, to, quiet) => {
+    const e = Pr.entOf(S), j = S.work.job;
+    if (!e) return false;
+    const d = AUD[j.aud], r0 = e.rank, r1 = U.clamp(to === undefined ? r0 + 1 : to, 0, 2);
+    if (r1 <= r0) return false;
+    e.rank = r1; e.m = S.ageM;
+    if (d.rt && (!j.title || d.rt.includes(j.title) || j.title === d.title)) j.title = d.rt[r1];
+    delete j.small;
+    if (quiet) return true; // 큰 작품의 성공(core_star_hit)처럼 연봉·명성을 이미 올린 경우
+    const mo = 12 * Math.exp(U.normal(d.mu + (r1 >= 2 ? 0.6 : -0.2), r1 >= 2 ? 0.9 : 0.7)) * (1 + infOf(S) / 150);
+    j.pay = Math.max(j.pay * (1.4 + 0.3 * (r1 - r0 - 1)), H.pay(S, mo));
+    H.fameUp(S, r1 >= 2 ? 8 : 4);
+    return true;
+  };
+  /** 한 단계 위 자리를 맡았을 때 잘 해낼 가능성(ev_jobs.js 의 '더 큰 자리 제안'): 그 오디션의 1차(실력)와 배역 맞춤(나이·이미지·이름값) */
+  Pr.entStepP = (S) => {
+    const e = Pr.entOf(S, true), j = S.work.job;
+    if (!e || !AUD[j.aud]) return 0.5;
+    const r = Pr.auditionK(S, j.aud);
+    return U.clamp(0.25 + 0.6 * r.p1 * sig(r.fit.L + (e.rank >= 1 ? -0.5 : 0.3)), 0.15, 0.9);
+  };
+  /** 더 큰 자리 제안이 오는 빈도(한 해, ev_jobs.js 가 직업 배수를 곱함): 실력(1차 가능성)이 높을수록, 맡은 작품이 많을수록 자주 */
+  Pr.entStepRate = (S) => {
+    const e = Pr.entOf(S, true), j = S.work.job;
+    if (!e || e.rank >= 2 || !AUD[j.aud]) return 0;
+    return 0.04 + 0.12 * Pr.auditionK(S, j.aud).p1 + 0.01 * Math.min(5, e.roles || 0);
+  };
+  /** 떨어진 뒤 받은 제안으로 시작(단계 rank, 한 해 벌이 months 달 치) */
+  const entStart = (S, id, rank, months) => {
+    const d = AUD[id];
+    H.setJob(S, 'entertainer', months);
+    const j = S.work.job;
+    if (!j || j.id !== 'entertainer') return false;
+    j.aud = id; j.title = d.rt ? d.rt[rank] : d.title;
+    if (rank === 0) j.small = true;
+    if (d.rk) j.ent = { rank, m: S.ageM, roles: 0, hits: S.flags.hits || 0 };
+    return true;
+  };
+  /** 이미 활동 중인 연예인(단역·조연)이 더 큰 무대 오디션을 다시 볼 수 있나 */
+  const canRe = (S) => { const e = Pr.entOf(S, true); return !!(e && e.rank < 2); };
+
+  /** 떨어진 까닭에 쓰는 낱말(피드백 244번): sk 인정받은 실력, role 맞춰 보는 대상, img·named·young 실력이 높은 사람이 떨어지는 실제 까닭 */
+  const FAILW = {
+    actor: { sk: '연기', cond: '화면에 비치는 인상과 끼', role: '배역', img: '이번 배역의 이미지와 맞지 않았습니다', named: '이번에는 이름이 알려진 배우가 캐스팅되었습니다', young: (ag) => `이번 작품에는 ${ag} 배역이 적었습니다` },
+    musical: { sk: '노래와 연기', cond: '무대를 채우는 끼', role: '배역', img: '이번 배역의 이미지와 맞지 않았습니다', named: '이번에는 이름이 알려진 뮤지컬 배우가 캐스팅되었습니다', young: (ag) => `이번 작품에는 ${ag} 배역이 적었습니다` },
+    singer: { sk: '노래', cond: '타고난 음색', role: '콘셉트', img: '기획사가 찾는 음색·콘셉트와 맞지 않았습니다', named: '기획사가 이미 이름이 알려진 가수와 계약했습니다', young: () => '기획사가 더 어린 신인을 찾았습니다' },
+    idol: { sk: '노래와 춤', cond: '무대를 휘어잡는 끼', role: '콘셉트', img: '그룹의 콘셉트와 맞지 않았습니다', named: '데뷔조 자리가 오래 연습한 연습생들로 이미 찼습니다', young: () => '데뷔조는 더 어린 연습생 위주로 꾸려졌습니다' },
+    dancer: { sk: '춤', cond: '무대를 채우는 끼', role: '무대', img: '이번 무대의 콘셉트와 맞지 않았습니다', named: '이름이 알려진 댄서가 그 자리를 맡았습니다', young: () => '이번에는 더 어린 댄서를 찾았습니다' },
+    player: { sk: '연주', cond: '타고난 음악성', role: '자리', img: '악단이 찾는 소리의 색깔과 맞지 않았습니다', named: '경력이 긴 연주자가 그 자리를 맡았습니다', young: () => '악단이 앞날이 긴 더 어린 연주자를 골랐습니다' },
+    model: { sk: '워킹과 표정', cond: '외모와 체형', role: '콘셉트', img: '브랜드가 찾는 이미지와 맞지 않았습니다', named: '이름이 알려진 모델이 그 자리를 맡았습니다', young: () => '브랜드가 더 어린 모델을 찾았습니다' },
+    voice: { sk: '목소리 연기', cond: '타고난 음색', role: '배역', img: '이번 배역의 목소리와 맞지 않았습니다', named: '이름이 알려진 성우가 그 배역을 맡았습니다', young: (ag) => `이번 작품에는 ${ag} 목소리의 배역이 적었습니다` },
+    comic: { sk: '연기', cond: '입담과 사람을 끄는 힘', role: '자리', img: '프로그램의 색깔과 맞지 않았습니다', named: '이미 이름이 알려진 방송인이 그 자리를 맡았습니다', young: () => '제작진이 더 젊은 얼굴을 찾았습니다' },
+  };
+  const ageKo = (a) => `${Math.floor(a / 10) * 10}대 ${a % 10 >= 7 ? '후반' : a % 10 >= 4 ? '중반' : '초반'}`;
+  /** 떨어진 까닭과 심사평: 실력이 높은 사람에게는 '아직은'·'수천 명 가운데' 대신 그날의 컨디션(1차)이나 배역·이미지·나이대·이름값(최종) */
+  const audFail = (S, r, pass1) => {
+    const w = FAILW[r.id] || FAILW.actor, f = r.fit, a = Math.floor(E.age(S));
+    const hi = r.eff >= r.T1 + 4, near = r.eff >= r.T1 - 4;
+    let why;
+    if (!pass1) {
+      if (hi) why = U.pick(['떨어졌습니다. 1차 실기에서 긴장한 탓에 준비한 만큼 보여 주지 못했습니다.', '떨어졌습니다. 그날따라 컨디션이 좋지 않아 1차 실기에서 평소 실력을 다 보여 주지 못했습니다.']);
+      else if (r.sk >= 75) why = `떨어졌습니다. ${U.j(w.sk, '은')} 갖췄지만, 심사위원은 ${U.j(w.cond, '이')} 이번 오디션이 찾는 것과 조금 다르다고 했습니다.`; // 쌓은 실력은 높은데 1차 발휘 실력이 모자람 = 타고난 조건(외모·재능) 쪽
+      else if (near) why = '떨어졌습니다. 심사위원이 조금만 더 다듬으면 된다고 했습니다.';
+      else why = U.pick(['떨어졌습니다. 심사위원이 "아직은"이라고 했습니다.', '수천 명 가운데 1차에서 떨어졌습니다.']);
+    } else if (r.ready < 0.5) why = '1차는 통과했지만 최종 심사에서 떨어졌습니다. 마지막 몇 자리는 타고난 끼가 갈랐습니다.';
+    else {
+      const c = [];
+      if (f.ageL <= -0.25) c.push([-f.ageL, w.young(ageKo(a))]);
+      if (f.imgL <= -0.15) c.push([-f.imgL, w.img]);
+      if (f.nameL < 0.3 && U.chance(0.5)) c.push([0.2, w.named]);
+      c.push([0.1, U.pick([w.named, '제작진이 마지막 두 사람 가운데 다른 후보를 골랐습니다', w.img])]);
+      c.sort((x, y) => y[0] - x[0]);
+      why = `1차는 통과했지만 최종 심사에서 떨어졌습니다. ${U.j(w.sk, '은')} 인정받았지만, ${c[0][1]}.`;
+    }
+    const gap = r.p < 0.03 ? '아직 합격선과 거리가 멉니다 — 실력을 더 쌓거나 재능에 맞는 다른 오디션을 골라 보세요' : r.p < 0.15 ? '조금 더 다듬으면 가능성이 있습니다'
+      : hi && r.p >= 0.5 ? `${U.j(w.sk, '은')} 충분합니다. 맞는 ${U.j(w.role, '을')} 만나면 됩니다` : '아깝게 떨어졌습니다. 다음에는 될 수도 있습니다';
+    return { why, gap };
+  };
+  /** 결과 끝에 붙는 숫자: 그 오디션이 본 실력 · 외모 · 매력 재능(음악 재능) · 나이(배역이 줄어드는 나이대일 때) · 이름값 */
+  const audLine = (S, r) => {
+    const d = r.d, parts = Object.entries(d.mix).filter(([k]) => Pr.KINDS[k]).sort((x, y) => y[1] - x[1]).map(([k]) => `${Pr.KINDS[k].ko} ${Math.round(Pr.lvl(S, k))}`);
+    parts.push(`${S.st.looks !== undefined ? '외모' : '매력'} ${Math.round(H.looks(S))}`);
+    for (const k of ['charm', 'music']) if ((k === 'charm' || d.mix.music || (d.img && d.img.mu)) && S.talentSeen && S.talentSeen[k]) parts.push(`${C.TALENT_KO[k]} 재능 ${Math.round(H.talent(S, k))}`);
+    if (r.fit && r.fit.ageL < -0.05) parts.push(`${Math.floor(E.age(S))}세`);
+    if (r.inf >= 20) parts.push(`이름값 ${Math.round(r.inf)}`);
+    return parts.join(' · ');
+  };
+
   C.DEC.pr_audition = {
     title: () => '어떤 오디션을 볼까요?',
-    text: (S) => C.t(S, `${Pr.usedTxt(S, '이번 오디션에 쓰일 실력', [['노래·악기', Pr.lvl(S, 'music')], ['춤·연기', Pr.lvl(S, 'perform')], [S.st.looks !== undefined ? '외모' : '매력', H.looks(S)]], ['music', 'charm'], null, Pr.luckSd(Math.max(Pr.lvl(S, 'music'), Pr.lvl(S, 'perform')), 9))}. 오디션마다 보는 실력과 나이 한도가 다릅니다. 실력이 높을수록 타고난 끼보다 쌓은 실력이 결과를 가르고, 그날의 운도 덜 탑니다.`),
+    text: (S) => {
+      const seenC = S.talentSeen && S.talentSeen.charm, e = Pr.entOf(S, true), j = S.work.job;
+      const used = Pr.usedTxt(S, '1차(실기)에 쓰일 실력', [['노래·악기', Pr.lvl(S, 'music')], ['춤·연기', Pr.lvl(S, 'perform')]], ['music', 'charm'], null, Pr.luckSd(Math.max(Pr.lvl(S, 'music'), Pr.lvl(S, 'perform')), 9));
+      const img = `${S.st.looks !== undefined ? '외모' : '매력'} ${Math.round(H.looks(S))} · ${seenC ? `매력 재능 ${Math.round(H.talent(S, 'charm'))}` : '매력 재능 아직 모름'} (화면의 매력은 외모·인품의 평균 — 오디션은 외모와 타고난 매력 재능을 봅니다)`;
+      const cur = e ? ` 지금은 ${U.j(j.title, '으로')} 활동 중입니다. 붙으면 한 단계 위 자리를 맡고, 떨어져도 하던 활동은 그대로 이어 갑니다.` : ' 떨어져도 실력이 높으면 단역·조연 같은 작은 제안이 들어옵니다.';
+      return C.t(S, `${used}. 최종 심사(배역·콘셉트 맞춤)에 쓰일 것: ${img} · 나이 ${Math.floor(E.age(S))}세 · 이름값(영향력) ${Math.round(infOf(S))} · 운. 가수·연주자·성우는 음악 재능(음색)도 봅니다. 그 나이대의 배역·자리는 오디션마다 정한 나이 한도 몇 해 전부터 서서히 줄어듭니다. 실력이 높을수록 타고난 끼보다 쌓은 실력이 결과를 가르고, 그날의 운도 덜 탑니다.${cur}`);
+    },
     choices: (S) => {
-      const a = E.age(S);
+      const a = E.age(S), e = Pr.entOf(S, true), j = S.work.job;
       const out = Object.keys(AUD).map((id) => {
         const d = AUD[id], ok = d.need ? d.need(S) : true, old = a > d.max;
-        const r = Pr.auditionK(S, id);
-        const rs = Pr.auditionK(S, id, true);
-        return { label: d.ko, disabled: ok !== true || old, sub: ok !== true ? ok : old ? `${d.max}세가 넘으면 어렵습니다` : `대형 기획사·방송 약 ${Math.max(1, Math.round(r.p * 100))}% · 떨어져도 작은 기획사·극단 약 ${Math.max(1, Math.round(rs.p * 100))}% · ${d.max}세까지`,
-          run: (S2) => C.t(S2, Pr.doAudition(S2, id)) };
+        const c = Pr.audChance(S, id);
+        const taper = c.r.fit.ageL < -0.05 ? ' · 이 나이대 배역·자리가 줄어드는 중' : '';
+        const sub = ok !== true ? ok : old ? `${d.max}세가 넘으면 어렵습니다`
+          : e ? `${j.aud === id && d.rk ? `${d.rk[Math.min(2, e.rank + 1)]} 자리` : '대형 기획사·방송'} 약 ${pct(c.big)}% · 떨어져도 하던 활동은 그대로 · ${d.max}세까지${taper}`
+            : `대형 기획사·방송 약 ${pct(c.big)}% · 떨어져도 ${d.offKo}까지 약 ${pct(c.any)}% · ${d.max}세까지${taper}`;
+        return { label: d.ko, disabled: ok !== true || old, sub, run: (S2) => C.t(S2, Pr.doAudition(S2, id)) };
       }).sort((x, y) => (x.disabled - y.disabled));
       out.push({ label: '그만둔다', typ: true, run: (S2) => { C.actRefund(S2, C.ACTION.audition); delete S2.actCd.audition; return null; } });
       return out;
     },
   };
-  Pr.doAudition = (S, id) => {
-    const r = Pr.auditionK(S, id), d = r.d, mk = audMain(d);
-    H.reveal(S, mk === 'music' ? 'music' : 'charm');
-    for (const k of Object.keys(d.mix)) if (Pr.KINDS[k]) Pr.gain(S, k, 2); // 무대에 서 본 경험
-    const pass1 = U.chance(r.p1);
-    if (pass1 && U.chance(r.p2)) {
-      H.setJob(S, 'entertainer', 12 * Math.exp(U.normal(d.mu, 1.1)) * (1 + r.inf / 100));
-      S.work.job.title = d.title; S.work.job.aud = id;
-      H.fameUp(S, id === 'player' || id === 'voice' ? 6 : 15); E.stat(S, 'happy', 15); H.ach(S, 'star_debut');
-      if (typeof Cr !== 'undefined' && Cr.honor) Cr.honor(S, 'audition', `${d.ko} 오디션 합격`);
-      return `${r.inf >= 40 ? '이미 이름이 알려진 덕도 있었지만, ' : ''}그동안 갈고닦은 실력이 빛을 봤습니다. ${d.ko} 오디션에 합격해 ${U.j(d.title, '으로')} 데뷔했습니다! (${why(S, mk)})`;
+  /** 단역·조연으로 활동 중에 더 큰 무대 오디션에 붙음: 같은 종류면 한 단계 위, 다른 종류면 그 종류의 조연급(아이돌이면 그룹 활동 — media.js) */
+  const reAudPass = (S, id, r, cur, line) => {
+    const j = S.work.job, d = AUD[id];
+    E.stat(S, 'happy', 12); H.ach(S, 'star_debut');
+    if (hasCr()) Cr.honor(S, 'audition', `${d.ko} 오디션 합격`);
+    if (!d.rk) {
+      delete j.ent; delete j.small; j.aud = id; j.title = d.title;
+      j.pay = Math.max(j.pay, H.pay(S, 12 * Math.exp(U.normal(d.mu, 1.1))));
+      H.fameUp(S, 10);
+      return `${d.ko} 오디션에 합격했습니다! 하던 활동을 정리하고 ${U.j(d.title, '으로')} 새로 시작합니다. (${line})`;
     }
-    // 큰 오디션에서 떨어져도 작은 기획사·극단·지역 무대에서 연락이 오기도 한다
+    if (j.aud === id && cur.rank >= 2) { j.pay *= 1.1; return `${d.ko} 오디션에 합격해 새 작품을 하나 더 맡았습니다. (${line})`; }
+    if (j.aud === id) {
+      Pr.entPromote(S, Math.min(2, cur.rank + 1));
+      return `${d.ko} 오디션에 합격해 ${U.j(j.title, '이')} 되었습니다! 한 단계 큰 자리를 맡습니다. (${line})`;
+    }
+    j.aud = id; j.ent = { rank: 1, m: S.ageM, roles: 0, hits: S.flags.hits || 0 }; j.title = d.rt[1]; delete j.small;
+    j.pay = Math.max(j.pay, H.pay(S, 12 * Math.exp(U.normal(d.mu - 0.2, 0.7)) * (1 + r.inf / 150)));
+    H.fameUp(S, 5);
+    return `${d.ko} 오디션에 합격했습니다! 하던 활동을 정리하고 ${U.j(j.title, '으로')} 새로 시작합니다. (${line})`;
+  };
+  Pr.doAudition = (S, id) => {
+    const r = Pr.auditionK(S, id), d = r.d, mk = audMain(d), cur = Pr.entOf(S);
+    H.reveal(S, mk === 'music' ? 'music' : 'charm');
+    H.reveal(S, 'charm'); // 최종(배역 맞춤)은 어느 오디션이든 매력 재능을 본다
+    for (const k of Object.keys(d.mix)) if (Pr.KINDS[k]) Pr.gain(S, k, 2); // 무대에 서 본 경험
+    const pass1 = U.chance(r.p1), line = audLine(S, r);
+    if (pass1 && U.chance(r.p2)) {
+      if (cur) return reAudPass(S, id, r, cur, line);
+      // 큰 오디션 합격은 조연급부터(이미 이름이 크게 알려졌으면 주연급)
+      const rank = d.rk ? (r.inf >= 50 ? 2 : 1) : null;
+      H.setJob(S, 'entertainer', 12 * Math.exp(U.normal(d.mu, 1.1)) * (1 + r.inf / 100) * (rank === 2 ? 1.4 : 1));
+      const j = S.work.job;
+      if (j && j.id === 'entertainer') { j.title = d.rt ? d.rt[rank] : d.title; j.aud = id; if (d.rk) j.ent = { rank, m: S.ageM, roles: 0, hits: S.flags.hits || 0 }; }
+      H.fameUp(S, id === 'player' || id === 'voice' ? 6 : 15); E.stat(S, 'happy', 15); H.ach(S, 'star_debut');
+      if (hasCr()) Cr.honor(S, 'audition', `${d.ko} 오디션 합격`);
+      return `${r.inf >= 40 ? '이미 이름이 알려진 덕도 있었지만, ' : ''}그동안 갈고닦은 실력이 빛을 봤습니다. ${d.ko} 오디션에 합격해 ${U.j(j ? j.title : d.title, '으로')} 데뷔했습니다! (${line})`;
+    }
+    const fw = audFail(S, r, pass1);
+    if (cur) { E.stat(S, 'happy', -3); return `${d.ko} 오디션에서 ${fw.why} 지금 하던 활동은 그대로 이어 갑니다. (${line})`; }
+    // 떨어져도 이어지는 길(피드백 244번): 작은 무대·단역·조연 제안 — 실력이 높을수록 자주(최종까지 본 사람은 제작진이 기억함)
     const rs = Pr.auditionK(S, id, true);
-    if (U.chance(Math.max(0, rs.p - r.p) / Math.max(0.05, 1 - r.p))) {
-      H.setJob(S, 'entertainer', 12 * Math.exp(U.normal(d.mu - 0.8, 0.9)) * (1 + r.inf / 150));
-      S.work.job.title = d.title; S.work.job.aud = id; S.work.job.small = true;
-      H.fameUp(S, 4); E.stat(S, 'happy', 10); H.ach(S, 'star_debut');
-      if (typeof Cr !== 'undefined' && Cr.honor) Cr.honor(S, 'audition', `${d.ko} 데뷔(작은 기획사·극단)`);
-      return `${d.ko} 큰 오디션에서는 떨어졌지만, 심사를 지켜본 작은 ${id === 'actor' || id === 'musical' || id === 'comic' ? '극단·기획사' : '기획사'}에서 함께하자고 연락이 왔습니다. ${U.j(d.title, '으로')} 작은 무대부터 시작합니다. 벌이는 적지만 꿈에 한 발 다가섰습니다. (${why(S, mk)})`;
+    if (U.chance(offerP(r, rs, pass1))) {
+      if (!d.rk) { // 아이돌: 예전처럼 작은 기획사에서 바로(그룹 활동은 media.js)
+        H.setJob(S, 'entertainer', 12 * Math.exp(U.normal(d.mu - 0.8, 0.9)) * (1 + r.inf / 150));
+        S.work.job.title = d.title; S.work.job.aud = id; S.work.job.small = true;
+        H.fameUp(S, 4); E.stat(S, 'happy', 10); H.ach(S, 'star_debut');
+        if (hasCr()) Cr.honor(S, 'audition', `${d.ko} 데뷔(작은 기획사)`);
+        return `${d.ko} 큰 오디션에서는 떨어졌지만, 심사를 지켜본 작은 기획사에서 함께하자고 연락이 왔습니다. ${U.j(d.title, '으로')} 작은 무대부터 시작합니다. 벌이는 적지만 꿈에 한 발 다가섰습니다. (${line})`;
+      }
+      // 최종까지 간 실력자는 가끔 조연급 제안, 나머지는 단역·앙상블·피처링 같은 맨 아래 단계. 한 해 벌이(보통 일꾼 벌이 몇 달 치)는 제안을 낼 때 정해 둔다
+      const rank = pass1 && r.sk >= 80 && sig(r.fit.L) >= 0.75 && U.chance(0.4) ? 1 : 0;
+      const list = rank ? d.off1 : d.off, i0 = U.randInt(0, list.length - 1);
+      const base = 12 * Math.exp(U.normal(d.mu + (rank ? -0.2 : -1.2), rank ? 0.8 : 0.7)) * (1 + r.inf / 150);
+      const offs = [{ i: i0, mo: Math.round(base * 10) / 10 }];
+      if (list.length > 1) offs.push({ i: (i0 + 1 + U.randInt(0, list.length - 2)) % list.length, mo: Math.round(base * (0.7 + 0.3 * U.rand()) * 10) / 10 });
+      E.ask(S, 'pr_audOffer', { id, rank, pass1, offs });
+      E.stat(S, 'happy', -2);
+      return `${d.ko} 오디션에서 ${fw.why} 그래도 ${pass1 ? '최종 심사를 지켜본 제작진' : '심사를 지켜본 캐스팅 담당자'}에게서 연락이 왔습니다. (${line})`;
     }
     E.stat(S, 'happy', -5);
-    const gap = r.p < 0.03 ? '아직 합격선과 거리가 멉니다 — 실력을 더 쌓거나 재능에 맞는 다른 오디션을 골라 보세요' : r.p < 0.15 ? '조금 더 다듬으면 가능성이 있습니다' : '아깝게 떨어졌습니다. 다음에는 될 수도 있습니다';
-    return `${d.ko} 오디션에서 ${pass1 ? '1차는 통과했지만 최종 심사에서 떨어졌습니다.' : U.pick(['떨어졌습니다. 심사위원이 "아직은"이라고 했습니다.', '수천 명 가운데 1차에서 떨어졌습니다.'])} 심사평: ${gap}. (${why(S, mk)})`;
+    return `${d.ko} 오디션에서 ${fw.why} 심사평: ${fw.gap}. (${line})`;
+  };
+  /** 떨어진 뒤 들어온 제안(단역·조연·앙상블·피처링 …): ctx = { id, rank, pass1, offs: [{ i: 제안 번호, mo: 한 해 벌이(달 치) }] } */
+  C.DEC.pr_audOffer = {
+    title: (S, ctx) => { const d = AUD[ctx.id]; return d && d.rk && ctx.rank >= 1 ? `${d.rk[1]} 제안` : '작은 무대의 제안'; },
+    text: (S, ctx) => {
+      const d = AUD[ctx.id];
+      if (!d || !d.rk) return '';
+      const who = ctx.pass1 ? '최종 심사를 지켜본 제작진' : '심사를 지켜본 캐스팅 담당자';
+      const what = ctx.rank >= 1 ? `이번 작품은 놓쳤지만, 다른 작품에서 ${U.j(d.rk[1], '을')} 맡아 보지 않겠냐고 합니다.` : '큰 무대는 아니지만 함께해 보자고 합니다.';
+      const up = d.rk.slice(ctx.rank + 1).join(' → ');
+      const quit = H.working(S) && !H.jobIs(S, 'entertainer') ? ' 받아들이면 지금 하는 일은 그만둡니다.' : '';
+      return C.t(S, `${U.j(who, '이')} 연락해 왔습니다. ${what} ${U.j(d.rk[ctx.rank], '으로')} 시작해 작품을 거듭하면 ${U.j(up, '으로')} 올라갈 수 있습니다.${ctx.rank >= 1 ? '' : ' 처음 벌이는 크지 않습니다.'}${quit}`);
+    },
+    choices: (S, ctx) => {
+      const d = AUD[ctx.id], out = [];
+      if (d && d.rk) {
+        const list = ctx.rank >= 1 ? d.off1 : d.off;
+        (ctx.offs || []).forEach((o) => {
+          const nm = list[o.i];
+          if (!nm) return;
+          out.push({ label: `${nm} 제안을 받아들인다`, sub: `${U.j(d.rt[ctx.rank], '으로')} 시작 · 한 해 벌이 약 ${H.amt(S, o.mo)}`, typ: !out.length,
+            run: (S2) => {
+              if (!entStart(S2, ctx.id, ctx.rank, o.mo)) return '제안이 없던 일이 되었습니다.';
+              H.fameUp(S2, ctx.rank >= 1 ? 5 : 2); E.stat(S2, 'happy', ctx.rank >= 1 ? 12 : 8); H.ach(S2, 'star_debut');
+              if (hasCr()) Cr.honor(S2, 'audition', `${d.ko} 데뷔(${d.rk[ctx.rank]})`);
+              return C.t(S2, `${U.j(nm, '으로')} 첫발을 내디뎠습니다. ${ctx.rank >= 1 ? '큰 오디션은 놓쳤지만 한 단계 높은 자리에서 시작합니다.' : '벌이는 적지만 꿈에 한 발 다가섰습니다.'}`);
+            } });
+        });
+      }
+      out.push({ label: '사양하고 다음 큰 오디션을 노린다', typ: !out.length, run: () => '제안을 정중히 사양했습니다. 다음 큰 오디션을 준비합니다.' });
+      return out;
+    },
   };
   // 오디션: 재능 + 실력 + 매력 + 운 + 이름값 — 종류를 고른다
   C.ACTION.audition.age = [13, 45];
   C.ACTION.audition.cd = 3; // 피드백 113번: 1년에 한 번 → 석 달마다(오디션은 수시로 열림, 기회 2번이 드는 것은 그대로)
   C.ACTION.audition.hint = (S) => { const best = Object.keys(AUD).filter((id) => E.age(S) <= AUD[id].max && (!AUD[id].need || AUD[id].need(S) === true)).map((id) => [id, Pr.auditionK(S, id).p]).sort((a, b) => b[1] - a[1])[0]; return best ? `가수·배우·뮤지컬·댄서·연주자·모델·성우 등 · 가장 가능성 높은 ${AUD[best[0]].ko} 약 ${Math.max(1, Math.round(best[1] * 100))}%` : '도전할 수 있는 오디션이 없습니다'; };
   C.ACTION.audition.run = (S) => { E.ask(S, 'pr_audition', {}); return null; };
+  // 피드백 244번(v0.6.13): 단역·조연으로 활동 중이면 더 큰 무대 오디션을 다시 볼 수 있다(주연급·아이돌은 그대로 막음)
+  {
+    const a = C.ACTION.audition, w0 = a.where, n0 = a.need;
+    a.where = (S) => canRe(S) || (w0 ? w0(S) : true);
+    a.need = (S) => (canRe(S) ? true : n0 ? n0(S) : true);
+  }
   C.ACTION.audition.runOld = (S) => {
     const r = Pr.audition(S), d = Pr.KINDS[r.k];
     H.reveal(S, d.talent);
@@ -26556,8 +26817,71 @@ const Cm = {};
         no: { t: '소속사는 꿈쩍도 하지 않았습니다.', fx: { happy: -3 } } },
     ],
   });
+  /* ---------------- 연예인의 단계(피드백 244번, v0.6.13 — 상태는 practice.js Pr.entOf: S.work.job.ent = { rank, m, roles, hits })
+   * 단역 → 조연 → 주연(오디션 종류마다 이름이 다름 — 앙상블·행사 가수·객원 연주자 …). 큰 오디션에서 떨어져도 작은 제안으로 들어온 사람이
+   * 해마다 '더 큰 자리 제안'(j_ent_step)으로 올라간다: 실력(오디션 1차 가능성)·배역 맞춤이 높을수록 자주·잘. 맨 아래 단계의 하루(j_ent_small)와
+   * 일이 끊긴 해(j_ent_dry — 그만두는 길)도 있다. 아이돌은 그룹 활동(media.js)이라 단계가 없다. */
+  const entRank = (S) => { const e = hasPr && Pr.entOf ? Pr.entOf(S, true) : null; return e ? e.rank : -1; };
+  const entAt = (S) => { const e = hasPr && Pr.entOf ? Pr.entOf(S, true) : null; return e ? (S.ageM - (e.m || 0)) / 12 : 0; };
+  const entAud = (S) => (hasPr && S.work.job && Pr.AUD && Pr.AUD[S.work.job.aud] ? S.work.job.aud : 'actor');
+  const entMainK = (S) => (['singer', 'player', 'musical', 'voice'].includes(entAud(S)) ? 'music' : 'perform');
+  const entRole = (S) => { const e = hasPr && Pr.entOf ? Pr.entOf(S) : null; if (e) e.roles = (e.roles || 0) + 1; };
+  const ENT_STEP = {
+    actor: ['함께 작업했던 감독이 다음 작품의 조연을 맡아 달라고 연락했습니다. 대사도 장면도 지금까지와는 비교가 되지 않습니다.', '제작사가 새 작품의 주연으로 {N을} 원합니다. 잘되면 이름이 크게 알려지지만, 흥행이 안 되면 책임도 큽니다.'],
+    musical: ['연출가가 다음 시즌에 조연을 맡겨 보겠다고 합니다. 혼자 부르는 노래가 두 곡입니다.', '새 뮤지컬의 주연 제안이 들어왔습니다. 막이 오르면 무대 한가운데에 서야 합니다.'],
+    singer: ['음반사가 정식 음반을 내 보자고 합니다. 이제 내 이름을 건 노래를 부릅니다.', '큰 기획사가 간판 가수로 밀어 주겠다고 합니다. 방송과 공연 일정이 몇 배로 늘어납니다.'],
+    dancer: ['한 가수가 전속 댄서로 함께하자고 합니다. 공연마다 같은 무대에 섭니다.', '큰 공연의 안무를 맡아 달라는 제안이 왔습니다. 무대 전체의 춤을 짜야 합니다.'],
+    player: ['악단에서 정단원 자리를 제안했습니다. 이제 객원이 아니라 고정 자리입니다.', '악단이 수석 자리를 맡아 달라고 합니다. 파트 전체를 이끌어야 합니다.'],
+    model: ['잡지 화보와 광고 촬영 제안이 들어왔습니다. 처음으로 얼굴이 크게 실립니다.', '큰 브랜드가 얼굴이 되어 달라고 합니다. 큰 패션쇼 무대에도 섭니다.'],
+    voice: ['애니메이션의 조연 목소리를 맡아 달라는 연락이 왔습니다.', '큰 작품의 주인공 목소리를 맡아 달라는 제안이 왔습니다.'],
+    comic: ['예능 프로그램이 고정 출연자로 함께하자고 합니다.', '새 프로그램의 메인 진행을 맡아 달라는 제안이 들어왔습니다.'],
+  };
+  const ENT_SMALL = {
+    actor: ['하루 종일 대기하다 대사 한 줄을 찍었습니다. 그래도 화면에 얼굴이 잠깐 나왔습니다.', '독립영화 촬영으로 작은 마을에서 두 주를 지냈습니다. 출연료는 적었지만 감독과 마음이 잘 맞았습니다.', '작은 극장의 연극 무대에 섰습니다. 객석이 반도 차지 않았지만 박수는 컸습니다.'],
+    musical: ['앙상블로 한 시즌 내내 같은 장면을 수백 번 춤추고 노래했습니다.', '주연 배우가 아플 때를 대비해 대역 연습을 했지만 끝내 차례가 오지 않았습니다.'],
+    singer: ['하루에 지역 축제 세 곳을 돌며 노래했습니다.', '드라마 OST로 부른 노래가 엔딩에 잠깐 흘러나왔습니다.', '다른 가수의 노래에 피처링으로 참여했습니다. 이름은 작게 실렸습니다.'],
+    dancer: ['가수의 뒤에서 춤추며 방송 무대에 세 번 섰습니다.', '공연단과 함께 지방 순회공연을 다녔습니다.'],
+    player: ['객원으로 불려 가 하루 만에 악보를 익혀 무대에 섰습니다.', '주말마다 행사장에서 반주를 했습니다.'],
+    model: ['쇼핑몰 옷을 하루에 쉰 벌 넘게 갈아입으며 사진을 찍었습니다.', '전단 촬영을 마치고 다음 촬영장으로 달려갔습니다.'],
+    voice: ['광고 한 줄을 스무 번 다시 녹음했습니다.', "외화 더빙에서 '행인 1'의 목소리를 맡았습니다."],
+    comic: ['예능 프로그램 방청석에서 웃음 바람을 잡았습니다.', '소극장 개그 무대에서 새 코너를 시험해 보았습니다. 반응은 반반이었습니다.'],
+  };
   add(ENT, {
-    id: 'j_ent_day', rate: 0.3, cd: 2,
+    id: 'j_ent_step', rate: (S) => (hasPr && Pr.entStepRate ? Pr.entStepRate(S) : 0), cd: 2,
+    gate: (S) => { const r = entRank(S); return r >= 0 && r < 2 && entAt(S) >= 1; },
+    title: '더 큰 자리 제안',
+    text: (S) => (ENT_STEP[entAud(S)] || ENT_STEP.actor)[entRank(S) >= 1 ? 1 : 0],
+    choices: [
+      { l: '맡는다', typ: true, p: (S) => (hasPr && Pr.entStepP ? Pr.entStepP(S) : 0.5),
+        ok: { t: '맡은 자리를 잘 해냈습니다.', fx: { happy: 8 },
+          run: (S) => {
+            const r0 = entRank(S);
+            entRole(S);
+            if (!Pr.entPromote(S)) return null;
+            const ti = S.work.job.title;
+            return r0 >= 1 ? `맡은 작품이 크게 성공했습니다. 이제 ${U.j(ti, '으로')} 불리고, 거리에서 {N을} 알아보는 사람이 늘었습니다.` : `처음 맡은 큰 자리에서 좋은 반응을 얻었습니다. 이제 ${U.j(ti, '으로')} 불립니다. {N을} 알아보는 사람이 조금씩 생깁니다.`;
+          } },
+        no: { t: (S) => (entRank(S) >= 1 ? '작품이 기대만큼 반응을 얻지 못했습니다. 그래도 경력이 한 줄 늘었습니다.' : '맡은 자리는 해냈지만 작품이 주목받지 못했습니다. 다음 작품은 다시 작은 자리부터입니다.'), fx: { happy: -3 },
+          run: (S) => { entRole(S); prac(S, entMainK(S), 1.5); } } },
+      { l: '지금 자리에서 경험을 더 쌓는다', t: '서두르지 않기로 했습니다. 지금 자리에서 실력을 더 다듬습니다.', fx: { happy: 1 }, run: (S) => { prac(S, entMainK(S), 2); } },
+    ],
+  });
+  add(ENT, {
+    id: 'j_ent_small', rate: 0.3, cd: 2, gate: (S) => entRank(S) === 0,
+    text: (S) => ENT_SMALL[entAud(S)] || ENT_SMALL.actor,
+    fx: { happy: 1, health: -1 }, run: (S) => { prac(S, entMainK(S), 1.5); entRole(S); },
+  });
+  add(ENT, {
+    id: 'j_ent_dry', rate: 0.1, cd: 3, gate: (S) => entRank(S) === 0 && entAt(S) >= 2,
+    title: '일이 끊긴 해',
+    text: '몇 달째 들어오는 일이 없습니다. 오디션 소식만 기다리는 사이 통장 잔고가 바닥을 보입니다.',
+    choices: [
+      { l: '아르바이트를 하며 버틴다', typ: true, t: '낮에는 아르바이트를 하고 밤에는 연습했습니다. 언젠가 올 기회를 기다립니다.', fx: { happy: -3, health: -1 }, run: (S) => { earn(S, 2, 'side'); prac(S, entMainK(S), 1); } },
+      { l: '이 길을 접고 다른 일을 찾는다', t: '꿈을 내려놓고 다른 일을 찾기로 했습니다. 무대에 섰던 시간은 좋은 기억으로 남았습니다.', fx: { happy: -6 }, run: (S) => { lose(S); offers(S); } },
+    ],
+  });
+  add(ENT, {
+    id: 'j_ent_day', rate: 0.3, cd: 2, gate: (S) => entRank(S) !== 0, // 맨 아래 단계(단역 등)는 j_ent_small
     text: ['예능 프로그램에서 망가지는 모습을 보여 줬더니 반응이 뜨거웠습니다.', '팬 미팅에서 팬들이 직접 만든 선물을 받았습니다.', '하루 네 시간 자며 촬영과 연습을 오갔습니다.', '지방 공연을 마치고 새벽 고속도로를 달려 다음 촬영장으로 갔습니다.', '오디션에서 떨어진 신인 시절 이야기를 방송에서 털어놓았습니다.', '촬영장 막내 스태프들에게 밥을 샀습니다.'],
     fx: { fame: 1, happy: 1, health: -1 }, run: (S) => { prac(S, 'perform', 1.5); },
   });
@@ -26752,6 +27076,22 @@ const Cm = {};
   E.hook('ensure', (S) => { if (!S.jx || typeof S.jx !== 'object') S.jx = { rec: 0 }; if (typeof S.jx.rec !== 'number' || !isFinite(S.jx.rec)) S.jx.rec = 0; });
   // 정치를 떠나면 의정 성과는 몇 해에 걸쳐 잊힌다
   E.hook('year', (S) => { if (S.jx && S.jx.rec && !H.jobIs(S, 'politician')) { S.jx.rec *= 0.8; if (Math.abs(S.jx.rec) < 0.1) S.jx.rec = 0; } });
+
+  // 연예인의 단계(피드백 244번): 큰 작품의 주인공 제안(ev_core core_star_hit)은 맨 아래 단계(단역 등)일 때 드물게(0.35배)·주연급은 조금 자주(1.2배).
+  // 그 작품이 성공하면(S.flags.hits) 해가 바뀔 때 주연급으로 — 연봉·명성은 그 사건이 이미 올렸으므로 직함·단계만. 옛 저장의 연예인도 여기서 처음 단계가 정해진다.
+  if (hasPr && Pr.entOf && Pr.entPromote) {
+    const sh = C.EVENTS.find((e) => e.id === 'core_star_hit');
+    if (sh) { const r0 = sh.rate; sh.rate = (S) => { const r = typeof r0 === 'function' ? r0(S) : r0; if (!(r > 0)) return r; const e = Pr.entOf(S, true); return e ? r * [0.35, 1, 1.2][e.rank] : r; }; }
+    E.hook('year', (S) => {
+      const e = Pr.entOf(S);
+      if (!e) return;
+      const h = S.flags.hits || 0;
+      if (h > (e.hits || 0)) {
+        e.hits = h;
+        if (e.rank < 2 && Pr.entPromote(S, 2, true)) E.log(S, C.t(S, `큰 작품의 성공으로 이제 ${U.j(S.work.job.title, '으로')} 불립니다.`), 'good');
+      }
+    });
+  }
 
   // 의정 성과가 다음 선거 당선 가능성에 조금 반영된다(이유 목록에도 보인다)
   if (hasCr && typeof Cr.electP === 'function') {
@@ -29292,7 +29632,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.6.12';
+E.VERSION = '0.6.13';
 E.BUILD_DATE = '26.10.16';
 
 /* ================================================================ 기본 도구 */
@@ -51546,6 +51886,12 @@ const Nk = {};
  *   - 광고 단가는 채널 언어권·사는 나라(st.rpm, econ.json cpm). 협찬은 구독자 1만~5만 명부터, 후원은 나라의 라이브 후원 문화(Md.plat),
  *     멤버십·상품은 구독자 2만~10만 명부터. 협찬 금지는 직책별: 국회의원·장관·공무원·경찰·군인 금지, 겸직이 허용되는 지방의원은 절반.
  *   - 나라별 플랫폼 문장: 중국 빌리빌리·더우인, 러시아 VK·텔레그램, 한국 유튜브 + 숲·치지직 후원 등.
+ * 242 채널의 힘·석 달 영상 묶음(v0.6.13):
+ *   - 할 일 '개인 방송·영상 올리기' 한 번 = 석 달 동안 올린 영상 묶음(Md.season): 편수(꾸준함·전업), 조회 합계(새 영상·숏폼·예전 영상과 추천),
+ *     새 영상 하나 평균(구독자 대비 — 채널이 클수록 줄어듦), 가장 많이 본 영상, 이 석 달 수입. 모두 매달 쓰는 Md.streamParts 와 같은 계산이다.
+ *   - 조회에 채널의 힘(Md.chPow): 새 연습 종류 '영상 만들기'(Pr.KINDS.video, 매력 재능)·말하기, 장르(Md.GEN — 채널을 열 때 고름)와 잘 맞는 정도,
+ *     숏폼 비중(조회·구독자 늘기 ↑, 1천 회당 단가 ↓), 명성, 채널 운. 한쪽으로 긴 꼴(대부분 구독자의 1~3배, 잘 만드는 채널 5~10배 넘게).
+ *   - 수입: 긴 영상 단가 × 장르, 나라별 숏폼 단가, 협찬 = 한 해 n건 × 건당 단가(구독자·영상 하나 조회·장르). 채널 카드에 '수입의 까닭' 줄.
  * 211 미성년 수입·아이돌:
  *   - 미성년이 번 돈: 25%는 내 돈(engine.js), 나머지는 살림·부모님(보호자)이 모아 두는 몫·법으로 묶는 신탁(미국 쿠건법 15% 등)으로 나뉜다.
  *     열여덟 살(또는 독립)에 '맡겨 둔 돈을 받음'(md_kidFund), 드물게 일부가 살림에 쓰인 갈등.
@@ -51562,6 +51908,8 @@ const Nk = {};
  * 상태: S.md = { kid: { yNow, yLast, tot, trust, held, hhY, iso }, mus: { rep, lis, yBest }, fan: { n, m }, sym: { v, m } }
  *       S.work.job.idol = { m0, n, big, dom, intl, debt, a, settled, setM, endM, chPol, ch, hits }  (아이돌 직업에만)
  *       S.stream.cat(옛 영상 조회 몫) · S.stream.live(라이브 비중)
+ *       S.stream.gen(장르 — 없으면 '여러 가지') · sh(숏폼 몫 0~0.75) · pz(채널 운) · gAsk(장르를 물었음) · ssn{m,nL,nS,v,best,inc,f}(지난 석 달) · vm(이번 달 조회)
+ *       S.prac.video(영상 만들기 실력 — 예전 저장은 올린 횟수에서 채움)  (모두 처음 쓸 때 채운다)
  * 실리는 곳: manifest 에서 nklife.js 뒤·history.js 앞. 시험: ONEIN8B_EXTRA=media.js
  */
 'use strict';
@@ -51617,6 +51965,75 @@ const Md = {};
     const h = U.clamp(0.35 + 0.55 * Math.sqrt(Math.min(1, home / pl.n)), 0.4, 0.9);
     return h * CPM(iso) + (1 - h) * pl.rpm;
   };
+  /* ---------------- 242 채널의 힘·장르·숏폼(피드백 242번, v0.6.13)
+   * 한 달 조회수 = 구독자 × [새 긴 영상 (0.1 + 1.6 × 꾸준함) × (1 − 숏폼 몫) + 숏폼 (0.1 + 1.6 × 꾸준함) × 2.5 × 숏폼 몫 + 옛 영상 st.cat]
+   *               × 채널의 힘 × 구독자 규모 배수 × 알고리즘 침체(0.45).
+   *   - 숏폼 몫 0·채널의 힘 1이면 예전 계산과 같다. 예전 저장은 장르 '여러 가지'·숏폼 없음·채널 운 0, 영상 실력은 올린 횟수에서 채운다.
+   *   - 채널의 힘 = exp(영상 실력 + 장르 조회 배수 + 장르에 잘 맞는 정도 + 명성 + 채널 운), 0.25~4배 — 한쪽으로 긴 꼴이라
+   *     꾸준한 채널 대부분은 한 달에 구독자의 1~3배, 잘 만드는 채널은 5~10배 넘게 본다.
+   *   - 구독자 규모 배수 (구독자 ÷ 10만)^−0.05: 큰 채널일수록 쉬는 구독자가 많다.
+   * 영상 하나의 조회(석 달 묶음 화면): 새 긴 영상 조회 가운데 '깨어 있는 구독자 몫'(구독자 1만 명까지 1 · 10만 0.4 · 100만 0.16)만
+   *   새 영상으로 보고 나머지는 예전 영상·추천으로 본다. 그래서 영상 하나를 보는 사람 ÷ 구독자는 채널이 클수록 준다.
+   *   근삿값: 긴 영상 하나의 조회 ÷ 구독자 중앙값 약 36%(구독자 1만~10만) · 11%(10만~100만) · 5%(100만 넘음)
+   *   — OverseerOS(채널 273곳·영상 2,043편), ytgrowth.io(1만 약 11% · 10만 5% · 100만 3%). 숏폼은 더 높고, 쉬는 구독자가 많은 것은 흔하다.
+   *   꾸준히 올리는 채널은 이 중앙값(쉬는 채널 포함)보다 조금 높게 두었다.
+   * 광고 단가: 긴 영상은 채널 단가(rpmOf — 시청자 나라 구성) × 장르 배수, 숏폼은 나라별 숏폼 단가.
+   * 협찬: 한 해 n건(꾸준함·구독자 규모) × 건당 단가(구독자·영상 하나 조회·장르). 공직자 협찬 금지(Md.sponF)는 그대로.
+   */
+  /** 장르(근삿값): v 조회 배수 · r 긴 영상 광고 단가 배수('여러 가지' = 1) · sp 협찬 건당 단가 배수 · don 라이브 후원 배수
+   *  - 광고 단가: 미국 긴 영상 크리에이터 몫(RPM) 중앙값 약 $2.3(수익 창출 채널 300곳), 게임 약 $2, 금융 상위 채널 $15~25,
+   *    시청자 나라에 따라 크게 다름(인도·아프리카는 미국의 약 15%). 기본 단가(econ.json cpm, 미국 채널 약 $3.5)를 '여러 가지'로 보고 곱한다
+   *    → 게임 약 $1.9 · 키즈 약 $1.2(어린이용 영상은 맞춤 광고가 붙지 않음) · 테크 약 $7 · 금융 약 $11.
+   *  - 조회: 게임·먹방·키즈·예능은 보는 사람이 많고, 금융·테크·교육은 보는 층이 좁다. 협찬은 뷰티·테크·금융이 비싸다. */
+  const GEN = {
+    mix: { ko: '여러 가지(일상·잡담)', v: 1, r: 1, sp: 1, don: 1 },
+    game: { ko: '게임', v: 1.3, r: 0.55, sp: 0.8, don: 1.3 },
+    mukbang: { ko: '먹방·요리', v: 1.25, r: 0.75, sp: 1, don: 1.2 },
+    kids: { ko: '키즈·가족', v: 1.45, r: 0.35, sp: 0.9, don: 0.2 },
+    fun: { ko: '예능·웃음', v: 1.2, r: 0.8, sp: 1, don: 1.1 },
+    vlog: { ko: '브이로그·여행', v: 0.9, r: 0.95, sp: 1.2, don: 0.8 },
+    music: { ko: '음악·노래', v: 1.1, r: 0.55, sp: 0.8, don: 1.2 },
+    beauty: { ko: '뷰티·패션', v: 0.9, r: 1.1, sp: 1.6, don: 0.6 },
+    sports: { ko: '스포츠·운동', v: 1, r: 1, sp: 1.1, don: 0.9 },
+    edu: { ko: '교육·지식', v: 0.7, r: 1.6, sp: 0.9, don: 0.6 },
+    tech: { ko: '테크·리뷰', v: 0.75, r: 2, sp: 1.6, don: 0.5 },
+    fin: { ko: '금융·경제', v: 0.55, r: 3.2, sp: 1.8, don: 0.4 },
+  };
+  Md.GEN = GEN;
+  const genOf = (st) => GEN[st.gen] || GEN.mix;
+  const lvP = (S, k) => (hasPr() && Pr.KINDS[k] ? Pr.lvl(S, k) : 0);
+  const hobOn = (S, h) => (S.hobbies || []).includes(h);
+  const youngKid = (S) => S.fam.kids.some((k) => k.alive && (S.ageM - k.bornM) / 12 < 12);
+  /** 장르에 잘 맞는 정도(0~100): 그 분야를 잘 알거나 잘하는 사람의 영상이 더 잘 된다 */
+  const FIT = {
+    mix: () => 50,
+    game: (S) => 35 + (hobOn(S, 'games') ? 30 : 0) + 0.3 * lvP(S, 'mind'),
+    mukbang: (S) => 40 + 0.5 * lvP(S, 'cook') + (hobOn(S, 'cooking') ? 10 : 0),
+    kids: (S) => (E.age(S) < 15 ? 65 : youngKid(S) ? 75 : 30),
+    fun: (S) => 0.5 * H.talent(S, 'charm') + 0.5 * lvP(S, 'perform'),
+    vlog: (S) => 25 + 0.5 * H.looks(S) + Math.min(15, 3 * (S.stamps || []).filter((x) => x.k === 'travel').length),
+    music: (S) => lvP(S, 'music'),
+    beauty: (S) => H.looks(S),
+    sports: (S) => (H.jobIs(S, 'athlete') ? 90 : lvP(S, 'sport')),
+    edu: (S) => S.st.smarts || 0,
+    tech: (S) => 0.55 * (S.st.smarts || 0) + 0.45 * (hasPr() && Pr.codeLvl ? Pr.codeLvl(S) : 0) + (H.jobIs(S, 'programmer', 'freedev', 'engineer') ? 20 : 0),
+    fin: (S) => 0.75 * (S.st.smarts || 0) + (S.edu && S.edu.level >= 4 ? 15 : 0),
+  };
+  Md.fitOf = (S, g) => U.clamp((FIT[g] || FIT.mix)(S), 0, 100);
+  /** 숏폼 1천 회당 크리에이터 몫(미국 달러, 근삿값 — AIR Media-Tech 2025): 미국 0.33 · 한국 0.19 · 영국 0.17 · 일본 0.14 · 인도 0.008.
+   *  표에 없는 나라는 그 나라 긴 영상 단가(econ.json cpm)의 2.5~6.5%(소득군별). 채널의 숏폼 단가 = 채널 단가 × 이 비율 */
+  const SHORT_RPM = { USA: 0.33, KOR: 0.19, GBR: 0.17, JPN: 0.14, IND: 0.008 };
+  const shortF = (iso) => (SHORT_RPM[iso] !== undefined ? SHORT_RPM[iso] / CPM(iso) : [0.025, 0.035, 0.05, 0.065][Wd.dev(iso)]);
+  /** 숏폼 한 편 몫의 조회 배수: 숏폼은 구독하지 않은 사람의 피드에도 떠서 조회가 많다 */
+  const SHV = 2.5;
+  /** 구독자 규모 배수(큰 채널일수록 쉬는 구독자가 많다) · 새 긴 영상을 보는 '깨어 있는 구독자' 몫 */
+  const sizeF = (f) => U.clamp(Math.pow(Math.max(1, f) / 1e5, -0.05), 0.75, 1.25);
+  const awakeF = (f) => U.clamp(Math.pow(Math.max(1, f) / 1e4, -0.4), 0.12, 1);
+  // 새 연습 종류 '영상 만들기'(기획·촬영·편집 — 매력 재능): 연습하기·레슨, 영상을 올릴 때마다 조금씩, 전업이면 달마다
+  if (hasPr() && !Pr.KINDS.video) {
+    Pr.KINDS.video = { ko: '영상 만들기', talent: 'charm', hobbies: [] };
+    Pr.USE.video = '개인 방송·영상 채널의 조회수(기획·촬영·편집, 말하기 실력도 조금 보탬 — 영상을 올릴 때마다 조금씩도 늚)';
+  }
   const stEnsure = (S, st) => {
     if (st.rpmV !== 2 && st.lang && hasCr()) { st.rpm = rpmOf(S, st); st.rpmV = 2; }
     if (st.cat === undefined) st.cat = 0.1 + 0.5 * Math.min(1, (st.eff || 0) / 3);
@@ -51624,33 +52041,155 @@ const Md = {};
       const c = E.iso(S), b = c === 'KOR' ? 0.4 : ['CHN', 'JPN', 'TWN', 'USA'].includes(c) ? 0.3 : 0.2;
       st.live = Math.round(U.clamp(b + U.normal(0, 0.1), 0.05, 0.7) * 100) / 100;
     }
+    // 피드백 242: 예전 채널은 숏폼 없음·채널 운 0(예전 계산 그대로), 영상 실력은 올린 횟수에서
+    if (st.sh === undefined) st.sh = 0;
+    if (st.pz === undefined) st.pz = 0;
+    if (hasPr() && Pr.KINDS.video) { S.prac = S.prac || {}; if (S.prac.video === undefined) S.prac.video = Math.min(50, 15 + 2.5 * (st.uses || 0)); }
+  };
+  /** 영상 실력: '영상 만들기' 실력에 말하기 실력이 조금 보탠다 */
+  Md.vidSkill = (S) => { const v = lvP(S, 'video'), sp = lvP(S, 'speech'); return Math.max(v, 0.6 * v + 0.4 * sp); };
+  /** 채널의 힘(조회 배수)과 그 까닭: { P, q(발휘된 영상 실력), sk(영상 실력), fit, ln: 몫별 로그 값 } */
+  Md.chPow = (S) => {
+    const st = S.stream, g = genOf(st), sk = Md.vidSkill(S);
+    const tal = H.talent(S, 'charm'), x = H.looks(S);
+    // 재능·실력의 몫은 실력에 따라(practice.js Pr.mix — 피드백 232번), 화면의 매력은 외모 쪽(피드백 203번)
+    const q = hasPr() && Pr.mix ? Pr.mix(tal, sk, x) : 0.45 * tal + 0.4 * sk + 0.15 * x;
+    const fit = st.gen && st.gen !== 'mix' ? Md.fitOf(S, st.gen) : 50;
+    const ln = { q: (0.5 * (q - 42)) / 25, g: Math.log(g.v), fit: (0.4 * (fit - 50)) / 40, fame: 0.2 * U.clamp(((S.fame || 0) - 30) / 40, 0, 1), luck: st.pz || 0 };
+    const sum = U.clamp(ln.q + ln.g + ln.fit + ln.fame + ln.luck, Math.log(0.25), Math.log(4));
+    return { P: Math.exp(sum), q, sk, fit, ln };
+  };
+  /** 석 달 동안 올리는 편수: 전업은 한 달 긴 영상 4편 꼴(큰 채널은 함께 만드는 사람이 있어 최대 2.5배), 겸업·취미는 꾸준함만큼(한 달 최대 3편).
+   *  숏폼은 한 편에 드는 품이 긴 영상의 4분의 1 */
+  Md.seasonN = (S, ef) => {
+    const st = S.stream, full = H.jobIs(S, 'streamer');
+    const team = full ? U.clamp(Math.pow((st.fans || 0) / 2e5, 0.25), 1, 2.5) : 1;
+    const u = 3 * (full ? 4 * team : Math.max(1 / 3, 3 * Math.pow(U.clamp(ef, 0, 1), 1.2)));
+    const sh = st.sh || 0;
+    return { nL: Math.max(sh >= 0.85 ? 0 : 1, Math.round(u * (1 - sh))), nS: sh > 0 ? Math.max(1, Math.round(u * sh * 4)) : 0 };
   };
   /** 계약 중인 아이돌의 개인 채널에서 회사가 가져가는 몫 */
   Md.chCut = (S) => { const id = Md.idolOf(S); return id && id.ch === 'share' ? 0.4 : 0; };
-  /** 방송 수입을 나눠 계산(국제달러/년): { ads, spon, don, mem, cut, views } */
+  const MONEY = ['ads', 'spon', 'don', 'mem'];
+  /** 꾸준함 ef·옛 영상 몫 cat 일 때의 한 달 조회와 한 해 수입(국제달러). 조회는 구독자 1,000명 밑에서도 센다(수입은 0) */
+  const partsOf = (S, ef, cat) => {
+    const st = S.stream, iso = E.iso(S), pl = Wd.priceLevel(iso), g = genOf(st), pw = Md.chPow(S);
+    const z = { ads: 0, spon: 0, don: 0, mem: 0, cut: 0, views: 0, vL: 0, vS: 0, vO: 0, ef, P: pw.P, nD: 0, dealP: 0, pvr: 0, rpmL: st.rpm * g.r, rpmS: st.rpm * shortF(iso) };
+    const k = pw.P * sizeF(st.fans) * (st.slumpM && S.ageM < st.slumpM ? 0.45 : 1);
+    const sh = st.on ? st.sh || 0 : 0;
+    const nw = st.on ? 0.1 + 1.6 * ef : 0.05; // 쉬는 채널은 새 영상 없이 옛 영상과 검색으로 조금
+    z.vL = st.fans * nw * (1 - sh) * k; z.vS = st.fans * nw * SHV * sh * k; z.vO = st.fans * cat * k;
+    z.views = z.vL + z.vS + z.vO;
+    const n = Md.seasonN(S, ef);
+    z.pvr = n.nL ? (3 * z.vL * awakeF(st.fans)) / n.nL / Math.max(1, st.fans) : 0; // 새 긴 영상 하나를 보는 사람 ÷ 구독자
+    if (st.fans < 1000) return z;
+    z.ads = (12 * ((z.vL + z.vO) * z.rpmL + z.vS * z.rpmS)) / 1000;
+    // 협찬 건당 단가(근삿값): (구독자 1명당 채널 단가 × 0.8센트 + 영상 하나 조회 1천 회당 채널 단가 × 8)의 평균 × 장르
+    //   — 미국 구독자 10만 채널 건당 약 2천 달러, 한국 10만 채널 약 100만~150만 원(광고주 단가 중앙값: 미국 CPM $11.95 · 한국 $2.91)
+    z.dealP = 0.004 * (1 + Math.min(1, z.pvr)) * st.fans * st.rpm * g.sp;
+    const ramp = U.clamp((st.fans - 10000) / 40000, 0, 1); // 구독자 1만 명부터 붙기 시작해 5만 명이면 제 건수
+    z.nD = st.on ? Md.sponF(S) * ramp * (3 + 9 * ef) : 0; // 꾸준한 채널 한 해 12건 안팎
+    z.spon = z.nD * z.dealP;
+    const pe = Math.pow(pw.P, 0.3); // 잘 만드는 채널은 후원·멤버십도 조금 더
+    z.don = st.on ? st.fans * Md.plat(S).don * st.live * Math.pow(ef, 0.8) * U.clamp((st.fans - 1000) / 9000, 0, 1) * g.don * pe : 0;
+    const pp = Math.pow(U.clamp(CPM(iso) / 4.5, 0.05, 1), 0.6); // 시청자의 씀씀이(광고 단가로 어림)
+    z.mem = st.fans * 0.04 * pp * U.clamp((st.fans - 20000) / 80000, 0, 1) * (st.on ? 0.4 + 0.6 * ef : 0.25) * pe;
+    for (const x of MONEY) z[x] /= pl; // 시장 환율 달러 → 국제달러
+    const cut = Md.chCut(S);
+    if (cut > 0) { const tot = z.ads + z.spon + z.don + z.mem; z.cut = tot * cut; for (const x of MONEY) z[x] *= 1 - cut; }
+    return z;
+  };
+  /** 방송 수입을 나눠 계산(국제달러/년): { ads, spon, don, mem, cut, views, vL·vS·vO(긴 영상·숏폼·옛 영상 한 달 조회), P, nD(협찬 한 해 건수), dealP(건당, 시장 환율 달러), pvr, rpmL, rpmS } */
   Md.streamParts = (S, efOverride) => {
-    const st = S.stream, z = { ads: 0, spon: 0, don: 0, mem: 0, cut: 0, views: 0 };
-    if (!st) return z;
+    const st = S.stream;
+    if (!st) return { ads: 0, spon: 0, don: 0, mem: 0, cut: 0, views: 0, vL: 0, vS: 0, vO: 0, ef: 0, P: 1, nD: 0, dealP: 0, pvr: 0, rpmL: 0, rpmS: 0 };
     if (st.rpm === undefined || st.K === undefined || st.pool === undefined) Cr.initStream(S);
     stEnsure(S, st);
-    if (st.fans < 1000) return z;
     const ef = efOverride !== undefined ? efOverride : Math.min(1, (st.eff || 0) / 3);
-    const slump = st.slumpM && S.ageM < st.slumpM ? 0.45 : 1;
     // 어림값을 물을 때(전업 전환 등)는 그만큼 꾸준히 올려 온 채널로 본다
     const cat = efOverride !== undefined ? Math.max(st.cat, 0.6 * efOverride) : st.cat;
-    // 구독자 1명당 한 달 조회수: 꾸준히 올리는 채널 약 2.3회, 가끔 올리면 0.6~1회, 쉬어도 옛 영상으로 조금
-    z.views = st.fans * (st.on ? 0.1 + cat + 1.6 * ef : 0.05 + cat) * slump;
-    const iso = E.iso(S), pl = Wd.priceLevel(iso);
-    z.ads = (z.views * 12 * st.rpm) / 1000;
-    const ramp = U.clamp((st.fans - 10000) / 40000, 0, 1);
-    z.spon = st.on ? Md.sponF(S) * ramp * st.fans * st.rpm * 0.055 * (0.3 + 0.7 * ef) : 0;
-    z.don = st.on ? st.fans * Md.plat(S).don * st.live * Math.pow(ef, 0.8) * U.clamp((st.fans - 1000) / 9000, 0, 1) : 0;
-    const pp = Math.pow(U.clamp(CPM(iso) / 4.5, 0.05, 1), 0.6); // 시청자의 씀씀이(광고 단가로 어림)
-    z.mem = st.fans * 0.04 * pp * U.clamp((st.fans - 20000) / 80000, 0, 1) * (st.on ? 0.4 + 0.6 * ef : 0.25);
-    for (const k of ['ads', 'spon', 'don', 'mem']) z[k] /= pl; // 시장 환율 달러 → 국제달러
-    const cut = Md.chCut(S);
-    if (cut > 0) { const tot = z.ads + z.spon + z.don + z.mem; z.cut = tot * cut; for (const k of ['ads', 'spon', 'don', 'mem']) z[k] *= 1 - cut; }
-    return z;
+    return partsOf(S, ef, cat);
+  };
+  /** 앞으로 석 달(이 할 일 한 번)의 조회·수입 합: 매달 실제로 쓰는 계산(Md.streamParts)에 꾸준함이 달마다 7%씩 주는 것까지(전업은 그대로) */
+  Md.project = (S) => {
+    const st = S.stream, full = H.jobIs(S, 'streamer');
+    const o = { views: 0, vL: 0, vS: 0, vO: 0, ads: 0, spon: 0, don: 0, mem: 0, cut: 0, inc: 0 };
+    let e = st.eff || 0;
+    for (let k = 1; k <= 3; k++) {
+      e = full ? Math.max(e, 3) * 0.93 : e * 0.93;
+      const z = partsOf(S, Math.min(1, e / 3), st.cat);
+      for (const x of ['views', 'vL', 'vS', 'vO']) o[x] += z[x];
+      for (const x of MONEY.concat(['cut'])) o[x] += z[x] / 12;
+    }
+    o.inc = o.ads + o.spon + o.don + o.mem;
+    return o;
+  };
+  /** 석 달 영상 묶음의 어림(무작위 없음): 편수 · 조회 합(T) · 새 긴 영상(newL)·숏폼(shorts)·예전 영상과 추천(old) · 새 영상 하나 평균(per)·구독자 대비(pvr) */
+  Md.seasonPreview = (S) => {
+    const st = S.stream;
+    if (st.rpm === undefined || st.K === undefined || st.pool === undefined) Cr.initStream(S);
+    stEnsure(S, st);
+    const pj = Md.project(S), n = Md.seasonN(S, Math.min(1, (st.eff || 0) / 3)), a = awakeF(st.fans);
+    const newL = pj.vL * a, per = n.nL ? newL / n.nL : 0;
+    return { nL: n.nL, nS: n.nS, T: pj.views, newL, shorts: pj.vS, old: pj.vO + pj.vL * (1 - a), per, pvr: per / Math.max(1, st.fans), pj, P: Md.chPow(S).P };
+  };
+  /** 1천 회당 단가(시장 환율 달러) → 현지 돈(작은 값은 소수점까지) */
+  const perK = (S, usd) => {
+    const iso = E.iso(S), v = (Math.max(0, usd || 0) / Wd.priceLevel(iso)) * (Wd.c(iso).ppp || 1);
+    return `${v >= 100 ? U.fmtKo(v) : v >= 10 ? Math.round(v) : v >= 1 ? String(Math.round(v * 10) / 10) : String(Math.round(v * 100) / 100)} ${Wd.currencyUnit(iso)}`;
+  };
+  /** 영상마다 조회는 고르지 않다(로그 정규 — 긴 영상 0.8 · 숏폼 1.2): n편이 tot 회를 나눠 가질 때 가장 많이 본 한 편 */
+  const topOf = (n, tot, sd) => {
+    if (!(n > 0) || !(tot > 0)) return 0;
+    let s = 0, m = 0;
+    for (let i = 0; i < n; i++) { const w = Math.exp(U.normal(0, sd)); s += w; m = Math.max(m, w); }
+    return (tot * m) / s;
+  };
+  /** 영상 올리기 한 번(석 달 묶음)의 결과 문장. f0: 올리기 전 구독자, wasOff: 쉬던 채널 */
+  Md.season = (S, f0, wasOff) => {
+    const st = S.stream, iso = E.iso(S);
+    let skTxt = '';
+    if (hasPr() && Pr.KINDS.video) {
+      const b = Pr.lvl(S, 'video');
+      Pr.gain(S, 'video', 1.5); // 영상을 만들며 느는 몫(연습하기의 4분의 1쯤 — 재능의 벽은 연습하기·레슨으로만 높아짐)
+      const a2 = Pr.lvl(S, 'video');
+      if (Math.round(a2) > Math.round(b)) skTxt = ` 영상 실력 ${Math.round(b)} → ${Math.round(a2)}.`;
+    }
+    const pv = Md.seasonPreview(S), pj = pv.pj;
+    let best = topOf(pv.nL, pv.newL, 0.8), bestS = topOf(pv.nS, pv.shorts, 1.2), T = pv.T, vtx = '';
+    // 크게 퍼진 영상(career.js 가 이번 달에 표시): 그 한 편의 조회는 따로 더하고, 광고 수입도 그 한 편 몫이 따로 들어온다
+    if (st.vir === S.ageM) {
+      const isS = pv.nS > 0 && U.chance(Math.min(0.9, (st.sh || 0) * 1.3));
+      const vir = Math.round(Math.max(300, st.fans - f0) * U.randInt(40, 120));
+      T += vir;
+      if (isS) bestS = Math.max(bestS, vir); else best = Math.max(best, vir);
+      let vi = 0;
+      if (st.fans >= 1000) {
+        const g = genOf(st), cut = Md.chCut(S);
+        vi = ((vir * st.rpm * (isS ? shortF(iso) : g.r)) / 1000 / Wd.priceLevel(iso)) * (1 - cut);
+        if (vi > 0) Ec.earn(S, 'stream', vi);
+      }
+      vtx = ` 그중 ${isS ? '숏폼' : '영상'} 한 편이 크게 퍼져 ${ko(vir)}번 재생되었고, 구독자가 ${ko(st.fans)}명이 되었습니다!${vi >= H.pay(S, 0.05) ? ` 그 한 편의 광고 수입 약 ${U.j(fmt(S, vi), '이')} 따로 들어왔습니다.` : ''}`;
+    }
+    const prevF = st.ssn && st.ssn.f ? st.ssn.f : 0;
+    st.ssn = { m: S.ageM, nL: pv.nL, nS: pv.nS, v: Math.round(T), best: Math.round(Math.max(best, bestS)), inc: Math.round(pj.inc), f: st.fans };
+    const cnt = `${pv.nL ? `영상 ${pv.nL}편` : ''}${pv.nL && pv.nS ? '과 ' : ''}${pv.nS ? `숏폼 ${pv.nS}편` : ''}`;
+    const head = `${wasOff ? '쉬던 채널을 다시 열었습니다. ' : ''}이번 석 달 동안 ${cnt}을 올렸습니다.`;
+    const split = [`새 영상 ${ko(pv.newL)}`, pv.shorts >= 1 ? `숏폼 ${ko(pv.shorts)}` : '', `예전 영상·추천 ${ko(pv.old)}`].filter(Boolean).join(' · ');
+    const per = pv.nL ? ` · 새 영상 하나 평균 약 ${ko(pv.per)}회(구독자의 약 ${Math.max(1, Math.round(pv.pvr * 100))}%)` : '';
+    const top = Math.max(best, bestS) >= 1 ? ` · 가장 많이 본 ${bestS > best ? '숏폼' : '영상'} 약 ${ko(Math.max(best, bestS))}회` : '';
+    const views = ` 조회수 합계 약 ${ko(T)}회(${split})${per}${top}.`;
+    const dF = prevF ? st.fans - prevF : 0;
+    const fans = ` 구독자 ${ko(st.fans)}명${prevF ? `(지난번보다 ${dF >= 0 ? '+' : '−'}${ko(Math.abs(dF))}명)` : ''}`;
+    let money;
+    if (st.fans < 1000) money = ' · 구독자가 1,000명을 넘어야 광고 수입이 생깁니다.';
+    else {
+      const pts = [`광고 ${fmt(S, pj.ads)}`, pj.spon > 0 ? `협찬 ${fmt(S, pj.spon)}` : '', pj.don > 0 ? `후원 ${fmt(S, pj.don)}` : '', pj.mem > 0 ? `멤버십 ${fmt(S, pj.mem)}` : ''].filter(Boolean).join(' · ');
+      money = ` · 이 석 달 수입 약 ${fmt(S, pj.inc)}(${pts}${pj.cut > 0 ? ` — 회사 몫 ${fmt(S, pj.cut)} 뺀 금액` : ''}).`;
+    }
+    const slump = st.slumpM && S.ageM < st.slumpM ? ' 요즘은 알고리즘이 바뀌어 조회수가 줄어 있습니다.' : '';
+    if (st.fans >= 1e6) H.ach(S, 'creator');
+    return `${head}${vtx}${views}${fans}${money}${slump}${skTxt}`;
   };
   if (hasCr()) {
     Cr.streamIncome = (S, efOverride) => { const z = Md.streamParts(S, efOverride); return z.ads + z.spon + z.don + z.mem; };
@@ -51666,14 +52205,36 @@ const Md = {};
       sm0(S);
       if (!st) return;
       st.eff = (st.eff / 0.9) * 0.93; // career.js 는 한 달 10%씩 줄인다 → 7%(피드백 209번: 가끔 올리면 꾸준함이 금방 0에 가까워졌음)
-      st.inc = Cr.streamIncome(S);
+      const z = Md.streamParts(S);
+      st.inc = z.ads + z.spon + z.don + z.mem;
+      st.vm = Math.round(z.views); // 이번 달 조회(화면 — 석 달 묶음·까닭 줄과 같은 계산)
       const j = S.work.job;
       if (j && j.id === 'streamer') { j.pay = st.inc; S.inc2.stream = 0; } else S.inc2.stream = st.inc;
+      // 피드백 242: 전업 크리에이터는 날마다 영상을 만들며 영상 실력이 는다(겸업이라도 부업에 힘을 쏟으면 조금)
+      if (st.on && hasPr() && Pr.KINDS.video && !S.prison && !S.mil) {
+        if (j && j.id === 'streamer') Pr.gain(S, 'video', 0.25);
+        else if (j && S.focus === 'side') Pr.gain(S, 'video', 0.06);
+      }
     };
+    /** 채널의 힘이 구독자 늘기·영상이 퍼질 가능성에 주는 배수(career.js Cr.streamMonth·영상 올리기가 읽는다): 숏폼은 구독자가 빨리 늘고 잘 퍼진다 */
+    Cr.growF = (S, st) => { stEnsure(S, st); return U.clamp(Math.pow(Md.chPow(S).P, 0.15) * (1 + 0.4 * (st.sh || 0)), 0.8, 1.4); };
+    Cr.viralF = (S, st) => { stEnsure(S, st); return U.clamp(Math.pow(Md.chPow(S).P, 0.1) * (1 + 0.4 * (st.sh || 0)), 0.85, 1.3); };
     // 채널을 열 때: 팬덤이 있는 사람은 팬덤 일부가 바로 구독자로 온다(211번) · 계약 중인 아이돌은 회사 허락
+    // 피드백 242: 할 일 한 번 = 석 달 동안 올린 영상 묶음(편수·조회 합·가장 많이 본 영상·이 기간 수입 — 매달 쓰는 계산과 같은 숫자)
     const run0 = C.ACTION.stream.run;
     C.ACTION.stream.run = (S) => {
-      if (S.stream) return run0(S);
+      if (S.stream) {
+        const st0 = S.stream;
+        if (st0.rpm === undefined || st0.K === undefined || st0.pool === undefined) Cr.initStream(S);
+        stEnsure(S, st0);
+        const f0 = st0.fans, wasOff = !st0.on;
+        const r = run0(S);
+        if (S.stream !== st0 || typeof r !== 'string') return r;
+        const t = Md.season(S, f0, wasOff);
+        // 예전 채널(장르를 정한 적 없음): 한 번 채널 방향을 묻는다(그대로 두면 예전 계산과 같음)
+        if (!st0.gen && !st0.gAsk) { st0.gAsk = true; E.ask(S, 'md_chGenre', { old: true }); }
+        return t;
+      }
       const id = Md.idolOf(S);
       if (id && !id.ch) { E.ask(S, 'md_idolCh', {}); return null; }
       const r = run0(S);
@@ -51687,11 +52248,30 @@ const Md = {};
         st.y0 = st.fans;
         extra = ` 소식을 들은 팬들이 몰려와 며칠 만에 구독자가 ${ko(st.fans)}명이 되었습니다.`;
       }
+      // 새 채널: 채널마다 타고난 운(한쪽으로 긴 꼴의 바탕)과 장르·숏폼 고르기
+      stEnsure(S, st);
+      st.pz = Math.round(U.normal(0, 0.4) * 100) / 100;
+      st.gAsk = true;
+      E.ask(S, 'md_chGenre', {});
       const P = Md.plat(S);
       return `${r}${extra} 주로 ${P.main}에 올립니다.`;
     };
-    // 할 일 칸: 나라별 플랫폼과 지금 수입
-    C.ACTION.stream.hint = (S) => (S.stream ? `구독자 ${ko(S.stream.fans)}명${S.stream.inc > 0 ? ` · 한 해 약 ${fmt(S, S.stream.inc)}` : ''} · ${Md.plat(S).main}` : `${Md.plat(S).main}에 채널을 엽니다`);
+    // 할 일 칸: 지금 영상을 올리면(꾸준함 +1) 한 달 조회·한 해 수입이 어떻게 되는지, 퍼질 가능성, 지난 석 달
+    C.ACTION.stream.hint = (S) => {
+      const P = Md.plat(S);
+      if (!S.stream) return `${P.main}에 채널을 엽니다 · 장르와 숏폼 비중을 고릅니다`;
+      const st = S.stream;
+      if (st.rpm === undefined || st.K === undefined || st.pool === undefined || !st.lang) Cr.initStream(S);
+      stEnsure(S, st);
+      const e0 = st.eff, on0 = st.on;
+      st.eff = Math.min(5, (st.eff || 0) + 1); st.on = true;
+      let z;
+      try { z = Md.streamParts(S); } finally { st.eff = e0; st.on = on0; }
+      const inc = z.ads + z.spon + z.don + z.mem;
+      const vp = Math.round(100 * Math.min(1, 0.03 * (H.talent(S, 'charm') / 50) * (st.fans < st.K ? 1 : 0.4) * Cr.viralF(S, st)));
+      const last = st.ssn ? ` · 지난 석 달 조회 ${ko(st.ssn.v)}회` : '';
+      return `구독자 ${ko(st.fans)}명 · 이번에 올리면 한 달 조회 약 ${ko(z.views)}회(구독자의 ${(z.views / Math.max(1, st.fans)).toFixed(1)}배)${inc > 0 ? ` · 한 해 약 ${fmt(S, inc)}` : ''} · 크게 퍼질 가능성 약 ${vp}%${last} · ${P.main}`;
+    };
     const need0 = C.ACTION.stream.need;
     C.ACTION.stream.need = (S) => {
       const id = Md.idolOf(S);
@@ -51717,6 +52297,46 @@ const Md = {};
       { label: '회사 허락을 받고 연다', sub: '수익의 40%는 회사 몫', typ: true,
         run: (S2) => { const id = Md.idolOf(S2); if (id) id.ch = 'share'; return C.ACTION.stream.run(S2); } },
       { label: '지금은 열지 않는다', sub: '쓴 기회는 돌려받습니다', run: () => '개인 채널은 나중으로 미뤘습니다.' },
+    ],
+  };
+  /* 피드백 242: 채널 방향(장르)과 숏폼 비중 — 채널을 열 때 한 번(예전 채널은 다음 영상 올리기 때 한 번, 그대로 두면 예전 계산) */
+  const genSub = (S, k) => {
+    const g = GEN[k], fit = Md.fitOf(S, k);
+    const v = g.v >= 1.2 ? '조회 많음' : g.v <= 0.8 ? '조회 적음' : '조회 보통';
+    const r = g.r <= 0.6 ? '광고 단가 낮음' : g.r >= 1.5 ? '광고 단가 높음' : '광고 단가 보통';
+    return `${v} · ${r}${g.sp >= 1.5 ? ' · 협찬 단가 높음' : ''}${fit >= 65 ? ' · 잘 맞는 분야' : fit <= 35 ? ' · 잘 모르는 분야' : ''}`;
+  };
+  /** 이 사람에게 가장 잘 맞는 장르(보통 고르는 것): 조회 배수 · 잘 맞는 정도 · 광고 단가를 함께 본다 */
+  Md.bestGen = (S) => {
+    let b = 'vlog', bv = -Infinity;
+    for (const k of Object.keys(GEN)) {
+      if (k === 'mix') continue;
+      const v = Math.log(GEN[k].v) + (0.4 * (Md.fitOf(S, k) - 50)) / 40 + 0.3 * Math.log(GEN[k].r);
+      if (v > bv) { bv = v; b = k; }
+    }
+    return b;
+  };
+  C.DEC.md_chGenre = {
+    title: () => '채널 방향',
+    text: (S, ctx) => C.t(S, `${ctx.old ? '채널에 무엇을 주로 올릴지 정해 볼까요? 지금처럼 두어도 됩니다. ' : '어떤 영상을 주로 올릴까요? '}장르마다 보는 사람 수와 광고 단가가 다릅니다. 게임·먹방·키즈는 조회가 많지만 1천 회당 광고 단가가 낮고, 금융·테크·교육은 조회가 적지만 단가가 높습니다. 잘 알거나 잘하는 분야일수록 영상이 잘 됩니다.`),
+    choices: (S, ctx) => {
+      const bg = Md.bestGen(S);
+      const out = Object.keys(GEN).filter((k) => k !== 'mix').map((k) => ({
+        label: GEN[k].ko, sub: genSub(S, k), typ: !ctx.old && k === bg,
+        run: (S2) => { const st = S2.stream; if (!st) return null; st.gen = k; E.ask(S2, 'md_chFmt', {}); return C.t(S2, `채널 방향을 ${U.j(GEN[k].ko, '으로')} 정했습니다.`); },
+      }));
+      if (ctx.old) out.unshift({ label: '지금처럼 여러 가지를 올린다', sub: '조회·광고 단가 보통 · 지금 수입 그대로', typ: true, run: (S2) => { if (S2.stream) S2.stream.gen = 'mix'; return '지금처럼 그때그때 올리고 싶은 영상을 올리기로 했습니다.'; } });
+      else out.push({ label: GEN.mix.ko, sub: '조회·광고 단가 보통', run: (S2) => { if (S2.stream) { S2.stream.gen = 'mix'; E.ask(S2, 'md_chFmt', {}); } return '그때그때 올리고 싶은 영상을 올리기로 했습니다.'; } });
+      return out;
+    },
+  };
+  C.DEC.md_chFmt = {
+    title: () => '긴 영상과 숏폼',
+    text: (S) => C.t(S, `영상 길이도 정합니다. 숏폼(1분 안팎의 짧은 영상)은 구독하지 않은 사람에게도 많이 보여 조회와 구독자가 빨리 늘고 잘 퍼지지만, 1천 회당 광고 수입이 긴 영상의 약 ${Math.max(1, Math.round(shortF(E.iso(S)) * 100))}%입니다.`),
+    choices: () => [
+      { label: '긴 영상 위주', sub: '조회·구독자는 천천히 · 광고 단가 높음', run: (S2) => { if (S2.stream) S2.stream.sh = 0.05; return '긴 영상을 공들여 만들기로 했습니다.'; } },
+      { label: '긴 영상과 숏폼을 함께', sub: '긴 영상 사이사이 숏폼으로 사람을 모읍니다', typ: true, run: (S2) => { if (S2.stream) S2.stream.sh = 0.35; return '긴 영상과 숏폼을 함께 올리기로 했습니다.'; } },
+      { label: '숏폼 위주', sub: '조회·구독자가 빨리 늘고 잘 퍼짐 · 광고 수입은 적음', run: (S2) => { if (S2.stream) S2.stream.sh = 0.75; return '짧은 영상을 자주 올리기로 했습니다.'; } },
     ],
   };
   // 협찬 제안: 지방의원은 겸직 신고를 하고 받는다
@@ -52478,9 +53098,14 @@ const Md = {};
       const M = (x) => Wd.money(E.iso(S), x), rows = [];
       const st = S.stream;
       if (st && st.fans >= 1000) {
-        const z = Md.streamParts(S), P = Md.plat(S);
+        const z = Md.streamParts(S), P = Md.plat(S), g = genOf(st), pw = Md.chPow(S), pl = Wd.priceLevel(E.iso(S));
         rows.push(['방송 수입', `광고 ${M(z.ads)} · 협찬 ${M(z.spon)}${Md.sponF(S) === 0 ? '(직책상 받지 않음)' : Md.sponF(S) < 1 ? '(겸직 신고 뒤 일부만)' : ''} · 후원 ${M(z.don)} · 멤버십·상품 ${M(z.mem)}${z.cut > 0 ? ` · 회사 몫 ${M(z.cut)}` : ''} (한 해)`]);
-        rows.push(['플랫폼', `${P.main} · 후원: ${P.live} · 한 달 조회 약 ${ko(z.views)}회`]);
+        // 피드백 242: 수입의 까닭 — 한 달 조회(구독자의 몇 배인지와 그 까닭) × 1천 회당 단가 + 협찬 건수 × 건당 단가
+        const why = [`꾸준함 ${Math.round(z.ef * 100)}%`, `영상 실력 ${Math.round(pw.sk)}`, g.ko, `숏폼 ${Math.round((st.on ? st.sh || 0 : 0) * 100)}%`].join('·');
+        const nD = z.nD >= 1 ? `${Math.round(z.nD)}건` : '1건 안팎';
+        rows.push(['수입의 까닭', `한 달 조회 약 ${ko(z.views)}회(구독자의 ${(z.views / st.fans).toFixed(1)}배 — ${why}) × 1천 회당 약 ${perK(S, z.rpmL)}${z.vS >= 1 ? `(숏폼 ${perK(S, z.rpmS)})` : ''}${z.nD > 0.05 ? ` + 협찬 한 해 약 ${nD} × 건당 약 ${M(z.dealP / pl)}` : ''}${z.don + z.mem > 0 ? ` + 후원·멤버십 ${M(z.don + z.mem)}` : ''}`]);
+        rows.push(['채널', `${g.ko} · 채널의 힘 ×${pw.P.toFixed(1)}(영상 실력·장르에 잘 맞는 정도·명성·운) · 새 영상 하나를 보는 사람은 구독자의 약 ${Math.max(1, Math.round(z.pvr * 100))}% — 구독자가 많아질수록 쉬는 구독자가 늘어 이 비율은 줄어듭니다`]);
+        rows.push(['플랫폼', `${P.main} · 후원: ${P.live}${st.ssn ? ` · 지난 석 달 ${st.ssn.nL ? `영상 ${st.ssn.nL}편` : ''}${st.ssn.nL && st.ssn.nS ? '·' : ''}${st.ssn.nS ? `숏폼 ${st.ssn.nS}편` : ''}, 조회 ${ko(st.ssn.v)}회, 가장 많이 본 영상 ${ko(st.ssn.best)}회` : ''}`]);
       }
       const id = Md.idolOf(S), j = S.work.job;
       if (id && j) {
@@ -52502,7 +53127,7 @@ const Md = {};
     if (!st || st.fans < 1000) return '';
     if (!(k === 'stream' || (k === 'job' && H.jobIs(S, 'streamer')))) return '';
     const z = Md.streamParts(S), M = (x) => Wd.money(E.iso(S), x);
-    return `<small>광고 ${M(z.ads)} · 협찬 ${M(z.spon)} · 후원 ${M(z.don)} · 멤버십·상품 ${M(z.mem)}</small>`;
+    return `<small>한 달 조회 약 ${ko(z.views)}회 · 광고 ${M(z.ads)} · 협찬 ${M(z.spon)}${z.nD >= 1 ? `(한 해 ${Math.round(z.nD)}건)` : ''} · 후원 ${M(z.don)} · 멤버십·상품 ${M(z.mem)}</small>`;
   };
 })();
 
@@ -59237,7 +59862,7 @@ if (typeof module !== 'undefined') module.exports = Ap;
  *      함께 가면 관계(연인 사랑·배우자 가까움·친구 가까움), 공연·전시 → 교양(S.ax.cul, 창의성 Ab.crea 에 더함·지식 조금),
  *      여행 → 추억(S.ax.mem — 60세부터 행복 목표 최대 +3, 자서전에 담김, '몸과 마음' 카드의 추억 칸), 데이트 → 연인 사랑.
  *   2. 늦게 오는 득을 보이게: 담배 끊기·술 줄이기(앞으로 몇 해 동안 위험 −x%와 '끊은 지 n달째' 줄), 건강검진(일찍 발견할 가능성·발견했을 때 기록),
- *      보험(보장 내용·낸 보험료·실제로 받은 보장), 야간 대학(졸업까지 남은 달·졸업 뒤 연봉), 방송(이번 영상 조회수), 식단(몸무게 경향).
+ *      보험(보장 내용·낸 보험료·실제로 받은 보장), 야간 대학(졸업까지 남은 달·졸업 뒤 연봉), 방송(v0.6.13부터 석 달 영상 묶음 — media.js), 식단(몸무게 경향).
  *   3. 손해만 보이던 것: 이사 → 집 크기·동네(통근·학교·환경·이웃)를 고르는 결정(ax_move), 연애 상대 찾기 → 안 되어도 새 친구·자신감.
  *   4. 거의 없던 것: 영적인 길 찾기 → 마음 건강·스트레스, 길을 찾으면 '삶의 의미'(마음 건강 목표 +3, S.ax.mean), 복권 → '얻음: 드물게 큰돈'.
  *   5. 할 일 단추마다 '얻음 · 위험'(actions.js C.gh — vice.js 와 같은 형식). 이미 숫자로 된 설명이 있는 할 일(운동하기·외국어·입단 테스트 등)은 그대로 둔다.
@@ -59469,29 +60094,10 @@ const Ax = {};
     };
   }
 
-  /* ---------------------------------------------------------------- 방송: 이번 영상 조회수 */
-  {
-    const sa = C.ACTION.stream;
-    if (sa && !sa._ax) {
-      const r0 = sa.run, h0 = sa.hint;
-      sa.run = (S) => {
-        const had = !!S.stream;
-        const t = r0(S);
-        if (!had || !S.stream || typeof t !== 'string') return t;
-        const f = S.stream.fans || 0, viral = /퍼졌습니다/.test(t);
-        const v = R(viral ? f * (1.5 + U.rand() * 2.5) : f * (0.04 + U.rand() * 0.2) + U.randInt(5, 40));
-        S.stream.lastV = v;
-        return `${t} 이번 영상 조회수는 ${U.fmtKo(v)}회입니다.`;
-      };
-      sa.hint = (S) => {
-        const h = h0 ? h0(S) : '';
-        if (!S.stream) return h;
-        const f = S.stream.fans || 0, lo = R(f * 0.04 + 5), hi = R(f * 0.24 + 40);
-        return `${h} · 영상 하나에 조회수 약 ${U.fmtKo(lo)}~${U.fmtKo(hi)}회(크게 퍼질 가능성 약 ${R(3 * H.talent(S, 'charm') / 50)}%)${S.stream.lastV ? ` · 지난 영상 ${U.fmtKo(S.stream.lastV)}회` : ''}`;
-      };
-      sa._ax = true;
-    }
-  }
+  /* ---------------------------------------------------------------- 방송: 이번 영상 조회수
+   * 피드백 242번(v0.6.13): 수입과 따로 놀던 '영상 하나 조회수(구독자의 4~24% 무작위)'를 없앴다. 이제 할 일 한 번은 석 달 동안 올린 영상 묶음이고,
+   * 편수·조회 합계·가장 많이 본 영상·이 기간 수입을 매달 수입 계산과 같은 숫자로 media.js(Md.season, 할 일 칸 설명)가 보여 준다.
+   * 예전 저장에 남은 S.stream.lastV 는 더 쓰지 않는다. */
 
   /* ---------------------------------------------------------------- 담배 끊기·술 줄이기: 앞으로 줄어드는 위험과 '끊은 지 n달째' */
   // 끊은 흡연자에게 남는 몫: 끊은 지 y년이면 흡연 초과 위험의 exp(-y/9)(world.js exResidual) — 폐암 18배·심장병 2.4배(RISK_MULT)
@@ -60382,7 +60988,7 @@ const Sw = {};
   const lkOpts = (S) => LK.filter((o) => o.ok(S) && !lkActive(S, o.k));
   C.DEC.sw_look = {
     title: () => '외모 오래 가꾸기',
-    text: (S) => C.t(S, `한 번 하면 몇 해 동안 남는 것들입니다. 가꾸기(꾸밈)는 몇 달이면 옅어지지만, 이것들은 오래갑니다.${S.indep ? '' : ' 비용은 부모님과 의논합니다.'}`),
+    text: (S) => C.t(S, `한 번 하면 몇 해 동안 남는 것들입니다. 가꾸기(꾸밈)는 몇 달이면 옅어지지만, 이것들은 오래갑니다.${S.indep ? '' : H.parentsAlive(S) ? ' 비용은 부모님과 의논합니다.' : ' 비용은 집안 어른과 의논합니다.'}`),
     choices: (S) => {
       const out = lkOpts(S).map((o) => {
         const m = o.m(S), ok = payable(S, m);
@@ -60485,6 +61091,7 @@ const Sw = {};
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.6.13', d: '26.10.20', t: '오디션 배역 맞춤·연예인의 계단·방송 묶음과 채널의 힘', items: ["오디션 1차의 천장을 없앰: 실력이 최고면 1차는 거의 통과하고, 최종은 '배역·콘셉트 맞춤'(외모·매력 재능, 나이대, 이름값, 운)으로 정합니다 — 실력 최고일 때 대형 오디션 약 65~95%(평균 약 85%). 오디션 창에 '외모 · 매력 재능'(화면의 매력은 외모·인품의 평균)을 따로 보입니다", "떨어진 까닭을 실력에 맞게: 실력이 높으면 '배역의 이미지와 맞지 않음', '그 나이대 배역이 적음', '이름이 알려진 배우가 캐스팅됨' 등. 떨어져도 단역·조연·연극·앙상블·피처링·OST·행사 제안이 옵니다", "연예인의 계단: 단역 → 조연 → 주연(가수는 행사 가수 → 가수 → 정상급 가수 등)을 해마다의 제안과 오디션 다시 보기로 오르고, 단계마다 연봉·명성·직함이 바뀝니다. 배우·방송인 오디션은 42세(뮤지컬 40세)까지, 30대 중반부터 그 나이대 배역이 서서히 줄어듭니다", "영상 올리기 한 번이 '석 달 동안 올린 영상 묶음'이 됨: 편수·조회수 합계·새 영상 하나 평균(구독자의 몇 %)·가장 많이 본 영상·이 기간 수입을 실제 수입 계산과 같은 숫자로 보여 줍니다", "채널을 열 때 장르(게임·먹방·키즈·금융·테크·교육·뷰티 등)와 숏폼 비중을 고르고, 새 연습 '영상 만들기' 실력·잘 맞는 분야·명성·채널 운이 조회수를 가릅니다. 광고 단가는 장르·숏폼(긴 영상의 약 10분의 1)에 따라 다르고, 협찬은 '한 해 n건 × 건당 단가'로 셉니다", "채널 카드에 '수입의 까닭' 줄: 한 달 조회(구독자의 몇 배 — 꾸준함·영상 실력·장르·숏폼) × 단가 + 협찬 + 후원·멤버십, 그리고 채널이 클수록 영상 하나를 보는 구독자 비율이 줄어드는 까닭(쉬는 구독자)"] },
   { v: '0.6.12', d: '26.10.20', t: '운동선수의 길·격투기·달아나기·여권', items: ["유소년 팀·학교 운동부에 들어가는 길: 나라마다 다르게 — 케냐·에티오피아는 학교 육상부와 고지대 훈련 캠프, 브라질은 풋살·구단 유소년부, 한국은 학교 운동부와 체육 특기생, 일본은 부카쓰, 미국은 학교 팀과 AAU 등. 종목마다 시작 나이가 다릅니다", "팀에 들면 해마다 학교·지역·전국 대회에 나가고, 성적에 따라 '눈에 띄는 정도'가 올라 실업팀·프로 입단 제안, 해외 구단·실업단의 영입, 지도자 추천, 공개 트라이아웃 기회가 찾아옵니다. 육상·격투기·골프처럼 늦게 피는 종목은 20대 후반까지 발탁될 수 있습니다", "대표가 되기 아주 어려운 나라의 대표급 선수에게 드물게 특별 귀화 제안: 받아들이기·조건을 더 받아내기·거절하고 고향 대표 노리기 — 국적 규칙·국제 대회 국적 변경 기다림·고향 여론이 따릅니다", "선수 종목 고르기와 생활체육 고르기를 여러 쪽으로 나눠 모든 종목을 고를 수 있게 하고, 첫 쪽에 그 나라에서 하는 격투기·무술을 늘 보여 줍니다. 생활체육에 복싱·킥복싱(무에타이)·주짓수·태권도·합기도·유도·검도·호신술·크라브 마가·우슈·카포에이라·레슬링 등을 넣고 종목 실력·띠 심사·호신·부상으로 이어지게 했습니다", "실력이 최고인 선수는 입단 테스트 1차를 거의 통과합니다. 떨어지면 '실력 부족' 대신 자리·나이·부상 이력·그날 몸 상태 같은 실제 까닭을 알려 줍니다", "강도·패싸움·단속·탈영·강제 징집에서 달아날 가능성이 몸의 '빠르기'(달리기 실력·운동 습관·나이·건강·몸의 불편)를 따릅니다 — 프로 육상 선수는 약 90%, 노인·거동이 불편한 사람은 훨씬 낮게. 선택지에 '빠르기 n(까닭) → 가능성 약 n%'", "국적이 여럿이면 해외여행·이주 때 가장 유리한 여권을 쓰고(같은 조건이면 더 센 여권), 어느 여권을 왜 썼는지 문장에 보입니다. 협정(EU 등)으로 드나들 때 국적 이름이 틀리던 것을 고쳤습니다"] },
   { v: '0.6.11', d: '26.10.19', t: '작은 정리', items: ['내부 점검용 값 칸을 지금의 능력치 구조(외모·인품, 타고난 운과 그 흐름, 타고난 재능, 개인 방송)에 맞춤 — 게임 진행에는 바뀐 것이 없음'] },
   { v: '0.6.10', d: '26.10.18', t: '능력치의 까닭·운의 흐름·실력이 결과로', items: ["능력치 막대를 누르면 오르내리는 까닭: 지금 값이 다가가는 자리와 그것을 이루는 몫(예: 외모 — 타고난 외모 +16 · 나이 −10 · 건강 −3 · 운동 습관 +2)과 최근 1년 사이 오르내린 일", "운은 사람마다 타고난 중심이 있고 그 둘레에서 한두 해씩 이어지는 흐름으로 오르내림 — 좋은 흐름이면 좋은 일이 잦고 나쁜 일·사고가 줄며 도전의 성공 가능성이 오름('가능성 약 62%(운 +5%p)'), 상태 줄에 '운이 좋은 흐름'", "외모를 오래 가꾸는 길: 꾸준한 운동은 체형과 나이 듦을 늦추고, 식단 관리, 할 일 '외모 오래 가꾸기'(치아 교정·피부 관리·시력 교정·옷차림 — 몇 해 감), 꾸밈 효과가 천천히 빠지고 꾸준히 가꾸면 더 천천히", "건강이 오르는 일: 병을 이겨 낸 뒤 체력 되찾기·재활을 마침·담배를 끊고 1년·5년·꾸준한 운동의 덕·혈압·혈당 안정", "지식이 20세에 거의 꽉 차던 것을 바로잡아 학교·일·공부로 오래 오름(진학·채용 눈금은 그대로), 언변은 팀장 이상의 일·팀 주장·모임 이끌기·발표·면접·강연으로도 오름, 은퇴 뒤 신용은 연금과 재산으로", "실력이 높을수록 실력의 몫이 커짐: 실력 0일 때 재능 45%·실력 40% → 실력 100일 때 재능 20%·실력 65%, 실력이 높을수록 운의 폭이 좁아짐 — 글솜씨 100이면 원고 완성도 중앙값 77 → 86", "첫 원고 계약은 완성도를 따름(완성도 60 약 8% · 75 약 20% · 85 약 40% · 95 약 60%), 신춘문예·공모전·오디션·입단 테스트·대회·경시대회도 발휘 실력을 따름 — 결정 창에 '이번 원고에 쓰인 실력: 글솜씨 100 · 재능 50 · 운 −7'", "선수 결승은 아무리 잘해도 가능성 75%까지"] },
@@ -62302,6 +62909,9 @@ const Ad = {};
     // 직급(v0.6.9 직업별 직급 이름): 자영업·개원의는 직급이 없다
     const jb = S.work.job, LV = jb && !jb.self && C.LV_JOB ? C.LV_JOB[jb.id] || null : null;
     if (jb && LV) misc.push(sel('joblv', '직급', LV.map((ko, i) => [i, ko || '처음(직급 없음)']), Math.max(0, Math.min(4, jb.lv || 0))));
+    // 연예인 단계(v0.6.13 practice.js — 단역 → 조연 → 주연 등)
+    const ent = jb && typeof Pr !== 'undefined' && Pr.entOf ? Pr.entOf(S, true) : null;
+    if (ent && Pr.entRankKo) misc.push(sel('entrank', '연예 단계', [0, 1, 2].map((r) => [r, Pr.entRankKo(S, r) || String(r)]), ent.rank || 0));
     if (typeof Kr !== 'undefined' && Kr.trust) {
       if (Kr.ensure) Kr.ensure(S);
       misc.push(`<label>베푼 무게(쌓인 선의)<input type="number" inputmode="decimal" step="1" min="0" id="adm-kg" value="${Math.round((S.krm && S.krm.g) || 0)}"></label>`);
@@ -62393,6 +63003,11 @@ const Ad = {};
     if (v('musrep') !== null) { const mr = U.clamp(num(v('musrep'), 0), 0, 100); if (mr > 0 || (S.md && S.md.mus)) { S.md = S.md || {}; S.md.mus = S.md.mus || { rep: 0, lis: 0 }; S.md.mus.rep = mr; } }
     if (v('fthab') !== null) { S.ft = S.ft && typeof S.ft === 'object' ? S.ft : {}; S.ft.hab = U.clamp(num(v('fthab'), S.ft.hab || 0), 0, 100); }
     if (v('joblv') !== null && S.work.job) { const lv = U.clamp(Math.round(num(v('joblv'), S.work.job.lv || 0)), 0, 4); if (lv) S.work.job.lv = lv; else delete S.work.job.lv; }
+    if (v('entrank') !== null && S.work.job && typeof Pr !== 'undefined' && Pr.entOf) {
+      const e = Pr.entOf(S), r = U.clamp(Math.round(num(v('entrank'), e ? e.rank : 0)), 0, 2);
+      if (e && r > e.rank) Pr.entPromote(S, r, true); // 올리면 연봉·직함·명성도 그 단계에 맞춤
+      else if (e && r < e.rank) { e.rank = r; e.m = S.ageM; const d = Pr.AUD && Pr.AUD[S.work.job.aud]; if (d && d.rt && d.rt[r]) S.work.job.title = d.rt[r]; }
+    }
     // 개인 방송: 구독자를 바꾸면 다다를 수 있는 구독자(K)도 함께 올려 다음 달에 도로 줄지 않게, 꾸준함을 올리면 옛 영상 몫도 그만큼
     if (S.stream && v('fans') !== null && typeof Cr !== 'undefined' && Cr.hardCap) {
       const stv = S.stream;
