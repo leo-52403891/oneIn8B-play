@@ -29018,7 +29018,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.6.10';
+E.VERSION = '0.6.11';
 E.BUILD_DATE = '26.10.16';
 
 /* ================================================================ 기본 도구 */
@@ -59246,6 +59246,7 @@ const Sw = {};
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.6.11', d: '26.10.19', t: '작은 정리', items: ['내부 점검용 값 칸을 지금의 능력치 구조(외모·인품, 타고난 운과 그 흐름, 타고난 재능, 개인 방송)에 맞춤 — 게임 진행에는 바뀐 것이 없음'] },
   { v: '0.6.10', d: '26.10.18', t: '능력치의 까닭·운의 흐름·실력이 결과로', items: ["능력치 막대를 누르면 오르내리는 까닭: 지금 값이 다가가는 자리와 그것을 이루는 몫(예: 외모 — 타고난 외모 +16 · 나이 −10 · 건강 −3 · 운동 습관 +2)과 최근 1년 사이 오르내린 일", "운은 사람마다 타고난 중심이 있고 그 둘레에서 한두 해씩 이어지는 흐름으로 오르내림 — 좋은 흐름이면 좋은 일이 잦고 나쁜 일·사고가 줄며 도전의 성공 가능성이 오름('가능성 약 62%(운 +5%p)'), 상태 줄에 '운이 좋은 흐름'", "외모를 오래 가꾸는 길: 꾸준한 운동은 체형과 나이 듦을 늦추고, 식단 관리, 할 일 '외모 오래 가꾸기'(치아 교정·피부 관리·시력 교정·옷차림 — 몇 해 감), 꾸밈 효과가 천천히 빠지고 꾸준히 가꾸면 더 천천히", "건강이 오르는 일: 병을 이겨 낸 뒤 체력 되찾기·재활을 마침·담배를 끊고 1년·5년·꾸준한 운동의 덕·혈압·혈당 안정", "지식이 20세에 거의 꽉 차던 것을 바로잡아 학교·일·공부로 오래 오름(진학·채용 눈금은 그대로), 언변은 팀장 이상의 일·팀 주장·모임 이끌기·발표·면접·강연으로도 오름, 은퇴 뒤 신용은 연금과 재산으로", "실력이 높을수록 실력의 몫이 커짐: 실력 0일 때 재능 45%·실력 40% → 실력 100일 때 재능 20%·실력 65%, 실력이 높을수록 운의 폭이 좁아짐 — 글솜씨 100이면 원고 완성도 중앙값 77 → 86", "첫 원고 계약은 완성도를 따름(완성도 60 약 8% · 75 약 20% · 85 약 40% · 95 약 60%), 신춘문예·공모전·오디션·입단 테스트·대회·경시대회도 발휘 실력을 따름 — 결정 창에 '이번 원고에 쓰인 실력: 글솜씨 100 · 재능 50 · 운 −7'", "선수 결승은 아무리 잘해도 가능성 75%까지"] },
   { v: '0.6.9', d: '26.10.18', t: '할 일마다의 득·쇼핑·익스트림 스포츠·나쁜 습관·직급 이름', items: ["할 일마다 그것만의 남는 득: 쉬기·목욕탕·상담은 스트레스·마음 건강, 공연·경기는 함께 간 사람과 가까움·교양, 전시는 교양·지식, 여행은 스트레스를 크게 덜고 '추억'(노년 행복·자서전), 데이트는 연인 사랑, 야간 강좌는 새 친구·취미, 연애 상대 찾기는 실패해도 새 친구·자신감, 영적인 길 찾기는 삶의 의미", "늦게 오는 득을 보이게: 금연·절주(앞으로 줄어드는 위험과 끊은 지 n달째), 건강검진(일찍 발견할 가능성), 보험(보장 내용·받은 보장), 야간 대학(졸업까지·졸업 뒤 연봉), 방송(이번 영상 조회수), 식단(몸무게 경향)", "모든 할 일 단추에 '얻음 · 위험'을 숫자로", "쇼핑은 고르기로: 옷(외모 몇 달)·선물(가족·연인·친구 — 명절·기념일이면 더)·살림살이·함께 구경·충동구매(자주 하면 쇼핑 중독·카드 빚)", "익스트림 스포츠는 종목 10개 가운데 고르고 종목마다 실제 근삿값의 위험(번지점프 사망 1/50만 … 베이스 점프 1/2,300·8,000m 원정 1%)과 부상, 자주 하면 익스트림 취미, 8,000m 등정은 명성", "이사는 집 크기와 동네(직장·학교·조용함·정다운 이웃)를 고름", "나쁜 습관에도 이어지는 득: 안전띠·헬멧 안 매기는 편함(행복 +1, 더운 나라 헬멧 +2), 과속은 출퇴근 시간 단축(스트레스 −2), 담배·술은 관계, 바람은 설렘, 연락 끊기는 스트레스↓, 문신은 행복·외모 — 위험은 그대로, '선 넘기' 단추마다 위험을 숫자로(사고 때 사망 1.6배·지금 나이 사망 위험 +9% 등)", "자녀마다 다른 쪽 부모 표시('아버지 벤저민(사실혼)')", "직업마다 고유한 직급 이름(의사 과장·병원장, 교사 교감·교장, 경찰 경위·총경 등), 개원의는 직급 없음('개원의 (팀장)'이던 것)", "이미 학교를 떠났는데 '졸업한다'를 고르면 'undefined 졸업'이 나오던 것, 0원 예금에서 돈이 숫자가 아니게 되던 것, 일부 할 일 설명에 'undefined'가 보이던 것"] },
   { v: '0.6.8', d: '26.10.18', t: '일상 기회·생활체육·젠더 표시', items: ["기회를 둘로 나눔: 몇 시간이면 하는 일상(운동·공부·친구·쉬기·데이트·가족·종교 모임·쇼핑 등)은 한 달에 2번 생기는 '일상 기회'(석 달 치 6번까지 모아 둠)를 쓰고, 큰일 기회(한 해 4번)는 큰일에만. 어린이·수감·복무·누워 지내는 동안은 한 달 1번", "모든 할 일의 기회 수와 쿨다운을 '드는 시간 × 남는 크기' 기준표로 다시 정함(청혼하기 큰일 2, 일 그만두기·은퇴 1, 차 사기·보험은 결정만, 가족 여행·연애 상대 찾기 1, 쿨다운도 대부분 짧아짐). 일상을 몰아서 해도 능력치가 쉽게 차지 않게 최근에 오른 몫이 클수록 덜 오름", "할 일 탭 맨 위에 '일상 기회 n/6 · 큰일 기회 n/8', 단추마다 '일상' 또는 '큰일 기회 n번'", "운동하기 → 생활체육 고르기: 걷기·달리기·등산·자전거·수영·헬스·요가·배드민턴·탁구·테니스·당구·볼링·골프·게이트볼·동네 축구·농구·크리켓·족구·광장무·태극권·공원 운동기구 등을 나라·나이·성별·계절에 맞게, 고른 운동은 '요즘 하는 운동'으로 이어짐. 종목마다 운동 습관·관계·스트레스·부상·이용료가 다름", "선수 길은 '선수로 뛸 종목 정하기'로 나누고, e스포츠는 운동에서 빼 '프로게임단 입단 테스트'(게임 실력)로. 취미에 걷기·요가·당구·볼링", "이름 옆에 젠더 표시(♂ 남성 · ♀ 여성 · ⚧ 논바이너리 — 스스로 깨달은 성별 정체성을 따름)"] },
@@ -60891,6 +60892,8 @@ const Rs = {};
  * 할 수 있는 일: 원하는 나라·도시/시골·도시 이름·성별·집안 형편으로 태어나기,
  *               지금 인생의 능력치·명성·권력·명예·성격·현금·재산·빚·할 일 기회·(독립 전) 집안 형편 바꾸기,
  *               '더 자세한 상태'(v0.3.25): 병의 단계·입원·수감·납치·전과·흡연·음주·중독·스마트폰·컴퓨터·꿈·언어 실력·운동 종목·예술 이름값·삶의 저울.
+ *   v0.6.11 지금 능력치 구조에 맞춤: 매력 칸 → 외모·인품(매력은 둘의 평균), 운 → 타고난 운(중심)·지금 운(중심 ±15), 타고난 재능 여섯 가지,
+ *               음악 이름값·운동 습관·직급·개인 방송(구독자·꾸준함), 할 일 쿨다운 풀기·비자 거절 뒤 기다림 지우기.
  * 운영자 모드로 정하거나 바꾼 인생에는 S.admin 이 붙는다: 업적 모음에 더하지 않고, 지난 인생 목록에 '운영자' 표시.
  * 암호는 해시로만 들어 있다(바꾸기: node tools/set_admin_pw.js 새암호). 한 파일 웹게임이라 보안 장치가 아니라 잠금 장치다.
  */
@@ -61009,7 +61012,9 @@ const Ad = {};
     <p class="adm-note">특별한 삶을 고르면 나라·도시·형편은 쓰지 않고 성별만 따릅니다.</p>` : ''}
     <button class="btn primary" type="button" data-adm="born">이 조건으로 태어나기</button>`;
 
-  const STATS = [['health', '건강'], ['smarts', '지식'], ['happy', '행복'], ['social', '관계'], ['charm', '매력'], ['luck', '운'], ['skill', '경력']];
+  // 능력치 칸(v0.6.11 — 지금 구조에 맞춤): 매력은 외모·인품의 평균(v0.6.6)이라 두 칸으로, 운은 타고난 중심과 지금 흐름(v0.6.10)으로 나눈다
+  const STATS = [['health', '건강'], ['smarts', '지식'], ['happy', '행복'], ['social', '관계'], ['looks', '외모'], ['pres', '인품·카리스마'], ['skill', '경력']];
+  const statVal = (S, k) => (k === 'looks' ? H.looks(S) : k === 'pres' ? H.pres(S) : S.st[k] || 0);
   /* ---------------- 더 자세한 상태(v0.3.25): 병의 단계·입원·수감·납치·전과·습관·기기·꿈·언어·운동 종목·예술 이름값·삶의 저울 */
   const sel = (id, label, opts, cur) => `<label>${label}<select id="adm-${id}">${opts.map(([v, ko]) => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}>${esc(ko)}</option>`).join('')}</select></label>`;
   const chk = (id, label) => `<label class="adm-chk"><input type="checkbox" id="adm-${id}"> ${label}</label>`;
@@ -61052,12 +61057,24 @@ const Ad = {};
       misc.push(`<label>종목 기술(0~100)<input type="number" inputmode="numeric" min="0" max="100" id="adm-splv" value="${Math.round(cur && S.sp.lv ? S.sp.lv[cur] || 0 : 0)}"></label>`);
     }
     if (typeof Ar !== 'undefined') misc.push(`<label>예술 이름값(0~100)<input type="number" inputmode="numeric" min="0" max="100" id="adm-artrep" value="${Math.round((S.art && S.art.rep) || 0)}"></label>`);
+    if (typeof Md !== 'undefined') misc.push(`<label>음악 이름값(0~100)<input type="number" inputmode="numeric" min="0" max="100" id="adm-musrep" value="${Math.round((S.md && S.md.mus && S.md.mus.rep) || 0)}"></label>`);
+    if (typeof Ft !== 'undefined') misc.push(`<label>운동 습관(0~100)<input type="number" inputmode="numeric" min="0" max="100" id="adm-fthab" value="${Math.round((S.ft && S.ft.hab) || 0)}"></label>`);
+    // 직급(v0.6.9 직업별 직급 이름): 자영업·개원의는 직급이 없다
+    const jb = S.work.job, LV = jb && !jb.self && C.LV_JOB ? C.LV_JOB[jb.id] || null : null;
+    if (jb && LV) misc.push(sel('joblv', '직급', LV.map((ko, i) => [i, ko || '처음(직급 없음)']), Math.max(0, Math.min(4, jb.lv || 0))));
     if (typeof Kr !== 'undefined' && Kr.trust) {
       if (Kr.ensure) Kr.ensure(S);
       misc.push(`<label>베푼 무게(쌓인 선의)<input type="number" inputmode="decimal" step="1" min="0" id="adm-kg" value="${Math.round((S.krm && S.krm.g) || 0)}"></label>`);
       misc.push(`<label>해친 무게(쌓인 악의)<input type="number" inputmode="decimal" step="1" min="0" id="adm-kb" value="${Math.round((S.krm && S.krm.b) || 0)}"></label>`);
     }
     if (misc.length) out.push(`<div class="adm-row3">${misc.join('')}</div>`);
+    // 개인 방송(v0.6.4 media.js): 구독자·꾸준함 — 채널이 있을 때만
+    if (S.stream && typeof Cr !== 'undefined' && Cr.hardCap) {
+      const stv = S.stream;
+      out.push(`<p class="adm-note">개인 방송 — 꾸준함 3 이상이면 꾸준히 올리는 채널(달마다 7%씩 줄고 영상 하나에 +1), 구독자는 언어권 크기에 따라 최대 ${U.fmtKo(Math.round(Cr.hardCap(stv)))}명</p><div class="adm-row3">
+        <label>구독자 수<input type="number" inputmode="numeric" min="0" id="adm-fans" value="${Math.round(stv.fans || 0)}"></label>
+        <label>꾸준함(0~5)<input type="number" inputmode="decimal" step="0.1" min="0" max="5" id="adm-steff" value="${(stv.eff || 0).toFixed(1)}"></label></div>`);
+    }
     // 연습·레슨으로 쌓는 실력(피드백 152번): 노래·춤·운동·그림·요리·두뇌, 글솜씨, 코딩
     if (typeof Pr !== 'undefined' && Pr.KINDS) {
       const pf = Object.entries(Pr.KINDS).map(([k, d]) => `<label>${esc(d.ko)}(0~100)<input type="number" inputmode="numeric" min="0" max="100" id="adm-pr-${k}" value="${Math.round(Pr.lvl ? Pr.lvl(S, k) : (S.prac && S.prac[k]) || 0)}"></label>`);
@@ -61069,7 +61086,7 @@ const Ad = {};
     if (typeof Rl !== 'undefined' && Rl.adminHTML) out.push(Rl.adminHTML(S, sel)); // 종교·신념·사이비 모임(religion.js)
     if (typeof Eq !== 'undefined' && Eq.adminHTML) out.push(Eq.adminHTML(S, sel)); // 출신 집단·세습 신분·백색증(equity.js)
     if (typeof Kr !== 'undefined' && Kr.trust) out.push(`<p class="adm-note">지금 사람들의 믿음 ${Math.round(Kr.trust(S))}(50이 보통) — 베푼 무게·해친 무게로 정해집니다. 건강·돈에는 영향이 없습니다.</p>`);
-    return `<details class="adm-more"><summary>더 자세한 상태(병·장애·수감·습관·기기·꿈·언어·종목·예술·삶의 저울)</summary>${out.join('')}</details>`;
+    return `<details class="adm-more"><summary>더 자세한 상태(병·장애·수감·습관·기기·꿈·언어·종목·예술·음악·운동 습관·직급·방송·삶의 저울)</summary>${out.join('')}</details>`;
   };
   const applyMore = (S) => {
     const v = (id) => { const el = $('#adm-' + id); return el ? el.value : null; };
@@ -61133,6 +61150,22 @@ const Ad = {};
       const c = v('pr-code'); if (c !== null) S.prac.code = U.clamp(Math.round(num(c, S.prac.code || 0)), 0, 100);
     }
     if (typeof Ar !== 'undefined' && v('artrep') !== null) { if (Ar.ensure) Ar.ensure(S); S.art.rep = U.clamp(num(v('artrep'), S.art.rep || 0), 0, 100); }
+    if (v('musrep') !== null) { const mr = U.clamp(num(v('musrep'), 0), 0, 100); if (mr > 0 || (S.md && S.md.mus)) { S.md = S.md || {}; S.md.mus = S.md.mus || { rep: 0, lis: 0 }; S.md.mus.rep = mr; } }
+    if (v('fthab') !== null) { S.ft = S.ft && typeof S.ft === 'object' ? S.ft : {}; S.ft.hab = U.clamp(num(v('fthab'), S.ft.hab || 0), 0, 100); }
+    if (v('joblv') !== null && S.work.job) { const lv = U.clamp(Math.round(num(v('joblv'), S.work.job.lv || 0)), 0, 4); if (lv) S.work.job.lv = lv; else delete S.work.job.lv; }
+    // 개인 방송: 구독자를 바꾸면 다다를 수 있는 구독자(K)도 함께 올려 다음 달에 도로 줄지 않게, 꾸준함을 올리면 옛 영상 몫도 그만큼
+    if (S.stream && v('fans') !== null && typeof Cr !== 'undefined' && Cr.hardCap) {
+      const stv = S.stream;
+      if (stv.K === undefined || stv.pool === undefined || stv.rpm === undefined) Cr.initStream(S);
+      const f = Math.round(U.clamp(num(v('fans'), stv.fans || 0), 0, Cr.hardCap(stv)));
+      if (f !== Math.round(stv.fans || 0)) { stv.fans = f; stv.K = Math.min(stv.pool * Cr.CAP_FRAC, Math.max(stv.K || 0, f * 1.15)); stv.yPrev = f; stv.y0 = f; if (f >= 1e6 && H.ach) H.ach(S, 'creator'); }
+      const ef = U.clamp(num(v('steff'), stv.eff || 0), 0, 5);
+      if (Math.abs(ef - (stv.eff || 0)) > 0.04) { stv.eff = ef; stv.cat = Math.max(stv.cat || 0, 0.1 + 0.5 * Math.min(1, ef / 3)); }
+      stv.inc = Cr.streamIncome(S);
+      if (S.work.job && S.work.job.id === 'streamer') S.work.job.pay = stv.inc;
+    }
+    if (on('cdclear')) S.actCd = {};
+    if (on('mgclear')) { delete S.mgRef; delete S.mgRefW; }
     if (typeof Kr !== 'undefined' && S.krm) {
       if (v('kg') !== null) S.krm.g = Math.max(0, num(v('kg'), S.krm.g));
       if (v('kb') !== null) S.krm.b = Math.max(0, num(v('kb'), S.krm.b));
@@ -61147,9 +61180,12 @@ const Ad = {};
     const field = (id, label, v, min = 0, max = 100) => `<label>${label}<input type="number" inputmode="numeric" id="adm-${id}" min="${min}" max="${max}" value="${Math.round(v)}"></label>`;
     const types = typeof Ec !== 'undefined' && Ec.TYPES ? Object.entries(Ec.TYPES).map(([k, t]) => `<option value="${k}">${esc(t.ko)}</option>`).join('') : '';
     return `<p class="adm-sec">지금 인생 · ${esc(S.name.given)}, ${esc(Wd.name(iso))}, ${Math.floor(S.ageM / 12)}세</p>
-    <div class="adm-row3">${STATS.map(([k, ko]) => field('st-' + k, ko, k === 'charm' ? H.charm(S) : k === 'luck' ? H.luck(S) : S.st[k] || 0)).join('')}
+    <div class="adm-row3">${STATS.map(([k, ko]) => field('st-' + k, ko, statVal(S, k))).join('')}
+      ${field('st-luckC', '타고난 운(중심)', S.st.luckC !== undefined ? S.st.luckC : 50, 1, 99)}${field('st-luck', '지금 운', H.luck(S), 1, 99)}
       ${field('fame', '명성', S.fame || 0)}${field('power', '권력', S.power || 0)}${field('rep', '명예', St && St.rep ? St.rep(S) : 50)}</div>
-    <p class="adm-note">명성·권력은 하는 일에 따라 다시 서서히 움직입니다.</p>
+    <p class="adm-note">화면의 매력은 외모와 인품·카리스마의 평균입니다(지금 ${Math.round(H.charm(S))}). 무대·오디션·연애는 외모 쪽, 선거·면접·협상은 인품 쪽을 봅니다. 지금 운은 타고난 운의 ±${E.LUCK_W || 15} 안에서 오르내립니다 — 그 밖으로 정하면 타고난 운도 따라 옮깁니다. 능력치·명성·권력은 저마다 다가가는 자리(까닭)를 따라 다시 서서히 움직입니다.</p>
+    <div class="adm-row3">${Object.keys(C.TALENT_KO).map((k) => field('tal-' + k, `${C.TALENT_KO[k]} 재능`, H.talent(S, k), 1, 100)).join('')}</div>
+    <p class="adm-note">타고난 재능(평균 50): 연습이 느는 빠르기와 실력의 벽(재능 + 25)을 정하고, 실력이 낮을수록 결과에 많이 쓰입니다.</p>
     ${typeof Ps !== 'undefined' && S.ps ? `<div class="adm-row3">${Ps.KEYS.map((k) => field('ps-' + k, `성격 ${Ps.KO[k]}`, Ps.T(S, k), 1, 99)).join('')}</div><p class="adm-note">성격 점수(50이 보통)는 해마다 조금씩 움직입니다.</p>` : ''}
     ${moreHTML(S)}
     <label>현금(${esc(unit)}) · 지금 ${esc(Wd.money(iso, S.money))}, 순자산 ${esc(Wd.money(iso, nw))}<input type="number" inputmode="numeric" id="adm-money" value="${Math.round(S.money * ppp)}"></label>
@@ -61159,6 +61195,7 @@ const Ad = {};
       <label>큰일 기회(최대 ${C.apCap(S)})<input type="number" inputmode="numeric" id="adm-ap" min="0" max="${C.apCap(S)}" value="${S.ap || 0}"></label>
       <label>빚(${(S.loans || []).length}건)<select id="adm-loans"><option value="">그대로</option><option value="clear">모두 없애기</option></select></label>
     </div>
+    <div class="adm-row">${chk('cdclear', '할 일 쿨다운 모두 풀기')}${S.mgRef && Object.keys(S.mgRef).length ? chk('mgclear', `비자 거절 뒤 기다림 지우기(${Object.keys(S.mgRef).map((i) => Wd.name(i)).join('·')})`) : ''}</div>
     ${!S.indep ? `<label>집안 형편 <span id="adm-pfamv">${pctLabel(Math.round((S.fam.famP || 0.5) * 100))}</span><input type="range" id="adm-pfam" min="1" max="99" step="1" value="${Math.round((S.fam.famP || 0.5) * 100)}"></label>` : ''}
     <button class="btn primary" type="button" data-adm="apply">바꾼 값 적용</button>`;
   };
@@ -61198,8 +61235,28 @@ const Ad = {};
     const clamp = (v) => U.clamp(v, 0, 100);
     for (const [k] of STATS) {
       const el = $('#adm-st-' + k);
-      if (el) S.st[k] = clamp(num(el.value, S.st[k] || 0));
+      if (!el) continue;
+      const x = clamp(num(el.value, statVal(S, k)));
+      if (Math.abs(x - Math.round(statVal(S, k))) < 0.5) continue; // 그대로 둔 칸은 소수점 값을 지킨다
+      S.st[k] = k === 'looks' || k === 'pres' ? Math.max(1, x) : x;
     }
+    // 매력 = 외모·인품의 평균(stats2.js 와 같은 식). ab.cm 을 맞춰 두어야 다음 달에 차이를 두 값에 다시 더하지 않는다
+    if (S.st.looks !== undefined && S.st.pres !== undefined) { S.st.charm = U.clamp((S.st.looks + S.st.pres) / 2, 1, 100); if (S.ab) S.ab.cm = S.st.charm; }
+    // 운: 타고난 중심(luckC)과 지금 흐름(luck, 중심 ±E.LUCK_W). 지금 운만 바꿔 폭 밖으로 나가면 중심을 따라 옮긴다
+    {
+      const W = E.LUCK_W || 15, c0 = S.st.luckC !== undefined ? S.st.luckC : 50, l0 = H.luck(S);
+      const cEl = $('#adm-st-luckC'), lEl = $('#adm-st-luck');
+      let c = cEl ? U.clamp(Math.round(num(cEl.value, c0)), 1, 99) : c0, l = lEl ? U.clamp(Math.round(num(lEl.value, l0)), 1, 99) : l0;
+      const cCh = Math.abs(c - Math.round(c0)) >= 0.5, lCh = Math.abs(l - Math.round(l0)) >= 0.5;
+      if (cCh || lCh) {
+        if (!lCh) l = U.clamp(l0 + (c - c0), 1, 99); // 중심만 옮기면 흐름도 함께
+        if (lCh && Math.abs(l - c) > W) c = l > c ? l - W : l + W; // 지금 운을 정했으면 그 값을 지키고 중심을 옮긴다
+        S.st.luckC = c;
+        S.st.luck = U.clamp(l, Math.max(1, c - W), Math.min(99, c + W));
+      }
+    }
+    // 타고난 재능(평균 50): 실력의 벽(Pr.cap·Sp.cap)이 재능을 따라 바뀐다
+    if (S.talent) for (const k of Object.keys(C.TALENT_KO)) { const el = $('#adm-tal-' + k); if (el) { const t = U.clamp(Math.round(num(el.value, S.talent[k] || 0)), 1, 100); if (t !== Math.round(S.talent[k] || 0)) S.talent[k] = t; } }
     S.fame = clamp(num($('#adm-fame').value, S.fame || 0));
     S.power = clamp(num($('#adm-power').value, S.power || 0));
     if (S.rap) S.rap.rep = clamp(num($('#adm-rep').value, S.rap.rep));
