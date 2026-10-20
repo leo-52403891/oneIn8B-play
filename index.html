@@ -173,6 +173,12 @@ h1, h2, h3 { text-wrap: balance; }
 /* 맡긴 결정(autopick.js): 흐리게 한 줄 */
 .log li.auto { color: var(--muted); font-size: 13px; }
 .log li.auto::before { background: none; content: "↷"; width: auto; height: auto; top: 7px; left: 1px; font-size: 11px; color: var(--muted); }
+/* 소소한 일 묶음(v0.7.3 — ui.js UI.renderLog): 한 해의 소소한 줄은 한 줄 단추로 접고, 펼친 줄은 조금 작고 흐리게 */
+.log li.sum { padding: 0 0 0 18px; }
+.log li.sum::before { display: none; }
+.log li.sum button { border: 0; background: none; padding: 8px 0; min-height: 36px; width: 100%; text-align: left; color: var(--muted); font: 500 12.5px var(--f-mono); cursor: pointer; }
+.log li.sum button:hover, .log li.sum button:focus-visible { color: var(--ink); }
+.log li.minor { font-size: 13px; color: var(--muted); }
 .log li.death::before { background: var(--ink); }
 .log li.fresh { animation: fresh 1.6s ease; }
 @keyframes fresh { from { background: color-mix(in srgb, var(--accent) 14%, transparent); } to { background: transparent; } }
@@ -227,6 +233,9 @@ h1, h2, h3 { text-wrap: balance; }
 .choice small { color: var(--muted); font-size: 12.5px; }
 .choice:hover { border-color: var(--teal); }
 .choice[disabled] { opacity: .5; cursor: not-allowed; }
+/* 결정 창의 '자세히'(v0.7.3 — ui.js UI.splitBody·splitSub): 본문 끝의 작은 단추 하나가 본문과 선택지 설명을 함께 펼친다 */
+.dmore { border: 0; background: none; padding: 6px 2px; margin-left: 2px; min-height: 32px; color: var(--teal); font: 600 13px var(--f-body); cursor: pointer; white-space: nowrap; }
+.dmore:hover, .dmore:focus-visible { text-decoration: underline; }
 .sheet .close { margin-top: 12px; }
 
 /* 부고 */
@@ -318,6 +327,7 @@ h1, h2, h3 { text-wrap: balance; }
 .recent-h { font: 500 12px var(--f-mono); color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
 .recent .log li { font-size: 13px; padding: 5px 0 5px 18px; }
 .recent .log li:last-child { border-bottom: 0; }
+.recent .log li.sum { color: var(--muted); font-size: 12px; }
 /* 인생 탭이 아닐 때 화면 위에 붙어 있는 최근 기록(피드백 2·40번) */
 .recent.sticky { position: sticky; top: var(--tb-h, 64px); z-index: 4; margin: 6px 0 4px; box-shadow: var(--shadow); max-height: 38vh; overflow: hidden; }
 .recent.sticky .log li { padding: 3px 0 3px 18px; font-size: 12.5px; }
@@ -1082,12 +1092,19 @@ Wd.consumptionPct = (iso, y) => {
   return U.phi((Math.log(Math.max(1, y)) - c.mu) / c.sigma);
 };
 /** 세계 인구 중 1인당 소비 y 보다 가난한 사람 비율 */
+// 나라 표는 처음 한 번 배열로 옮겨 둔다(v0.7.3 성능 — 달마다 여러 번 불림). 더하는 순서가 같아 값도 비트까지 같다
+let _gpT = null;
 Wd.globalPct = (y) => {
+  if (!_gpT || _gpT.src !== DATA.c) {
+    const pop = [], mu = [], sg = [];
+    for (const iso in DATA.c) { const c = DATA.c[iso]; pop.push(c.pop); mu.push(c.mu); sg.push(c.sigma); }
+    _gpT = { src: DATA.c, pop, mu, sg };
+  }
+  const { pop, mu, sg } = _gpT, ly = Math.log(Math.max(1, y));
   let t = 0, b = 0;
-  for (const iso in DATA.c) {
-    const c = DATA.c[iso];
-    t += c.pop;
-    b += c.pop * U.phi((Math.log(Math.max(1, y)) - c.mu) / c.sigma);
+  for (let i = 0; i < pop.length; i++) {
+    t += pop[i];
+    b += pop[i] * U.phi((ly - mu[i]) / sg[i]);
   }
   return b / t;
 };
@@ -2414,10 +2431,13 @@ C.DEC.quitSmoke = {
     { label: '계속 피운다', run: () => null },
   ],
 };
+/** 본인이 고를 때만 '보통 선택'(v0.7.3): 가족이 대신 정할 때(health.js Hl.decideFor — 보통 선택을 따름)는 표시하지 않아 예전처럼 비용·도전이 없는 마지막 선택지로 */
+C.selfTyp = (S) => !(typeof Hl !== 'undefined' && Hl.famDecides && Hl.famDecides(S));
+// 술자리에는 보통 선택을 두지 않는다(v0.7.3 점검): 생명표 맞춤이 '사람마다 다른 선택'(시험 도구의 무작위)으로 이루어져, 모두 '가끔 한두 잔'으로 두면 시험 속 인구가 실제보다 건강해짐(한국 +1·미국 +2.4세)
 C.DEC.drink = {
   title: () => '술자리',
   text: (S) => C.t(S, `어른들 사이에서 술잔이 돌았습니다. {country} ${S.sex === 'm' ? '남성' : '여성'} 1명이 한 해 마시는 순수 알코올은 평균 ${Wd.c(E.iso(S)).alc[Wd.si(S.sex)]}리터입니다.`),
-  choices: () => [
+  choices: (S) => [
     { label: '가끔 한두 잔', run: (S) => { S.habit.drink = 1; E.stat(S, 'social', 2); return null; } },
     { label: '취할 때까지 자주', sub: '간경변·사고 위험이 커집니다', run: (S) => { S.habit.drink = 2; E.stat(S, 'social', 3); E.stat(S, 'happy', 2); return C.t(S, '{N은} 술을 즐기게 되었습니다.'); } },
     { label: '마시지 않는다', run: (S) => { S.habit.drink = 0; return null; } },
@@ -2661,7 +2681,7 @@ C.DEC.promotion = {
   choices: (S) => {
     const p = U.clamp(0.25 + S.st.skill / 150 + (E.smEq(S) - 50) / 300 + (typeof Ab !== 'undefined' && Ab.promoX ? Ab.promoX(S) : 0), 0.1, 0.85); // 사람을 이끄는 힘(stats2.js, 피드백 150번)
     return [
-      { label: '도전한다', sub: `성공 가능성 약 ${pct0(p)}%`, run: (S) => { if (!S.work.job) return null; if (U.chance(p)) { H.promote(S); E.stat(S, 'happy', 6); if (S.work.job.lv >= 4) H.ach(S, 'exec'); return C.t(S, `{N은} ${U.j(H.lvName(S), '으로')} 승진했습니다! 월급이 25% 올랐습니다.`); } E.stat(S, 'happy', -4); return C.t(S, '이번에는 다른 사람이 뽑혔습니다.'); } },
+      { label: '도전한다', typ: C.selfTyp(S), sub: `성공 가능성 약 ${pct0(p)}%`, run: (S) => { if (!S.work.job) return null; if (U.chance(p)) { H.promote(S); E.stat(S, 'happy', 6); if (S.work.job.lv >= 4) H.ach(S, 'exec'); return C.t(S, `{N은} ${U.j(H.lvName(S), '으로')} 승진했습니다! 월급이 25% 올랐습니다.`); } E.stat(S, 'happy', -4); return C.t(S, '이번에는 다른 사람이 뽑혔습니다.'); } },
       { label: '지금 자리에 만족한다', run: () => null },
     ];
   },
@@ -2684,7 +2704,7 @@ C.DEC.lend = {
   title: () => '돈을 빌려 달라는 부탁',
   text: (S, ctx) => C.t(S, `사촌 ${U.j(ctx.who, '이')} 급한 일이 생겼다며 ${U.j(Wd.money(E.iso(S), ctx.amt), '을')} 빌려 달라고 합니다.`),
   choices: (S, ctx) => [
-    { label: '빌려준다', run: (S) => { S.money -= ctx.amt; E.stat(S, 'social', 5); if (U.chance(0.5)) { S.flags.loanBack = { amt: ctx.amt, m: S.ageM + U.randInt(12, 48) }; } return C.t(S, '돈을 빌려주었습니다. 돌려받을 수 있을지는 모르겠습니다.'); } },
+    { label: '빌려준다', typ: C.selfTyp(S), run: (S) => { S.money -= ctx.amt; E.stat(S, 'social', 5); if (U.chance(0.5)) { S.flags.loanBack = { amt: ctx.amt, m: S.ageM + U.randInt(12, 48) }; } return C.t(S, '돈을 빌려주었습니다. 돌려받을 수 있을지는 모르겠습니다.'); } },
     { label: '정중히 거절한다', run: (S) => { E.stat(S, 'social', -4); return null; } },
   ],
 };
@@ -30475,7 +30495,7 @@ if (typeof module !== 'undefined') module.exports = Sp;
 'use strict';
 
 // E 는 util.js 에서 미리 만들어 둔다(다른 파일이 먼저 함수를 붙일 수 있도록)
-E.VERSION = '0.7.2';
+E.VERSION = '0.7.3';
 E.BUILD_DATE = '26.10.16';
 
 /* ================================================================ 기본 도구 */
@@ -30486,6 +30506,8 @@ E.iso = (S) => S.place.iso; // 지금 사는 나라
 
 E.log = (S, t, k = 'ev') => {
   S.log.push({ m: S.ageM, y: E.year(S), t, k });
+  // 지금까지 남긴 줄 수(앞을 잘라 내도 계속 늘어남): 화면(ui.js)이 새 줄을 알아보는 번호 — 줄 i 의 번호는 S.logSeq − S.log.length + i + 1 (v0.7.3)
+  S.logSeq = (S.logSeq === undefined ? S.log.length - 1 : S.logSeq) + 1;
   if (S.log.length > 1500) S.log.splice(0, S.log.length - 1500);
 };
 
@@ -31856,21 +31878,27 @@ E.sysEvents = (S) => {
   if (S.queue.length) return;
   const a = E.age(S);
   const cand = [];
-  for (const ev of C.EVENTS) {
-    if (S.prison && !ev.prisonOK && !E.PRISON_OK.has(ev.id)) continue;
-    if (!ev.incapOK && H.incap(S)) continue; // 납치 등 못 움직이는 상태(dsl.js H.incap)
-    if (ev.minAge !== undefined && a < ev.minAge) continue;
-    if (ev.maxAge !== undefined && a > ev.maxAge) continue;
-    if (ev.once && S.cool[ev.id] !== undefined) continue;
-    if (S.cool[ev.id] !== undefined && S.ageM - S.cool[ev.id] < (ev.cd || 3) * 12) continue;
-    if (ev.major && S.ageM < S.nextMajorM) continue;
-    if (ev.when && !ev.when(S)) continue;
-    let r = typeof ev.rate === 'function' ? ev.rate(S) : ev.rate;
-    // 운이 좋은 흐름이면 좋은 일이, 나쁜 흐름이면 나쁜 일이 더 잦다(작은 사건만 — 좋은 일 ×(1 + 0.5·흐름), 나쁜 일 ×(1 − 0.4·흐름):
-    // 운 73이면 좋은 일 1.36배·나쁜 일 0.71배, 27이면 그 반대. 운의 중심이 평균 50이라 사람들 전체의 사건 수는 그대로 — 피드백 224번)
-    if (r > 0 && ev.tone && S.st.luck !== undefined) { const lf = E.luckFlow(S); r *= ev.tone === 'good' ? 1 + 0.5 * lf : ev.tone === 'bad' ? 1 - 0.4 * lf : 1; }
-    if (r > 0) cand.push([ev, r]);
-  }
+  // 거르는 동안(상태를 바꾸지 않음) 못 움직이는 상태(H.incap)와 처지(situ.js Si.allows 가 E.scanS·E.scanN 을 봄)는 한 번만 셈한다(v0.7.3 성능)
+  let inc;
+  E.scanN = (E.scanN || 0) + 1;
+  E.scanS = S;
+  try {
+    for (const ev of C.EVENTS) {
+      if (S.prison && !ev.prisonOK && !E.PRISON_OK.has(ev.id)) continue;
+      if (!ev.incapOK && (inc === undefined ? (inc = H.incap(S)) : inc)) continue; // 납치 등 못 움직이는 상태(dsl.js H.incap)
+      if (ev.minAge !== undefined && a < ev.minAge) continue;
+      if (ev.maxAge !== undefined && a > ev.maxAge) continue;
+      if (ev.once && S.cool[ev.id] !== undefined) continue;
+      if (S.cool[ev.id] !== undefined && S.ageM - S.cool[ev.id] < (ev.cd || 3) * 12) continue;
+      if (ev.major && S.ageM < S.nextMajorM) continue;
+      if (ev.when && !ev.when(S)) continue;
+      let r = typeof ev.rate === 'function' ? ev.rate(S) : ev.rate;
+      // 운이 좋은 흐름이면 좋은 일이, 나쁜 흐름이면 나쁜 일이 더 잦다(작은 사건만 — 좋은 일 ×(1 + 0.5·흐름), 나쁜 일 ×(1 − 0.4·흐름):
+      // 운 73이면 좋은 일 1.36배·나쁜 일 0.71배, 27이면 그 반대. 운의 중심이 평균 50이라 사람들 전체의 사건 수는 그대로 — 피드백 224번)
+      if (r > 0 && ev.tone && S.st.luck !== undefined) { const lf = E.luckFlow(S); r *= ev.tone === 'good' ? 1 + 0.5 * lf : ev.tone === 'bad' ? 1 - 0.4 * lf : 1; }
+      if (r > 0) cand.push([ev, r]);
+    }
+  } finally { E.scanS = null; }
   // 작은 사건과 큰 결정을 따로 뽑는다. 사건이 아무리 많아도 한 달에 작은 사건은 최대 약 40%,
   // 큰 결정은 앞 결정 뒤 8달이 지나야 다시 나온다(시간 흐름을 지키기 위해).
   for (const major of [false, true]) {
@@ -49881,9 +49909,16 @@ const Si = {};
     };
   };
   /** 이 태그들의 장면이 지금 가능한가 */
+  // 사건 거르기(engine.js E.sysEvents — E.scanS 가 그 사람, E.scanN 이 그 차례) 동안은 처지를 한 번만 셈해 함께 쓴다(v0.7.3 성능: 사건 1,300여 개마다 다시 셈했음)
+  let memo = null;
   Si.allows = (S, tags) => {
     if (!tags || !tags.length) return true;
-    const s = Si.of(S);
+    let s;
+    if (memo && E.scanS === S && memo.S === S && memo.n === E.scanN) s = memo.s;
+    else {
+      s = Si.of(S);
+      memo = E.scanS === S ? { S, n: E.scanN, s } : null;
+    }
     for (const t of tags) if (s[t] === false) return false;
     return true;
   };
@@ -53274,7 +53309,7 @@ const Nk = {};
       title: '계좌가 비었습니다',
       text: '어느 날 아침 계좌와 가상자산 지갑이 텅 비어 있었습니다. 수사기관은 다른 나라 정부가 뒤를 봐주는 해킹 조직의 소행으로 보인다고 했습니다.',
       choices: [
-        { l: '신고하고 기다린다', p: 0.3,
+        { l: '신고하고 기다린다', typ: true, p: 0.3,
           ok: { t: '시간이 걸렸지만 일부를 되찾았습니다.', fx: { happy: -2, money: -0.5 } },
           no: { t: '끝내 돌려받지 못했습니다. 국경 밖의 범인은 잡히지 않았습니다.', fx: { happy: -8, money: -2 } } },
       ] },
@@ -63761,6 +63796,7 @@ const Au = {};
  */
 'use strict';
 C.HISTORY = [
+  { v: '0.7.3', d: '26.10.20', t: '읽는 양 줄이기 — 소소한 일 묶기·자세히', items: ["인생 기록의 날씨·명절·동네·일터의 하루 같은 소소한 일은 해마다 '소소한 일 n가지 ▸' 한 줄로 묶었습니다(누르면 펼쳐짐). 해 줄은 그해 기록의 머리에 오도록 바로잡았습니다", "결정 창은 본문 두세 문장과 선택지의 핵심(가능성·비용)만 먼저 보이고, 까닭과 통계는 '자세히 ▸'를 눌러 볼 수 있습니다", "긴 인생에서 인생 기록이 1,500줄을 넘으면 새 기록이 더 보이지 않던 문제를 고쳤습니다", "달마다 사건을 고르는 계산을 줄여 한 달 계산이 약 3분의 1 빨라졌습니다(같은 인생, 같은 결과). 돈 빌려주기·승진 도전에 '보통 선택'을 정했습니다"] },
   { v: '0.7.2', d: '26.10.20', t: '작은 결정 맡기기', items: ["작은 결정은 맡기기(기본으로 켬): 어느 쪽을 골라도 1년 뒤가 크게 달라지지 않는 작은 결정은 창을 띄우지 않고 '보통 선택'으로 지나가며, 인생 기록에 '(맡김) 제목 — 결과'로 한 줄 남습니다", "메뉴 '결정 맡기기'에서 '모두 직접 고르기 / 작은 결정만 맡기기 / 보통 결정까지 맡기기'를 고릅니다. 결혼·진학·이주·큰돈·치료·범죄·일자리 같은 큰 결정, 할 일에서 이어진 결정, 목록에서 고르는 창, 성공과 실패가 갈리는 도전은 언제나 직접 고릅니다", "보통 인생에서 화면에 뜨는 결정이 약 4분의 1 줄었습니다(한국 112 → 82번, '보통까지'면 69번). 맡김은 보통 선택과 같아서 인생의 흐름과 통계는 그대로입니다"] },
   { v: '0.7.1', d: '26.10.20', t: '구조 정리 ② — 기회 장부·이주 표', items: ["내부 정리: 할 일 기회(일상·큰일)·쿨다운·돌려받기를 한곳(기회 장부)으로 모으고, 이주 비자 가능성을 항목 등록 방식으로 바꿨습니다(게임 진행은 그대로)", "내부 정리: 여러 번 덧씌운 셈(구직 합격·명성·사망 위험 등)을 등록 목록으로 접고, 이주·체류의 나라별 근삿값 표를 데이터 파일로 옮겼습니다(게임 진행은 그대로)"] },
   { v: '0.7.0', d: '26.10.20', t: '구조 정리 ① — 실력과 알려진 정도', items: ["내부 정리: 오디션·입단 테스트·작품·원고·음원·유소년 대회가 저마다 갖고 있던 '실력 → 결과' 셈을 한곳으로 모았습니다(게임 진행은 그대로)", "내부 정리: 명성·영향력·팬덤·지위로 '알려진 정도'를 내는 셈도 한곳으로 모았습니다(게임 진행은 그대로)", "고를 수 있는 '보통 선택'이 돈이 모자라 막힌 결정에서는 고를 수 있는 다음 선택지를 보통으로 봅니다"] },
@@ -64353,25 +64389,143 @@ UI.renderControls = (full) => {
   $('#p-hobby').innerHTML = (hb || '<span class="chip note">아직 없음</span>') + (E.age(S) >= 6 ? '<button class="chip" id="btn-hobby">바꾸기</button>' : '');
 };
 
+/* ---------------------------------------------------------------- 인생 기록: 소소한 일 묶기(v0.7.3 — 읽는 양 줄이기)
+ * 화면에서만 묶는다(기록 S.log 의 문장·종류는 그대로). 한 해(만 나이)의 소소한 줄은 '소소한 일 n가지 ▸' 한 줄로 접고, 누르면 제자리에 펼친다.
+ *  - 늘 보임: 해 줄(year)·이정표(milestone)·죽음(death)·결정 결과(choice, 그리고 창에서 직접 고른 결정이 남긴 줄 — S.logDec)·할 일(act)
+ *  - 소소한 일: 맡긴 결정 줄('(맡김)' — au·auto)과, 그 밖의 줄(ev·good·bad) 가운데 아래 큰 소식 표(UI.LOG_BIG)에 걸리지 않는 것
+ *    (날씨·명절·동네·일터의 하루·가벼운 병·관계의 오르내림·운의 흐름·예비군 같은 것)
+ *  - 큰 소식 표에 걸리면 ev·good·bad 라도 보인다(남의 결혼식·기념일은 UI.LOG_SMALL_RE 로 다시 소소한 일).
+ *    잘못 걸려 보이는 줄은 괜찮고(조금 더 읽을 뿐), 빠진 큰 소식은 표에 더한다. 최근 기록 칸(UI.recentHTML)도 같은 규칙으로 이어진 소소한 줄을 한 줄로 묶는다.
+ * 한 해의 경계는 해 줄(생일)이다: 해 줄부터 다음 해 줄 앞까지(생일 달에 해 줄보다 먼저 남은 줄은 앞 해).
+ *   화면의 한 해 = [해 줄(머리)][그해 줄 — 새것이 위][소소한 일 n가지]. (v0.7.2까지는 해 줄이 그해 줄들 아래에 붙어 앞 해의 머리처럼 보였음)
+ * 새 줄은 S.logSeq(engine.js E.log — 앞을 잘라 내도 계속 늘어나는 번호)로 알아본다(v0.7.2까지는 기록 길이로 알아봐서 1,500줄이 찬 뒤 새 줄이 안 보였음). */
+UI.LOG_BIG = [
+  ['삶과 죽음', '세상을 떠|숨을 거두|장례|태어났|아이를 가졌|임신|유산|이름은 .*입니다|새 식구|남은 시간이 길지'],
+  ['짝', '결혼|이혼|헤어졌|연애가 끝|사귀기 시작|약혼|청혼'],
+  ['병·다침', '진단|입원|퇴원|수술|의식을 잃|쓰러져|쓰러졌|부러졌|크게 다쳐|크게 다쳤|사고가 나|사고로|치매가|말기|완치|사라졌다는'],
+  ['배움·일', '입학|어른이 되었습니다|병역판정|진급|합격|불합격|에서 떨어졌습니다|취업|입사|일을 구하|일을 시작|일자리를 잃|해고|일을 그만두|일은 그만두|그만두게 되|은퇴|승진|창업|폐업|문을 닫'],
+  ['돈', '잃은 것|도둑|소매치기|사기를 당|돈이 빠져나갔|빚|파산|대출|집값|당첨|씀씀이를 크게'],
+  ['사는 곳·나라', '이사했|옮겼|이주|떠났습니다|로 돌아왔습니다|귀국|이민|비자|영주권|시민권|국적|전쟁|피난|난민|지진|홍수'],
+  ['법', '체포|경찰|재판|징역|교도소|감옥|출소|석방|벌금'],
+  ['이름', '상을 받|우승|국가대표|데뷔|당선|낙선'],
+];
+UI.LOG_BIG_RE = new RegExp(UI.LOG_BIG.map((x) => x[1]).join('|'));
+/** 큰 소식 표에 걸려도 소소한 일: 남의 결혼식·기념일 */
+UI.LOG_SMALL_RE = /결혼식에 다녀|결혼식에서|결혼기념일|결혼 \d+주년/;
+UI.LOG_MAX = 900; // 화면에 두는 줄(접힌 줄 포함). 넘으면 오래된 해부터 통째로 뺀다(기록은 남음)
+/** 지금까지 남긴 줄 수(engine.js S.logSeq, 옛 저장은 기록 길이) — 줄 i 의 번호는 이 값 − 기록 길이 + i + 1 */
+UI.logSeqOf = (S) => (S.logSeq !== undefined ? S.logSeq : S.log.length);
+/** 창에서 직접 고른 결정이 남긴 줄의 번호 구간을 적어 둔다(S.logDec = [처음, 끝, …] — 화면에서 묶지 않으려고. 기록 내용은 그대로) */
+UI.markDec = (S, s0) => {
+  const s1 = UI.logSeqOf(S);
+  if (s1 <= s0) return;
+  const D = S.logDec || (S.logDec = []);
+  D.push(s0 + 1, s1);
+  const first = s1 - S.log.length + 1;
+  while (D.length > 2 && D[1] < first) D.splice(0, 2);
+};
+UI.isDec = (S, seq) => {
+  const D = S.logDec;
+  if (!D) return false;
+  for (let i = D.length - 2; i >= 0; i -= 2) { if (seq > D[i + 1]) return false; if (seq >= D[i]) return true; }
+  return false;
+};
+/** 소소한 줄인가(묶을 줄) — seq 는 그 줄의 번호 */
+UI.logMinor = (S, e, seq) => {
+  const k = e.k;
+  if (k === 'year' || k === 'milestone' || k === 'death') return false;
+  if (e.au || k === 'auto') return true;
+  if (k === 'choice' || k === 'act' || UI.isDec(S, seq)) return false;
+  const t = e.t || '';
+  return !UI.LOG_BIG_RE.test(t) || UI.LOG_SMALL_RE.test(t);
+};
+/** 줄이 속한 해(만 나이). g 는 바로 앞 줄의 해 */
+UI.logGroup = (e, g) => (e.k === 'year' ? Math.floor(e.m / 12) : Math.max(g === undefined ? 0 : g, Math.floor((e.m - 1) / 12)));
+UI.logSumText = (G) => {
+  G.sum.hidden = !G.n;
+  G.sum.innerHTML = `<button type="button" class="sumbtn" data-logg="${G.sum.dataset.g}" aria-expanded="${G.open}">소소한 일 ${G.n}가지 ${G.open ? '접기 ▾' : '▸'}</button>`;
+};
+UI.toggleLogGroup = (g) => {
+  const st = UI._lg, G = st && st.grp.get(Number(g));
+  if (!G) return;
+  G.open = !G.open;
+  for (const el of $('#p-log').querySelectorAll(`li.minor[data-g="${Number(g)}"]`)) { el.hidden = !G.open; el.classList.remove('fresh'); }
+  UI.logSumText(G);
+  const b = G.sum.querySelector('button');
+  if (b) b.focus({ preventScroll: true });
+};
 UI.renderLog = (full) => {
   const S = UI.S;
   const ol = $('#p-log');
-  if (full) { ol.innerHTML = ''; UI.logCount = 0; }
-  if (S.log.length < UI.logCount) { ol.innerHTML = ''; UI.logCount = 0; }
-  const fresh = S.log.slice(UI.logCount);
-  if (!fresh.length) return;
-  const frag = document.createDocumentFragment();
-  for (const e of fresh) {
-    const li = document.createElement('li');
-    // 맡긴 결정(autopick.js)은 화면용 한 줄(e.au)을 흐리게 보인다
-    li.className = (e.au ? 'auto' : e.k) + (full ? '' : ' fresh');
-    li.textContent = e.au || e.t;
-    frag.prepend(li);
+  const seq = UI.logSeqOf(S), L = S.log;
+  let st = UI._lg;
+  // 처음·다른 인생·번호가 거꾸로 감(다른 저장)·새 줄이 너무 많음 → 처음부터 다시 그린다
+  if (full || !st || st.S !== S || seq < UI.logCount || seq - UI.logCount > UI.LOG_MAX) {
+    ol.innerHTML = '';
+    st = UI._lg = { S, g: undefined, grp: new Map(), keys: [] };
+    UI.logCount = seq - L.length;
+    full = true;
   }
-  ol.prepend(frag);
-  UI.logCount = S.log.length;
-  // 너무 길면 오래된 것부터 화면에서 뺀다(기록은 남음)
-  while (ol.children.length > 400) ol.lastChild.remove();
+  const nNew = Math.min(L.length, seq - UI.logCount);
+  if (nNew <= 0) return;
+  let i0 = L.length - nNew;
+  // 다시 그릴 때는 최근 줄만(해의 처음부터)
+  if (full && L.length - i0 > UI.LOG_MAX) {
+    i0 = L.length - UI.LOG_MAX;
+    let j = i0;
+    while (j < L.length && L[j].k !== 'year') j++;
+    if (j < L.length) i0 = j;
+  }
+  const base = seq - L.length; // 줄 i 의 번호 = base + i + 1
+  // 한 해 = [해 줄(머리)][그해 줄 — 새것이 위][소소한 일 n가지]. 새 줄은 그해 머리 바로 아래(머리가 없는 해는 목록 맨 위)에 넣는다
+  const box = full ? document.createDocumentFragment() : ol;
+  const touched = new Set();
+  for (let i = i0; i < L.length; i++) {
+    const e = L[i];
+    const g = UI.logGroup(e, st.g);
+    st.g = g;
+    let G = st.grp.get(g);
+    const isNew = !G;
+    if (isNew) {
+      G = { n: 0, open: false, head: null, sum: document.createElement('li') };
+      G.sum.className = 'sum';
+      G.sum.dataset.g = g;
+      G.sum.hidden = true;
+      st.grp.set(g, G);
+      st.keys.push(g);
+      box.prepend(G.sum);
+    }
+    const txt = e.au || e.t;
+    if (!txt) continue;
+    const li = document.createElement('li');
+    const minor = UI.logMinor(S, e, base + i + 1);
+    // 맡긴 결정(autopick.js)은 화면용 한 줄(e.au)을 흐리게 보인다
+    li.className = (e.au ? 'auto' : e.k) + (minor ? ' minor' : '') + (full || (minor && !G.open) ? '' : ' fresh');
+    li.dataset.g = g;
+    li.textContent = txt;
+    if (minor) { G.n++; li.hidden = !G.open; touched.add(G); }
+    if (isNew && e.k === 'year') { G.head = li; box.prepend(li); } // 해 줄은 그해의 머리
+    else if (G.head) G.head.after(li);
+    else box.prepend(li);
+  }
+  for (const G of touched) UI.logSumText(G);
+  if (full) ol.appendChild(box);
+  UI.logCount = seq;
+  // 너무 길면 오래된 해부터 통째로 화면에서 뺀다(기록은 남음)
+  while (ol.children.length > UI.LOG_MAX && st.keys.length > 1) {
+    const g = st.keys.shift();
+    st.grp.delete(g);
+    for (const el of ol.querySelectorAll(`li[data-g="${g}"]`)) el.remove();
+  }
+  // 한 해에 줄이 아주 많으면 그해의 오래된 줄부터 뺀다(머리·접힌 줄은 남김)
+  while (ol.children.length > UI.LOG_MAX) {
+    let x = ol.lastElementChild;
+    if (x && x.classList.contains('sum')) x = x.previousElementSibling;
+    if (!x || x.classList.contains('year')) break;
+    const G = x.classList.contains('minor') ? st.grp.get(Number(x.dataset.g)) : null;
+    x.remove();
+    if (G) { G.n--; UI.logSumText(G); }
+  }
 };
 
 /* ---------------------------------------------------------------- 탭 */
@@ -64639,6 +64793,77 @@ UI.openAuto = () => {
   ]);
 };
 
+/* ---------------------------------------------------------------- 결정 창의 글 줄이기(v0.7.3 — 읽는 양)
+ * 결정마다 글을 고치지 않고 화면에서 나눈다(휴대폰 375px 기준).
+ *  - 본문: 앞의 두세 문장만 보이고(통계·출처 문장 UI.NOTE_RE·열 자 넘는 괄호 설명은 건너뜀, 100~130자 안), 나머지(까닭·숫자·'{나라}에서는 … 약 n%'·'(근삿값)')는 '자세히'를 눌러 원문 그대로 본다.
+ *  - 선택지 설명: ' · '(없으면 문장)로 나눠 핵심(가능성·비용·기간·벌이 — UI.SUB_KEY_RE)만 보이고, 끝의 괄호 설명과 나머지 까닭은 '자세히'로.
+ *  - '자세히' 단추 하나가 본문과 모든 선택지 설명을 함께 펼친다(aria-expanded). 짧은 글·숨길 것이 적은 글(본문 30자·설명 12자 미만)은 그대로 둔다. */
+UI.NOTE_RE = /^\(|\d(\.\d+)?\s*%|근삿값|추정|조사|통계|평균|Pew|기준[,)]|(약|대략) [\d.,]+\s*배/;
+UI.SUB_KEY_RE = /가능성|확률|비용|^얻음|[\d,.]+\s*(만|억)?\s*원|달러|유로|파운드|계약금|대출|매달|밑천|월급|연봉|수입|\d+\s*(개월|년)(\s|$)|징역|벌금/;
+/** 문장으로 나누기('1.2배' 같은 소수점·닫는 따옴표·괄호를 살핀다). 줄바꿈은 '\n' 한 칸 */
+UI.sentences = (t) => {
+  const s = String(t || ''), out = [];
+  let cur = '';
+  const push = () => { if (cur.trim()) out.push(cur.trim()); cur = ''; };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\n') { push(); out.push('\n'); continue; }
+    cur += c;
+    if (c === '.' || c === '!' || c === '?' || c === '…') {
+      while (i + 1 < s.length && /["'”’」』)\]]/.test(s[i + 1])) cur += s[++i];
+      if (i + 1 >= s.length || /\s/.test(s[i + 1])) push();
+    } else if (c === ')' && cur.trim()[0] === '(' && (i + 1 >= s.length || /\s/.test(s[i + 1]))) push();
+  }
+  push();
+  return out;
+};
+/** 통계·출처 문장인가(가능성·확률을 말하는 문장은 빼고) */
+UI.isNote = (p) => UI.NOTE_RE.test(p) && !/가능성|확률/.test(p);
+/** 선택지 설명 안의 짧은 'n%'는 대개 그 선택의 가능성이다('대형 기획사·방송 약 1%', '해마다 약 18%') — 통계 안내('{나라}에서는 … 약 n%')와 가른다 */
+UI.isChance = (p) => /\d(\.\d+)?\s*%/.test(p) && p.length <= 40 && !/에서는|또래|인구|중 약|비율|근삿값|통계|조사|평균/.test(p);
+/** 본문 → { lead: 먼저 보일 두세 문장(긴 괄호 설명은 뺌), more: 숨긴 것이 있나 } */
+UI.splitBody = (t) => {
+  const s = String(t || '');
+  if (s.length <= 60) return { lead: s, more: false };
+  const parts = UI.sentences(s).filter((p) => p !== '\n');
+  const lead = [];
+  let len = 0;
+  for (const p0 of parts) {
+    if (UI.isNote(p0)) continue;
+    const p = p0.replace(/\s*\([^()]{10,}\)/g, ''); // 열 자 넘는 괄호 설명은 '자세히'로
+    if (lead.length >= 3 || (lead.length >= 2 && (len >= 60 || len + p.length > 100)) || (lead.length && len + p.length > 130)) break;
+    lead.push(p);
+    len += p.length;
+  }
+  if (!lead.length) lead.push(parts[0] || s);
+  const l = lead.join(' ');
+  // 숨길 것이 서른 자도 안 되면 그대로 보인다('자세히'를 누르는 품이 더 듦)
+  return l.length >= s.replace(/\s+/g, ' ').trim().length - 30 ? { lead: s, more: false } : { lead: l, more: true };
+};
+/** 선택지 설명 → { key: 먼저 보일 핵심(첫 마디 + 가능성·비용·기간·벌이), more } */
+UI.splitSub = (t) => {
+  const s = String(t || '');
+  if (s.length <= 44) return { key: s, more: false };
+  let parts = s.split(' · ');
+  if (parts.length === 1) parts = UI.sentences(s).filter((p) => p !== '\n');
+  const strip = (p) => p.replace(/\s*\(([^()]*)\)\s*$/, (m, inner) => (/%/.test(inner) ? m : '')); // 괄호 속 가능성 '(50%)'은 남긴다
+  const key = [];
+  parts.forEach((p, i) => { const ch = UI.isChance(p); if ((i === 0 && (ch || !UI.isNote(p)) && p.length <= (ch ? 40 : 24)) || ((UI.SUB_KEY_RE.test(p) || ch) && (ch || !UI.isNote(p)))) key.push(strip(p)); });
+  if (!key.length) key.push(strip(parts.find((p) => !UI.isNote(p)) || parts[0]));
+  const k = key.join(' · ');
+  return k.length >= s.length - 12 ? { key: s, more: false } : { key: k, more: true };
+};
+/** '자세히' 펼치기·접기 */
+UI.toggleDecMore = () => {
+  const b = $('#d-more');
+  if (!b) return;
+  const open = b.getAttribute('aria-expanded') !== 'true';
+  b.setAttribute('aria-expanded', String(open));
+  b.textContent = open ? '간단히 ▴' : '자세히 ▸';
+  for (const el of document.querySelectorAll('#sheet .d-short')) el.hidden = open;
+  for (const el of document.querySelectorAll('#sheet .d-long')) el.hidden = !open;
+};
+
 /* ---------------------------------------------------------------- 결정 */
 UI.openDecision = () => {
   const S = UI.S;
@@ -64654,8 +64879,15 @@ UI.openDecision = () => {
   const def = C.DEC[q.id];
   $('#d-when').textContent = `${E.year(S)}년 · ${UI.ageText(S)}`;
   $('#d-title').textContent = tx(S, def.title(S, q.ctx));
-  $('#d-text').textContent = tx(S, def.text(S, q.ctx));
-  $('#d-choices').innerHTML = choices.map((ch, i) => `<button class="choice" data-choice="${i}" ${ch.disabled ? 'disabled' : ''}><b>${esc(tx(S, ch.label))}</b>${ch.sub ? `<small>${esc(tx(S, ch.sub))}</small>` : ''}</button>`).join('');
+  // 본문은 두세 문장, 선택지 설명은 핵심만 — 나머지는 '자세히'(UI.splitBody·splitSub)
+  const body = tx(S, def.text(S, q.ctx));
+  const sb = UI.splitBody(body);
+  const subs = choices.map((ch) => (ch.sub ? tx(S, ch.sub) : ''));
+  const sp = subs.map((s) => UI.splitSub(s));
+  const more = sb.more || sp.some((x) => x.more);
+  $('#d-text').innerHTML = (sb.more ? `<span class="d-short">${esc(sb.lead)}</span><span class="d-long" hidden>${esc(body)}</span>` : esc(body))
+    + (more ? ` <button type="button" class="dmore" id="d-more" aria-expanded="false" aria-controls="d-text d-choices">자세히 ▸</button>` : '');
+  $('#d-choices').innerHTML = choices.map((ch, i) => `<button class="choice" data-choice="${i}" ${ch.disabled ? 'disabled' : ''}><b>${esc(tx(S, ch.label))}</b>${subs[i] ? (sp[i].more ? `<small class="d-short">${esc(sp[i].key)} …</small><small class="d-long" hidden>${esc(subs[i])}</small>` : `<small>${esc(subs[i])}</small>`) : ''}</button>`).join('');
   $('#d-close').hidden = true;
   $('#sheet').hidden = false;
   UI.sheetMode = 'decision';
@@ -64665,7 +64897,9 @@ UI.openDecision = () => {
 };
 UI.pickChoice = (i) => {
   const S = UI.S;
+  const s0 = UI.logSeqOf(S);
   E.choose(S, i);
+  UI.markDec(S, s0); // 직접 고른 결정의 결과 줄은 인생 기록에서 묶지 않는다
   $('#sheet').hidden = true;
   UI.focusKey = '';
   UI.render(false);
@@ -64925,13 +65159,20 @@ UI.renderRecent = () => {
 };
 /** 최근 인생 기록(새 줄은 반짝인다) */
 UI.recentHTML = (S, n = 4, inner) => {
-  const list = [];
-  for (let i = S.log.length - 1; i >= 0 && list.length < n; i--) if (S.log[i].k !== 'year') list.push(S.log[i]);
-  let fresh = UI._recentLast !== undefined;
-  const li = list.map((e) => {
+  // 이어진 소소한 줄(UI.logMinor)은 '소소한 일 n가지' 한 줄로 묶는다(v0.7.3 — 인생 탭과 같은 규칙, 최근 60줄 안에서)
+  const L = S.log, base = UI.logSeqOf(S) - L.length, rows = [];
+  let fresh = UI._recentLast !== undefined, run = 0, runFresh = false;
+  const flush = () => { if (run) rows.push(`<li class="sum${runFresh ? ' fresh' : ''}">소소한 일 ${run}가지</li>`); run = 0; runFresh = false; };
+  for (let i = L.length - 1; i >= 0 && i >= L.length - 60 && rows.length < n; i--) {
+    const e = L[i];
+    if (e.k === 'year' || !(e.au || e.t)) continue;
     if (e === UI._recentLast) fresh = false;
-    return `<li class="${e.au ? 'auto' : e.k}${fresh ? ' fresh' : ''}">${esc(e.au || e.t)}</li>`;
-  }).join('');
+    if (UI.logMinor(S, e, base + i + 1)) { run++; runFresh = runFresh || fresh; continue; }
+    flush();
+    if (rows.length < n) rows.push(`<li class="${e.au ? 'auto' : e.k}${fresh ? ' fresh' : ''}">${esc(e.au || e.t)}</li>`);
+  }
+  if (rows.length < n) flush();
+  const li = rows.join('');
   UI._recentLast = S.log[S.log.length - 1];
   const body = `<div class="recent-h"><span>${E.year(S)}년 · ${UI.ageText(S)}</span><span>최근 기록</span></div><ol class="log small">${li || '<li>아직 기록이 없습니다.</li>'}</ol>`;
   return inner ? body : `<div class="recent">${body}</div>`;
@@ -65230,6 +65471,7 @@ UI.boot = () => {
     if (t.id === 'btn-menu') return UI.openMenu();
     if (t.id === 'btn-hobby') return UI.openHobby();
     if (t.id === 'd-close') return UI.closeSheet();
+    if (t.id === 'd-more') return UI.toggleDecMore(); // 결정 창의 '자세히'
     if (t.id === 'btn-copy') {
       const txt = UI._summary || '';
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -65241,6 +65483,7 @@ UI.boot = () => {
     if (t.dataset.focus) { UI.S.focus = t.dataset.focus; UI.focusKey = ''; UI.renderControls(true); return; }
     if (t.dataset.life) { UI.S.lifestyle = t.dataset.life; UI.focusKey = ''; UI.renderControls(true); return; }
     if (t.dataset.tab) return UI.setTab(t.dataset.tab);
+    if (t.dataset.logg !== undefined) return UI.toggleLogGroup(t.dataset.logg); // 인생 기록의 '소소한 일 n가지'
     if (t.dataset.choice !== undefined) return UI.pickChoice(Number(t.dataset.choice));
     if (t.dataset.menu !== undefined) { const b = UI._menu[Number(t.dataset.menu)]; if (b && b.run) b.run(); }
   });
